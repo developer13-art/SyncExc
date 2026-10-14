@@ -1,0 +1,17 @@
+export { default as LogoIcon } from './svg/logo.svg?react';
+export { default as DashboardIcon } from './svg/dashboard.svg?react';
+export { default as TerminalIcon } from './svg/terminal.svg?react';
+export { default as ConnectionsIcon } from './svg/connections.svg?react';
+export { default as SyncIcon } from './svg/sync.svg?react';
+export { default as RiskIcon } from './svg/risk.svg?react';
+export { default as SourcesIcon } from './svg/sources.svg?react';
+export { default as SignalsIcon } from './svg/signals.svg?react';
+export { default as MarketplaceIcon } from './svg/marketplace.svg?react';
+export { default as AutomationIcon } from './svg/automation.svg?react';
+export { default as SimulationIcon } from './svg/simulation.svg?react';
+export { default as ReferralIcon } from './svg/referral.svg?react';
+export { default as DeveloperIcon } from './svg/developer.svg?react';
+export { default as CommunityIcon } from './svg/community.svg?react';
+export { default as SupportIcon } from './svg/support.svg?react';
+export { default as SettingsIcon } from './svg/settings.svg?react';
+export { default as NotificationsIcon } from './svg/notifications.svg?react';

@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+out
+.next
+coverage
+*.log
+.env
+.env.*
+!.env.example
+package-lock.json
+*.min.js
+*.min.css

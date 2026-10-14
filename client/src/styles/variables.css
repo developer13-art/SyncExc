@@ -1,0 +1,25 @@
+:root {
+  --radius: 0.5rem;
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: 'JetBrains Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;
+
+  --sidebar-width: 15rem;
+  --sidebar-collapsed-width: 4rem;
+  --topbar-height: 3.5rem;
+  --content-max-width: 90rem;
+
+  --transition-fast: 150ms;
+  --transition-normal: 200ms;
+  --transition-slow: 300ms;
+
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-toast: 1080;
+}

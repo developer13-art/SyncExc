@@ -1,0 +1,360 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useDispatch } from 'react-redux';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Building2, CheckCircle2 } from 'lucide-react';
+
+import { Button } from '../../components/ui/Button.jsx';
+import { Card, CardContent } from '../../components/ui/Card.jsx';
+import { Input } from '../../components/ui/Input.jsx';
+import { Label } from '../../components/ui/Label.jsx';
+import { FormField } from '../../components/forms/FormField.jsx';
+import { FormError } from '../../components/forms/FormError.jsx';
+import { Stepper } from '../../components/ui/Stepper.jsx';
+import { CredentialForm } from './components/CredentialForm.jsx';
+import { PermissionChecklist } from './components/PermissionChecklist.jsx';
+import { connectionsApi } from '../../api/index.js';
+import { useConnections } from '../../hooks/useConnections.js';
+import { useToast } from '../../hooks/useToast.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { uiActions } from '../../app/slices/uiSlice.js';
+import { ROUTES } from '../../config/routes.config.js';
+import { cn } from '../../lib/utils/cn.util.js';
+
+const STEPS = [
+  { id: 'exchange', title: 'Select exchange' },
+  { id: 'credentials', title: 'Enter credentials' },
+  { id: 'verify', title: 'Verify permissions' },
+  { id: 'complete', title: 'Complete' },
+];
+
+export default function ConnectExchange() {
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const toast = useToast();
+
+  const [step, setStep] = useState('exchange');
+  const [selectedExchange, setSelectedExchange] = useState(null);
+  const [label, setLabel] = useState('');
+  const [environment, setEnvironment] = useState('production');
+  const [credentials, setCredentials] = useState({});
+  const [credentialErrors, setCredentialErrors] = useState({});
+  const [formError, setFormError] = useState(null);
+  const [connection, setConnection] = useState(null);
+  const [permissions, setPermissions] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    dispatch(uiActions.setPageTitle('Connect Exchange'));
+    dispatch(
+      uiActions.setBreadcrumbs([
+        { label: 'Connections', path: ROUTES.app.connections.overview },
+        { label: 'Connect', path: ROUTES.app.connections.create },
+      ]),
+    );
+  }, [dispatch]);
+
+  const exchangeRegistryQuery = useConnections({ registry: true });
+  const exchanges = exchangeRegistryQuery.data?.items ?? [];
+
+  const requirementsQuery = useConnections({});
+  const [requirements, setRequirements] = useState([]);
+
+  useEffect(() => {
+    if (!selectedExchange) {
+      setRequirements([]);
+      return;
+    }
+    let cancelled = false;
+    connectionsApi
+      .getConnectionRequirements(selectedExchange.id)
+      .then((result) => {
+        if (!cancelled) {
+          setRequirements(result.requirements ?? result ?? []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRequirements([
+            { name: 'apiKey', label: 'API Key', type: 'text', required: true },
+            { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
+          ]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedExchange]);
+
+  const currentStepIndex = useMemo(() => STEPS.findIndex((s) => s.id === step), [step]);
+
+  const handleExchangeSelect = (exchange) => {
+    setSelectedExchange(exchange);
+    setLabel(exchange.defaultLabel ?? exchange.name);
+    setStep('credentials');
+  };
+
+  const handleCredentialsChange = (name, value) => {
+    setCredentials((prev) => ({ ...prev, [name]: value }));
+    setCredentialErrors((prev) => {
+      if (!prev[name]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+    setFormError(null);
+  };
+
+  const handleCredentialSubmit = async () => {
+    setFormError(null);
+    setCredentialErrors({});
+
+    const missing = requirements
+      .filter((r) => r.required !== false && !credentials[r.name])
+      .reduce((acc, r) => {
+        acc[r.name] = `${r.label ?? r.name} is required`;
+        return acc;
+      }, {});
+
+    if (Object.keys(missing).length > 0) {
+      setCredentialErrors(missing);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const created = await connectionsApi.create({
+        exchangeId: selectedExchange.id,
+        label: label.trim() || selectedExchange.name,
+        environment,
+        credentials,
+      });
+
+      setConnection(created);
+
+      const validated = await connectionsApi.validate(created.id);
+      setPermissions(validated.permissions ?? validated.capabilities ?? {});
+      setStep('verify');
+      toast.success('Connection validated', {
+        description: 'Review the verified permissions before activating.',
+      });
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleActivate = async () => {
+    if (!connection) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await connectionsApi.sync(connection.id);
+      await connectionsApi.test(connection.id);
+      setStep('complete');
+      toast.success('Connection activated');
+    } catch (error) {
+      toast.error('Activation failed', { description: getErrorMessage(error) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" asChild>
+          <Link to={ROUTES.app.connections.overview}>
+            <ArrowLeft className="h-4 w-4" /> Back
+          </Link>
+        </Button>
+      </div>
+
+      <div className="mx-auto w-full max-w-3xl">
+        <Stepper steps={STEPS} currentStep={currentStepIndex} />
+
+        <div className="mt-8">
+          {step === 'exchange' ? (
+            <ExchangeStep
+              exchanges={exchanges}
+              isLoading={exchangeRegistryQuery.isLoading}
+              onSelect={handleExchangeSelect}
+            />
+          ) : step === 'credentials' ? (
+            <div className="flex flex-col gap-6">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Configure {selectedExchange.name} connection
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Provide a descriptive label and the credentials for this account. We
+                  recommend generating a dedicated API key with minimum required permissions.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField label="Connection label" htmlFor="conn-label" required>
+                  <Input
+                    id="conn-label"
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    placeholder="Primary Spot Account"
+                  />
+                </FormField>
+                <FormField label="Environment" htmlFor="conn-env">
+                  <div className="flex gap-1">
+                    {['production', 'testnet'].map((env) => (
+                      <Button
+                        key={env}
+                        type="button"
+                        size="sm"
+                        variant={environment === env ? 'default' : 'outline'}
+                        className="flex-1 capitalize"
+                        onClick={() => setEnvironment(env)}
+                      >
+                        {env}
+                      </Button>
+                    ))}
+                  </div>
+                </FormField>
+              </div>
+
+              <CredentialForm
+                exchangeRequirements={requirements}
+                values={credentials}
+                errors={credentialErrors}
+                onChange={handleCredentialsChange}
+                onSubmit={handleCredentialSubmit}
+                onCancel={() => setStep('exchange')}
+                isSubmitting={submitting}
+                formError={formError}
+              />
+            </div>
+          ) : step === 'verify' ? (
+            <div className="flex flex-col gap-6">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Verify connection permissions
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Review the credentials' actual capabilities as reported by the exchange. If
+                  required permissions are missing, you can rotate credentials and revalidate.
+                </p>
+              </div>
+
+              <Card>
+                <CardContent className="p-5 pt-5">
+                  <PermissionChecklist permissions={permissions ?? {}} />
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep('credentials')}
+                  disabled={submitting}
+                >
+                  Rotate credentials
+                </Button>
+                <Button onClick={handleActivate} disabled={submitting}>
+                  {submitting ? 'Activating…' : 'Activate connection'}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-6 py-8 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/10">
+                <CheckCircle2 className="h-7 w-7 text-success" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-foreground">Connection activated</h2>
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  {connection?.label ?? 'Your connection'} is ready. Balances, instruments, and
+                  account metadata will sync shortly.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(ROUTES.app.connections.overview)}
+                >
+                  Back to connections
+                </Button>
+                <Button
+                  onClick={() =>
+                    navigate(ROUTES.app.connections.details(connection?.id ?? ''))
+                  }
+                >
+                  View connection
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExchangeStep({ exchanges, isLoading, onSelect }) {
+  if (isLoading) {
+    return (
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-24 animate-pulse rounded-lg bg-muted" />
+        ))}
+      </div>
+    );
+  }
+
+  if (exchanges.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-10 text-center">
+        <Building2 className="mx-auto h-8 w-8 text-muted-foreground" />
+        <p className="mt-3 text-sm text-muted-foreground">
+          No exchanges are currently available for connection.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold text-foreground">Select an exchange</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Choose a supported exchange to connect. Availability may vary by region and account
+          type.
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {exchanges.map((exchange) => (
+          <button
+            key={exchange.id}
+            type="button"
+            onClick={() => onSelect(exchange)}
+            className={cn(
+              'flex flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left transition',
+              'hover:border-primary/50 hover:bg-muted/30',
+            )}
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-semibold text-foreground">{exchange.name}</p>
+            {exchange.description ? (
+              <p className="text-xs text-muted-foreground line-clamp-2">
+                {exchange.description}
+              </p>
+            ) : null}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

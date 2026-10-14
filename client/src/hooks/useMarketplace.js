@@ -1,0 +1,156 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { marketplaceApi } from '../api/index.js';
+import { queryKeys } from './queryKeys.js';
+
+export function useMarketplaceProviders(params = {}) {
+  const queryClient = useQueryClient();
+
+  const listQuery = useQuery({
+    queryKey: queryKeys.marketplace.providers(params),
+    queryFn: () => marketplaceApi.listProviders(params),
+    staleTime: 60_000,
+  });
+
+  const follow = useMutation({
+    mutationFn: ({ providerId, ...payload }) =>
+      marketplaceApi.followProvider(providerId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['marketplace'] }),
+  });
+
+  const unfollow = useMutation({
+    mutationFn: (providerId) => marketplaceApi.unfollowProvider(providerId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['marketplace'] }),
+  });
+
+  return {
+    providers: listQuery.data?.items ?? [],
+    meta: listQuery.data?.meta ?? {},
+    isLoading: listQuery.isLoading,
+    follow: follow.mutateAsync,
+    unfollow: unfollow.mutateAsync,
+  };
+}
+
+export function useMarketplaceProvider(providerId) {
+  const queryClient = useQueryClient();
+
+  const detailQuery = useQuery({
+    queryKey: queryKeys.marketplace.provider(providerId),
+    queryFn: () => marketplaceApi.getProvider(providerId),
+    enabled: Boolean(providerId),
+    staleTime: 60_000,
+  });
+
+  const plansQuery = useQuery({
+    queryKey: queryKeys.marketplace.providerPlans(providerId),
+    queryFn: () => marketplaceApi.listProviderPlans(providerId),
+    enabled: Boolean(providerId),
+    staleTime: 60_000,
+  });
+
+  const performanceQuery = useQuery({
+    queryKey: queryKeys.marketplace.providerPerformance(providerId, {}),
+    queryFn: () => marketplaceApi.getProviderPerformance(providerId),
+    enabled: Boolean(providerId),
+    staleTime: 60_000,
+  });
+
+  const disclosuresQuery = useQuery({
+    queryKey: queryKeys.marketplace.providerDisclosures(providerId),
+    queryFn: () => marketplaceApi.getProviderDisclosures(providerId),
+    enabled: Boolean(providerId),
+    staleTime: 5 * 60_000,
+  });
+
+  const subscribe = useMutation({
+    mutationFn: (payload) => marketplaceApi.createSubscription({ providerId, ...payload }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['marketplace'] }),
+  });
+
+  return {
+    provider: detailQuery.data ?? null,
+    plans: plansQuery.data ?? [],
+    performance: performanceQuery.data ?? null,
+    disclosures: disclosuresQuery.data ?? [],
+    isLoading: detailQuery.isLoading,
+    subscribe: subscribe.mutateAsync,
+  };
+}
+
+export function useCopyConfigurations(params = {}) {
+  const queryClient = useQueryClient();
+
+  const listQuery = useQuery({
+    queryKey: queryKeys.marketplace.copyConfigurations(params),
+    queryFn: () => marketplaceApi.listCopyConfigurations(params),
+    staleTime: 30_000,
+  });
+
+  const create = useMutation({
+    mutationFn: (payload) => marketplaceApi.createCopyConfiguration(payload),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['marketplace', 'copy-configs'] }),
+  });
+
+  const activate = useMutation({
+    mutationFn: ({ configId, ...payload }) =>
+      marketplaceApi.activateCopyConfiguration(configId, payload),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['marketplace', 'copy-configs'] }),
+  });
+
+  const pause = useMutation({
+    mutationFn: ({ configId, ...payload }) =>
+      marketplaceApi.pauseCopyConfiguration(configId, payload),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['marketplace', 'copy-configs'] }),
+  });
+
+  const revoke = useMutation({
+    mutationFn: ({ configId, ...payload }) =>
+      marketplaceApi.revokeCopyConfiguration(configId, payload),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['marketplace', 'copy-configs'] }),
+  });
+
+  return {
+    configurations: listQuery.data?.items ?? [],
+    meta: listQuery.data?.meta ?? {},
+    isLoading: listQuery.isLoading,
+    createConfiguration: create.mutateAsync,
+    activateConfiguration: activate.mutateAsync,
+    pauseConfiguration: pause.mutateAsync,
+    revokeConfiguration: revoke.mutateAsync,
+  };
+}
+
+export function useCopyConfiguration(configId) {
+  const queryClient = useQueryClient();
+
+  const detailQuery = useQuery({
+    queryKey: queryKeys.marketplace.copyConfiguration(configId),
+    queryFn: () => marketplaceApi.getCopyConfiguration(configId),
+    enabled: Boolean(configId),
+    staleTime: 30_000,
+  });
+
+  const update = useMutation({
+    mutationFn: (payload) => marketplaceApi.updateCopyConfiguration(configId, payload),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.marketplace.copyConfiguration(configId),
+      }),
+  });
+
+  const validate = useMutation({
+    mutationFn: () => marketplaceApi.validateCopyConfiguration(configId),
+  });
+
+  return {
+    configuration: detailQuery.data ?? null,
+    isLoading: detailQuery.isLoading,
+    updateConfiguration: update.mutateAsync,
+    validateConfiguration: validate.mutateAsync,
+  };
+}

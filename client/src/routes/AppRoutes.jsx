@@ -1,0 +1,60 @@
+import { Suspense, lazy } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+
+import { AppLayout } from '../layouts/AppLayout.jsx';
+import { LoadingState } from '../components/ui/LoadingState.jsx';
+import { ROUTES } from '../config/routes.config.js';
+import { NotFoundRoute } from './NotFoundRoute.jsx';
+
+const Dashboard = lazy(() => import('../features/dashboard/DashboardOverview.jsx'));
+const Terminal = lazy(() => import('../features/terminal/TerminalOverview.jsx'));
+const Connections = lazy(() => import('../features/connections/ConnectionsOverview.jsx'));
+const Sync = lazy(() => import('../features/synchronization/SyncOverview.jsx'));
+const Risk = lazy(() => import('../features/risk/RiskOverview.jsx'));
+const Sources = lazy(() => import('../features/sources/SourcesOverview.jsx'));
+const Signals = lazy(() => import('../features/signals/SignalsOverview.jsx'));
+const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.jsx'));
+const Automation = lazy(() => import('../features/automation/WorkflowsOverview.jsx'));
+const Simulation = lazy(() => import('../features/simulation/Environments.jsx'));
+const Developer = lazy(() => import('../features/developer/ApplicationsOverview.jsx'));
+const Community = lazy(() => import('../features/community/Feed.jsx'));
+const Referral = lazy(() => import('../features/referral/ReferralDashboard.jsx'));
+const Billing = lazy(() => import('../features/billing/Plans.jsx'));
+const Support = lazy(() => import('../features/support/SupportCenter.jsx'));
+const Notifications = lazy(() => import('../features/notifications/NotificationCenter.jsx'));
+const Settings = lazy(() => import('../features/settings/ProfileSettings.jsx'));
+
+function Fallback({ children }) {
+  return <Suspense fallback={<LoadingState />}>{children}</Suspense>;
+}
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/app" element={<AppLayout />}>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route
+          path="dashboard"
+          element={<Fallback><Dashboard /></Fallback>}
+        />
+        <Route path="terminal/*" element={<Fallback><Terminal /></Fallback>} />
+        <Route path="connections/*" element={<Fallback><Connections /></Fallback>} />
+        <Route path="synchronization/*" element={<Fallback><Sync /></Fallback>} />
+        <Route path="risk/*" element={<Fallback><Risk /></Fallback>} />
+        <Route path="sources/*" element={<Fallback><Sources /></Fallback>} />
+        <Route path="signals/*" element={<Fallback><Signals /></Fallback>} />
+        <Route path="marketplace/*" element={<Fallback><Marketplace /></Fallback>} />
+        <Route path="automation/*" element={<Fallback><Automation /></Fallback>} />
+        <Route path="simulation/*" element={<Fallback><Simulation /></Fallback>} />
+        <Route path="developer/*" element={<Fallback><Developer /></Fallback>} />
+        <Route path="community/*" element={<Fallback><Community /></Fallback>} />
+        <Route path="referral/*" element={<Fallback><Referral /></Fallback>} />
+        <Route path="billing/*" element={<Fallback><Billing /></Fallback>} />
+        <Route path="support/*" element={<Fallback><Support /></Fallback>} />
+        <Route path="notifications/*" element={<Fallback><Notifications /></Fallback>} />
+        <Route path="settings/*" element={<Fallback><Settings /></Fallback>} />
+        <Route path="*" element={<NotFoundRoute />} />
+      </Route>
+    </Routes>
+  );
+}

@@ -1,0 +1,70 @@
+{
+  "name": "syncexc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SyncExc - Multi-exchange cryptocurrency trading synchronization and automation platform",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "shared",
+    "server",
+    "client",
+    "admin"
+  ],
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "install:all": "npm install",
+    "clean": "rm -rf node_modules */node_modules package-lock.json && npm cache clean --force",
+    "dev:client": "npm run dev --workspace=client",
+    "dev:admin": "npm run dev --workspace=admin",
+    "dev:server": "npm run dev --workspace=server",
+    "dev": "npm-run-all --parallel dev:server dev:client dev:admin",
+    "build:client": "npm run build --workspace=client",
+    "build:admin": "npm run build --workspace=admin",
+    "build:server": "npm run build --workspace=server",
+    "build": "npm run build --workspace=shared && npm run build --workspace=server && npm run build --workspace=client && npm run build --workspace=admin",
+    "lint": "eslint . --ext .js,.jsx --max-warnings 0",
+    "lint:fix": "eslint . --ext .js,.jsx --fix",
+    "format": "prettier --write \"**/*.{js,jsx,json,md,css,html}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,json,md,css,html}\"",
+    "test": "npm run test --workspaces --if-present",
+    "test:client": "npm run test --workspace=client",
+    "test:server": "npm run test --workspace=server",
+    "db:migrate": "npm run db:migrate --workspace=server",
+    "db:seed": "npm run db:seed --workspace=server",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^3.3.3",
+    "prettier-plugin-tailwindcss": "^0.6.8"
+  },
+  "lint-staged": {
+    "*.{js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css,html}": [
+      "prettier --write"
+    ]
+  },
+  "commitlint": {
+    "extends": ["@commitlint/config-conventional"]
+  },
+  "dependencies": {}
+}
