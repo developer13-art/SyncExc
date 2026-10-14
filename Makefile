@@ -1,93 +1,208 @@
-.PHONY: help install clean dev dev-client dev-admin dev-server build build-client build-admin build-server lint format test db-migrate db-seed docker-build docker-up docker-down
+# SyncExc — Development Makefile
+# Run `make help` to see all available commands.
 
-help:
-	@echo "SyncExc - Development Commands"
+SHELL := /bin/bash
+
+.DEFAULT_GOAL := help
+
+.PHONY: help
+help: ## Show this help message
+	@echo "SyncExc — available commands:"
 	@echo ""
-	@echo "  make install        Install all dependencies"
-	@echo "  make clean          Remove all build artifacts and node_modules"
-	@echo "  make dev            Start all services (server, client, admin)"
-	@echo "  make dev-client     Start client dev server"
-	@echo "  make dev-admin      Start admin dev server"
-	@echo "  make dev-server     Start server dev server"
-	@echo "  make build          Build all workspaces"
-	@echo "  make lint           Run eslint on all code"
-	@echo "  make format         Format all code with prettier"
-	@echo "  make test           Run all tests"
-	@echo "  make db-migrate     Run database migrations"
-	@echo "  make db-seed        Seed database with initial data"
-	@echo "  make docker-build   Build docker images"
-	@echo "  make docker-up      Start docker compose services"
-	@echo "  make docker-down    Stop docker compose services"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
 
-install:
+# -----------------------------------------------------------------------------
+# Setup
+# -----------------------------------------------------------------------------
+
+.PHONY: install
+install: ## Install all dependencies
 	npm install
 
-clean:
-	rm -rf node_modules */node_modules package-lock.json dist */dist
-
-dev:
-	npm run dev
-
-dev-client:
-	npm run dev --workspace=client
-
-dev-admin:
-	npm run dev --workspace=admin
-
-dev-server:
-	npm run dev --workspace=server
-
-build:
-	npm run build
-
-build-client:
-	npm run build --workspace=client
-
-build-admin:
-	npm run build --workspace=admin
-
-build-server:
-	npm run build --workspace=server
-
-lint:
-	npm run lint
-
-lint-fix:
-	npm run lint:fix
-
-format:
-	npm run format
-
-format-check:
-	npm run format:check
-
-test:
-	npm run test
-
-test-client:
-	npm run test --workspace=client
-
-test-server:
-	npm run test --workspace=server
-
-db-migrate:
+.PHONY: setup
+setup: install ## Full first-time setup
+	cp -n .env.example .env || true
+	docker-compose up -d postgres redis
+	sleep 3
 	npm run db:migrate
-
-db-seed:
 	npm run db:seed
 
-docker-build:
-	docker compose build
+.PHONY: clean
+clean: ## Remove all build artifacts and node_modules
+	npm run clean
 
-docker-up:
-	docker compose up -d
+# -----------------------------------------------------------------------------
+# Development
+# -----------------------------------------------------------------------------
 
-docker-down:
-	docker compose down
+.PHONY: dev
+dev: ## Start server + client in dev mode
+	npm run dev
 
-docker-logs:
-	docker compose logs -f
+.PHONY: dev-server
+dev-server: ## Start only the server
+	npm run dev:server
 
-setup: install
-	@cp -n .env.example .env || true
-	@echo "Setup complete. Edit .env with your credentials and run 'make dev'"
+.PHONY: dev-client
+dev-client: ## Start only the client
+	npm run dev:client
+
+.PHONY: dev-admin
+dev-admin: ## Start only the admin console
+	npm run dev:admin
+
+# -----------------------------------------------------------------------------
+# Build
+# -----------------------------------------------------------------------------
+
+.PHONY: build
+build: ## Build all workspaces
+	npm run build
+
+.PHONY: build-server
+build-server: ## Build only the server
+	npm run build:server
+
+.PHONY: build-client
+build-client: ## Build only the client
+	npm run build:client
+
+.PHONY: build-admin
+build-admin: ## Build only the admin console
+	npm run build:admin
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+
+.PHONY: migrate
+migrate: ## Run pending database migrations
+	npm run db:migrate
+
+.PHONY: seed
+seed: ## Seed the database with default data
+	npm run db:seed
+
+.PHONY: db-reset
+db-reset: ## Drop, recreate, migrate and seed the database (DEV ONLY)
+	npm run db:reset
+
+.PHONY: db-shell
+db-shell: ## Open a psql shell to the dev database
+	docker-compose exec postgres psql -U postgres -d syncexc
+
+# -----------------------------------------------------------------------------
+# Testing
+# -----------------------------------------------------------------------------
+
+.PHONY: test
+test: ## Run all tests
+	npm run test
+
+.PHONY: test-server
+test-server: ## Run server tests
+	npm run test:server
+
+.PHONY: test-client
+test-client: ## Run client tests
+	npm run test:client
+
+.PHONY: test-watch
+test-watch: ## Run tests in watch mode
+	npm run test -- --watch
+
+.PHONY: test-coverage
+test-coverage: ## Run tests with coverage
+	npm run test -- --coverage
+
+# -----------------------------------------------------------------------------
+# Lint & Format
+# -----------------------------------------------------------------------------
+
+.PHONY: lint
+lint: ## Lint all workspaces
+	npm run lint
+
+.PHONY: lint-fix
+lint-fix: ## Lint and auto-fix
+	npm run lint -- --fix
+
+.PHONY: format
+format: ## Format all files with Prettier
+	npm run format
+
+.PHONY: format-check
+format-check: ## Check formatting without writing
+	npm run format:check
+
+# -----------------------------------------------------------------------------
+# Docker
+# -----------------------------------------------------------------------------
+
+.PHONY: docker-up
+docker-up: ## Start all services in Docker
+	docker-compose up -d
+
+.PHONY: docker-down
+docker-down: ## Stop all services
+	docker-compose down
+
+.PHONY: docker-restart
+docker-restart: ## Restart all services
+	docker-compose restart
+
+.PHONY: docker-logs
+docker-logs: ## Tail Docker logs
+	docker-compose logs -f
+
+.PHONY: docker-logs-server
+docker-logs-server: ## Tail server logs only
+	docker-compose logs -f server
+
+.PHONY: docker-ps
+docker-ps: ## Show running containers
+	docker-compose ps
+
+.PHONY: docker-clean
+docker-clean: ## Remove all containers, volumes, and images
+	docker-compose down -v --rmi local
+
+# -----------------------------------------------------------------------------
+# Production
+# -----------------------------------------------------------------------------
+
+.PHONY: prod-build
+prod-build: ## Build production Docker images
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml build
+
+.PHONY: prod-up
+prod-up: ## Start production stack
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+.PHONY: prod-down
+prod-down: ## Stop production stack
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+# -----------------------------------------------------------------------------
+# Utility
+# -----------------------------------------------------------------------------
+
+.PHONY: generate-secret
+generate-secret: ## Generate a random secret (for JWT/SESSION keys)
+	@openssl rand -base64 48
+
+.PHONY: generate-encryption-key
+generate-encryption-key: ## Generate a 32-byte base64 encryption key
+	@openssl rand -base64 32
+
+.PHONY: check-env
+check-env: ## Verify .env file exists
+	@test -f .env && echo ".env exists" || (echo "Error: .env not found. Copy .env.example first." && exit 1)
+
+.PHONY: health
+health: ## Check server health endpoint
+	@curl -s http://localhost:4000/api/v1/health | jq . || echo "Server not responding"
+
+.PHONY: logs-clean
+logs-clean: ## Remove all log files
+	rm -rf logs server/logs

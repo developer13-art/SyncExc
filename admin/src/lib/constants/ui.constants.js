@@ -1,0 +1,87 @@
+export const STATUS_COLORS = Object.freeze({
+  active: 'success',
+  enabled: 'success',
+  healthy: 'success',
+  completed: 'success',
+  succeeded: 'success',
+  verified: 'success',
+  approved: 'success',
+  paid: 'success',
+  resolved: 'success',
+
+  pending: 'warning',
+  processing: 'warning',
+  validating: 'warning',
+  awaiting_approval: 'warning',
+  waiting_for_approval: 'warning',
+  partial: 'warning',
+  partially_succeeded: 'warning',
+  degraded: 'warning',
+  stale: 'warning',
+  review_required: 'warning',
+
+  failed: 'destructive',
+  error: 'destructive',
+  rejected: 'destructive',
+  blocked: 'destructive',
+  suspended: 'destructive',
+  revoked: 'destructive',
+  cancelled: 'destructive',
+  expired: 'destructive',
+  critical: 'destructive',
+  reconciliation_required: 'destructive',
+  dead_lettered: 'destructive',
+
+  inactive: 'muted',
+  archived: 'muted',
+  disabled: 'muted',
+  draft: 'muted',
+  paused: 'muted',
+  closed: 'muted',
+  retired: 'muted',
+  unknown: 'muted',
+});
+
+export const SEVERITY_COLORS = Object.freeze({
+  critical: 'destructive',
+  high: 'destructive',
+  warning: 'warning',
+  info: 'info',
+  low: 'muted',
+});
+
+export const PRIORITY_COLORS = Object.freeze({
+  urgent: 'destructive',
+  critical: 'destructive',
+  high: 'warning',
+  normal: 'info',
+  low: 'muted',
+});
+
+export const CHART_COLORS = Object.freeze([
+  'hsl(221, 83%, 53%)',
+  'hsl(142, 71%, 45%)',
+  'hsl(38, 92%, 50%)',
+  'hsl(0, 84%, 60%)',
+  'hsl(280, 65%, 60%)',
+  'hsl(199, 89%, 48%)',
+  'hsl(339, 82%, 59%)',
+  'hsl(173, 80%, 40%)',
+]);
+
+export const ICON_SIZES = Object.freeze({
+  xs: 12,
+  sm: 16,
+  md: 20,
+  lg: 24,
+  xl: 32,
+});
+
+export const AUDIT_OUTCOME_VARIANTS = Object.freeze({
+  success: 'success',
+  failure: 'destructive',
+  denied: 'destructive',
+  failed: 'destructive',
+  pending: 'warning',
+  recorded: 'muted',
+});

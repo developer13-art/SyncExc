@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 
 import { PublicRoutes } from './PublicRoutes.jsx';
 import { AuthRoutes } from './AuthRoutes.jsx';
-import { AppRoutes } from './AppRoutes.jsx';
+import { AppRoutes as AppSectionRoutes } from './AppRoutes.jsx';
 import { NotFoundRoute } from './NotFoundRoute.jsx';
 import { LoadingState } from '../components/ui/LoadingState.jsx';
 import { ROUTES } from '../config/routes.config.js';
@@ -46,7 +46,7 @@ export function AppRoutes() {
         />
       );
     }
-    return <AppRoutes />;
+    return <AppSectionRoutes />;
   }
 
   if (section === 'auth') {

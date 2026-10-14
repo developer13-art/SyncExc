@@ -1,35 +1,33 @@
 import axios from 'axios';
 
-import { apiConfig } from '../config/api.config.js';
-
 import {
-  attachAuthHeader,
-  attachCorrelationId,
-  attachIdempotencyKey,
-  handleRequestError,
-  handleResponseSuccess,
-  handleResponseError,
+  adminRequestInterceptor,
+  adminRequestErrorInterceptor,
+  adminResponseInterceptor,
+  adminResponseErrorInterceptor,
 } from './interceptors.js';
 
-export const axiosInstance = axios.create({
-  baseURL: apiConfig.baseURL,
-  timeout: apiConfig.timeoutMs,
-  headers: apiConfig.headers,
+const baseURL = import.meta.env.VITE_ADMIN_API_URL ?? 'http://localhost:4000/api/v1/admin';
+
+export const adminAxios = axios.create({
+  baseURL,
+  timeout: 30_000,
   withCredentials: true,
-  paramsSerializer: { indexes: null },
+  headers: {
+    Accept: 'application/json',
+    'X-Client-Name': 'syncexc-admin',
+    'X-Client-Version': '1.0.0',
+  },
 });
 
-axiosInstance.interceptors.request.use(
-  (config) => {
-    attachCorrelationId(config);
-    attachAuthHeader(config);
-    attachIdempotencyKey(config);
-    return config;
-  },
-  handleRequestError,
+adminAxios.interceptors.request.use(
+  adminRequestInterceptor,
+  adminRequestErrorInterceptor,
 );
-
-axiosInstance.interceptors.response.use(handleResponseSuccess, handleResponseError);
+adminAxios.interceptors.response.use(
+  adminResponseInterceptor,
+  adminResponseErrorInterceptor,
+);
 
 function unwrap(response) {
   if (response?.data && typeof response.data === 'object' && 'data' in response.data) {
@@ -49,33 +47,30 @@ function unwrapPaged(response) {
       meta: body.meta ?? body.data?.meta ?? {},
     };
   }
-  return {
-    items: Array.isArray(body.items) ? body.items : [],
-    meta: body.meta ?? {},
-  };
+  return { items: Array.isArray(body.items) ? body.items : [], meta: body.meta ?? {} };
 }
 
-export const api = {
+export const adminApi = {
   get(url, config = {}) {
-    return axiosInstance.get(url, config).then(unwrap);
+    return adminAxios.get(url, config).then(unwrap);
   },
   getPaged(url, config = {}) {
-    return axiosInstance.get(url, config).then(unwrapPaged);
+    return adminAxios.get(url, config).then(unwrapPaged);
   },
   post(url, data, config = {}) {
-    return axiosInstance.post(url, data, config).then(unwrap);
+    return adminAxios.post(url, data, config).then(unwrap);
   },
   put(url, data, config = {}) {
-    return axiosInstance.put(url, data, config).then(unwrap);
+    return adminAxios.put(url, data, config).then(unwrap);
   },
   patch(url, data, config = {}) {
-    return axiosInstance.patch(url, data, config).then(unwrap);
+    return adminAxios.patch(url, data, config).then(unwrap);
   },
   delete(url, config = {}) {
-    return axiosInstance.delete(url, config).then(unwrap);
+    return adminAxios.delete(url, config).then(unwrap);
   },
   upload(url, formData, config = {}) {
-    return axiosInstance
+    return adminAxios
       .post(url, formData, {
         ...config,
         headers: {
@@ -85,9 +80,6 @@ export const api = {
       })
       .then(unwrap);
   },
-  download(url, config = {}) {
-    return axiosInstance.get(url, { ...config, responseType: 'blob' });
-  },
 };
 
-export default api;
+export default adminApi;

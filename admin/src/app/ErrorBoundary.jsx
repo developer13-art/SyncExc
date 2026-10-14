@@ -24,6 +24,7 @@ export class ErrorBoundary extends Component {
       url: typeof window !== 'undefined' ? window.location.href : null,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
       timestamp: new Date().toISOString(),
+      context: 'admin-console',
     };
 
     if (import.meta.env.DEV) {
@@ -33,7 +34,7 @@ export class ErrorBoundary extends Component {
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(report));
     } catch {
-      // Session storage may be unavailable.
+      // Ignore storage failures.
     }
   }
 
@@ -43,6 +44,25 @@ export class ErrorBoundary extends Component {
 
   handleGoHome = () => {
     window.location.assign('/overview');
+  };
+
+  handleCopyReport = async () => {
+    const { error, errorInfo } = this.state;
+    const text = [
+      `Message: ${error?.message ?? 'Unknown error'}`,
+      '',
+      'Stack:',
+      error?.stack ?? '(no stack)',
+      '',
+      'Component stack:',
+      errorInfo?.componentStack ?? '(no component stack)',
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Ignore.
+    }
   };
 
   render() {
@@ -73,11 +93,11 @@ export class ErrorBoundary extends Component {
             </div>
             <div>
               <h1 className="text-xl font-semibold text-foreground">
-                Administrator console error
+                Something went wrong in the Administrator Console
               </h1>
               <p className="text-sm text-muted-foreground">
-                An unexpected error occurred while rendering this page. This event has been
-                logged locally and will not affect platform operations.
+                The console could not render this page. Administrative actions are recorded
+                even when the UI fails.
               </p>
             </div>
           </div>
@@ -96,14 +116,18 @@ export class ErrorBoundary extends Component {
           ) : null}
 
           <div className="flex flex-wrap gap-3">
-            <Button onClick={this.handleReload}>Reload page</Button>
+            <Button onClick={this.handleReload}>Reload console</Button>
             <Button variant="outline" onClick={this.handleGoHome}>
               Go to overview
+            </Button>
+            <Button variant="ghost" onClick={this.handleCopyReport}>
+              Copy error report
             </Button>
           </div>
 
           <p className="mt-6 text-xs text-muted-foreground">
-            If this problem persists, contact platform operations and include the error report.
+            If this problem persists, contact the platform engineering team and include the
+            error report and correlation ID.
           </p>
         </div>
       </div>
