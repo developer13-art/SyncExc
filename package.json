@@ -17,7 +17,7 @@
   },
   "scripts": {
     "install:all": "npm install",
-    "dev": "npm run dev --workspace=server & npm run dev --workspace=client",
+    "dev": "concurrently -k \"npm:dev:client\" \"npm:dev:admin\"",
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "dev:admin": "npm run dev --workspace=admin",
@@ -41,10 +41,11 @@
     "clean": "rm -rf node_modules shared/node_modules server/node_modules client/node_modules admin/node_modules shared/dist server/dist client/dist admin/dist"
   },
   "devDependencies": {
-    "prettier": "^3.2.5",
+    "concurrently": "^9.2.5",
     "eslint": "^8.57.0",
     "husky": "^9.0.11",
-    "lint-staged": "^15.2.2"
+    "lint-staged": "^15.2.2",
+    "prettier": "^3.2.5"
   },
   "lint-staged": {
     "*.{js,jsx}": [

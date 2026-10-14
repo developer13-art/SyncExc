@@ -1,6 +1,6 @@
 .light,
 :root {
-  --background: 0 0% 100%;
+  --background: 220 35% 98%;
   --foreground: 222 47% 11%;
 
   --card: 0 0% 100%;
@@ -9,22 +9,22 @@
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
 
-  --primary: 221 83% 53%;
+  --primary: 228 83% 60%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 210 40% 96%;
+  --secondary: 220 24% 96%;
   --secondary-foreground: 222 47% 11%;
 
-  --muted: 210 40% 96%;
+  --muted: 220 24% 96%;
   --muted-foreground: 215 16% 47%;
 
-  --accent: 210 40% 96%;
+  --accent: 220 28% 96%;
   --accent-foreground: 222 47% 11%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 142 71% 45%;
+  --success: 148 57% 48%;
   --success-foreground: 0 0% 100%;
 
   --warning: 38 92% 50%;
@@ -33,7 +33,12 @@
   --info: 199 89% 48%;
   --info-foreground: 0 0% 100%;
 
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 221 83% 53%;
+  --border: 220 22% 88%;
+  --input: 220 22% 88%;
+  --ring: 228 83% 60%;
+
+  --sidebar-bg: 222 36% 14%;
+  --sidebar-foreground: 220 20% 96%;
+  --sidebar-muted: 220 15% 68%;
+  --surface-alt: 220 18% 96%;
 }

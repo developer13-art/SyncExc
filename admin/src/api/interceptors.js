@@ -127,3 +127,8 @@ export function generateCorrelationId() {
     return v.toString(16);
   });
 }
+
+export const adminRequestInterceptor = attachAuthHeader;
+export const adminRequestErrorInterceptor = handleRequestError;
+export const adminResponseInterceptor = handleResponseSuccess;
+export const adminResponseErrorInterceptor = handleResponseError;

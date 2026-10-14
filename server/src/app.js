@@ -1,12 +1,12 @@
 /**
  * SyncExc Server — Express application factory
  *
- * Builds the Express app with:
+ * Builds the temporary health-only Express shell with:
  *   - security middleware (helmet, cors, compression)
  *   - request middleware (id, logger, parser, cookies)
  *   - request context (correlation ID)
- *   - API routes (mounted under /api/v1)
- *   - health and metrics endpoints
+ *   - liveness and readiness endpoints
+ *   - an explicit unavailable response for API routes
  *   - 404 and error handlers
  */
 
@@ -15,12 +15,14 @@ import config from './config.js';
 import { applySecurityMiddleware } from './middleware/security.js';
 import { applyRequestMiddleware } from './middleware/request.js';
 import { applyContextMiddleware } from './middleware/context.js';
-import { applyRateLimitMiddleware } from './middleware/rate-limit.js';
 import { applyErrorMiddleware } from './middleware/error.js';
-import { mountRoutes } from './routes/index.js';
 import { createLogger } from './lib/logger.js';
+import { errorResponse, success } from './lib/response.js';
 
-export function buildApp({ services }) {
+const API_UNAVAILABLE_MESSAGE =
+  'Backend services are not initialized; API routes are unavailable.';
+
+export function buildApp({ services = {} } = {}) {
   const logger = createLogger({ component: 'app' });
   const app = express();
 
@@ -30,9 +32,25 @@ export function buildApp({ services }) {
   applySecurityMiddleware(app);
   applyRequestMiddleware(app);
   applyContextMiddleware(app, services);
-  applyRateLimitMiddleware(app, services);
 
-  app.use(config.server.apiPrefix, mountRoutes({ services }));
+  const livenessHandler = (_req, res) =>
+    success(res, { status: 'ok', api: 'unavailable' });
+  app.get(['/health', '/health/live'], livenessHandler);
+  app.get('/health/ready', (_req, res) =>
+    errorResponse(res, {
+      code: 'NOT_READY',
+      message: API_UNAVAILABLE_MESSAGE,
+      status: 503,
+    })
+  );
+
+  app.use(config.server.apiPrefix, (_req, res) =>
+    errorResponse(res, {
+      code: 'API_UNAVAILABLE',
+      message: API_UNAVAILABLE_MESSAGE,
+      status: 503,
+    })
+  );
 
   applyErrorMiddleware(app, logger);
 

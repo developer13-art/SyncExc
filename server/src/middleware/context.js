@@ -13,8 +13,6 @@
  * routes are public.
  */
 
-import { getCorrelation } from '../lib/correlation.js';
-
 export function applyContextMiddleware(app, services) {
   app.use((req, res, next) => {
     // Correlation context

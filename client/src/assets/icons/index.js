@@ -15,3 +15,4 @@ export { default as CommunityIcon } from './svg/community.svg?react';
 export { default as SupportIcon } from './svg/support.svg?react';
 export { default as SettingsIcon } from './svg/settings.svg?react';
 export { default as NotificationsIcon } from './svg/notifications.svg?react';
+export { default as BillingIcon } from './svg/referral.svg?react';

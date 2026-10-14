@@ -11,8 +11,17 @@ import { store } from './app/store.js';
 import { queryClient } from './app/queryClient.js';
 import { AppProviders } from './app/providers.jsx';
 import { ErrorBoundary } from './app/ErrorBoundary.jsx';
+import {
+  ensureDemoCredentials,
+  seedDemoAuthSession,
+} from './lib/utils/storage.util.js';
 
 import './index.css';
+
+ensureDemoCredentials();
+if (import.meta.env.DEV) {
+  seedDemoAuthSession();
+}
 
 const rootElement = document.getElementById('root');
 

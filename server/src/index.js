@@ -3,16 +3,14 @@
  *
  * 1. Loads configuration (exits on failure).
  * 2. Initializes logger.
- * 3. Runs bootstrap: DB, Redis, events, jobs, WebSocket.
- * 4. Starts the HTTP server.
- * 5. Wires SIGTERM/SIGINT for graceful shutdown.
+ * 3. Starts the health-only HTTP shell.
+ * 4. Wires SIGTERM/SIGINT for graceful shutdown.
  */
 
 import http from 'node:http';
 import config from './config.js';
 import { createLogger } from './lib/logger.js';
 import { buildApp } from './app.js';
-import { bootstrap } from './bootstrap.js';
 import { gracefulShutdown } from './lib/shutdown.js';
 
 const logger = createLogger({ component: 'server' });
@@ -23,14 +21,9 @@ async function main() {
     'Starting SyncExc server'
   );
 
-  const services = await bootstrap();
-  logger.info('Bootstrap complete');
-
+  const services = {};
   const app = buildApp({ services });
   const server = http.createServer(app);
-
-  // Attach WebSocket server to the same HTTP server
-  services.realtime.attach(server);
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);

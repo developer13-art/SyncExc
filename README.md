@@ -106,42 +106,28 @@ git clone <repository-url>
 cd syncexc
 cp .env.example .env
 npm install
-2. Configure environment
-Edit .env and set at minimum:
+2. Start the client and admin
+```bash
+npm run dev
+```
+This starts the client on http://localhost:5173 and the admin console on
+http://localhost:5174. The server, database, Redis, and server environment
+variables are not needed to start these frontends. Features that call the API
+will not work until the server is running.
 
-DATABASE_URL
+### Starting the server
 
-REDIS_URL
+The current server configuration requires `DATABASE_URL`, `REDIS_URL`,
+`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `SESSION_SECRET`, and
+`ENCRYPTION_MASTER_KEY` in `.env`. `REDIS_URL` is required by the server's
+environment validation; it is not needed by the client or admin dev servers.
 
-JWT_ACCESS_SECRET
-
-JWT_REFRESH_SECRET
-
-SESSION_SECRET
-
-ENCRYPTION_MASTER_KEY (generate with openssl rand -base64 32)
-
-3. Start infrastructure
-bash
+```bash
 docker-compose up -d postgres redis
-Or start the full stack:
-
-bash
-docker-compose up -d
-4. Run migrations and seed
-bash
 npm run db:migrate
 npm run db:seed
-5. Start development servers
-bash
-npm run dev
-This starts:
-
-Server on http://localhost:4000
-
-Client on http://localhost:5173
-
-Admin on http://localhost:5174 (run separately with npm run dev:admin)
+npm run dev:server
+```
 
 Development
 Workspace Commands

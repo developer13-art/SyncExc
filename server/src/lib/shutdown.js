@@ -43,53 +43,24 @@ export function gracefulShutdown({ server, services, logger }) {
         server.closeIdleConnections?.();
       });
 
-      logger.info('Stopping WebSocket server');
-      try {
-        await services.realtime.shutdown();
-      } catch (err) {
-        logger.error({ err }, 'WebSocket shutdown error');
-      }
+      const shutdownSteps = [
+        ['Stopping WebSocket server', services.realtime, 'shutdown'],
+        ['Stopping source listeners', services.sourceListeners, 'shutdown'],
+        ['Stopping exchange streams', services.exchangeStreams, 'shutdown'],
+        ['Stopping job runner', services.jobs, 'shutdown'],
+        ['Closing event bus', services.events, 'shutdown'],
+        ['Closing database pool', services.db, 'close'],
+        ['Closing Redis', services.redis, 'quit'],
+      ];
 
-      logger.info('Stopping source listeners');
-      try {
-        await services.sourceListeners.shutdown();
-      } catch (err) {
-        logger.error({ err }, 'Source listener shutdown error');
-      }
-
-      logger.info('Stopping exchange streams');
-      try {
-        await services.exchangeStreams.shutdown();
-      } catch (err) {
-        logger.error({ err }, 'Exchange stream shutdown error');
-      }
-
-      logger.info('Stopping job runner');
-      try {
-        await services.jobs.shutdown();
-      } catch (err) {
-        logger.error({ err }, 'Job runner shutdown error');
-      }
-
-      logger.info('Closing event bus');
-      try {
-        await services.events.shutdown();
-      } catch (err) {
-        logger.error({ err }, 'Event bus shutdown error');
-      }
-
-      logger.info('Closing database pool');
-      try {
-        await services.db.close();
-      } catch (err) {
-        logger.error({ err }, 'Database shutdown error');
-      }
-
-      logger.info('Closing Redis');
-      try {
-        await services.redis.quit();
-      } catch (err) {
-        logger.error({ err }, 'Redis shutdown error');
+      for (const [message, service, method] of shutdownSteps) {
+        if (typeof service?.[method] !== 'function') continue;
+        logger.info(message);
+        try {
+          await service[method]();
+        } catch (err) {
+          logger.error({ err }, `${message} error`);
+        }
       }
 
       clearTimeout(timeout);

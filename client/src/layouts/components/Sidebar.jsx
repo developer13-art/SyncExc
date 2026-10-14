@@ -47,18 +47,16 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'flex h-screen flex-col border-r border-border bg-background transition-all',
+        'flex h-screen flex-col border-r border-slate-200 bg-slate-950 text-slate-100 transition-all',
         collapsed ? 'w-16' : 'w-60',
       )}
     >
       <div className={cn('flex items-center gap-2 px-3 py-4', collapsed && 'justify-center')}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-white shadow-sm shadow-blue-500/30">
           <Icons.LogoIcon className="h-5 w-5" />
         </div>
         {!collapsed ? (
-          <span className="text-base font-semibold tracking-tight text-foreground">
-            SyncExc
-          </span>
+          <span className="text-base font-semibold tracking-tight text-slate-100">SyncExc</span>
         ) : null}
       </div>
 
@@ -70,7 +68,7 @@ export function Sidebar() {
         {NAV_SECTIONS.map((section) => (
           <div key={section.id} className="mb-4">
             {!collapsed ? (
-              <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                 {section.label}
               </p>
             ) : null}
@@ -86,8 +84,8 @@ export function Sidebar() {
                         'flex items-center gap-3 rounded-md px-2 py-1.5 text-sm font-medium transition',
                         collapsed && 'justify-center px-2',
                         active
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                          ? 'bg-white/10 text-white shadow-sm ring-1 ring-white/10'
+                          : 'text-slate-300 hover:bg-white/5 hover:text-white',
                       )}
                     >
                       <IconByName name={item.icon} className="h-4 w-4 shrink-0" />
@@ -101,12 +99,12 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-border p-2">
+      <div className="border-t border-slate-800 p-2">
         <button
           type="button"
           onClick={() => dispatch(uiActions.toggleSidebar())}
           className={cn(
-            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground',
+            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-slate-300 transition hover:bg-white/5 hover:text-white',
             collapsed && 'justify-center',
           )}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}

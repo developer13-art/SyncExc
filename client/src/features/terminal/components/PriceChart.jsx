@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import {
-  CandlestickChart as RechartsCandlestickChart,
+  ComposedChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -10,7 +10,8 @@ import {
 } from 'recharts';
 
 import { ChartContainer } from '../../../components/charts/ChartContainer.jsx';
-import { formatPrice, formatQuantity } from '../../../lib/formatters/currency.formatter.js';
+import { formatPrice } from '../../../lib/formatters/currency.formatter.js';
+import { formatQuantity } from '../../../lib/formatters/number.formatter.js';
 
 function CandleShape(props) {
   const { x, y, width, height, low, high, open, close } = props;
@@ -63,7 +64,7 @@ export function PriceChart({ candles = [], isLoading, error, onRetry, height = 3
       className={className}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <RechartsCandlestickChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
           <XAxis dataKey="x" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
           <YAxis
@@ -100,7 +101,7 @@ export function PriceChart({ candles = [], isLoading, error, onRetry, height = 3
             }}
           />
           <Bar dataKey="range" shape={<CandleShape />} isAnimationActive={false} />
-        </RechartsCandlestickChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </ChartContainer>
   );

@@ -198,3 +198,5 @@ export function getFieldErrors(error) {
   }
   return {};
 }
+
+export { ApiError as AdminApiError, isApiError as isAdminApiError };
