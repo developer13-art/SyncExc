@@ -2,6 +2,7 @@
 @import './styles/globals.css';
 @import './styles/animations.css';
 @import './styles/themes/light.css';
+@import './styles/themes/dark.css';
 
 @tailwind base;
 @tailwind components;

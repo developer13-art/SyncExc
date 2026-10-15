@@ -10,7 +10,7 @@ function applyThemeClass(theme) {
   root.classList.add(theme);
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (metaTheme) {
-    metaTheme.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#ffffff');
+    metaTheme.setAttribute('content', theme === 'dark' ? '#0d1020' : '#ffffff');
   }
 }
 

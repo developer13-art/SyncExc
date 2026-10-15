@@ -6,7 +6,7 @@ const ThemeContext = createContext(null);
 
 function getSystemPreference() {
   if (typeof window === 'undefined' || !window.matchMedia) {
-    return 'light';
+    return 'dark';
   }
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
@@ -17,11 +17,11 @@ function applyThemeClass(theme) {
   root.classList.add(theme);
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (metaTheme) {
-    metaTheme.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#ffffff');
+    metaTheme.setAttribute('content', theme === 'dark' ? '#0d1020' : '#ffffff');
   }
 }
 
-export function ThemeProvider({ children, defaultTheme = 'light' }) {
+export function ThemeProvider({ children, defaultTheme = 'dark' }) {
   const [theme, setThemeState] = useState(() => {
     const stored = storage.get(STORAGE_KEYS.THEME, null, { parse: false });
     return stored ?? defaultTheme;

@@ -53,6 +53,34 @@
   }
 }
 
+@keyframes market-flow {
+  to {
+    stroke-dashoffset: -1;
+  }
+}
+
+@keyframes market-candle {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 0.82;
+  }
+}
+
+@keyframes market-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    r: 4;
+  }
+  50% {
+    opacity: 1;
+    r: 8;
+  }
+}
+
 .animate-slide-up {
   animation: slide-up 0.2s ease-out;
 }

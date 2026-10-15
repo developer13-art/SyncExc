@@ -68,7 +68,7 @@ export const STORAGE_KEYS = Object.freeze({
   AUTH_TOKEN: 'syncexc:auth-token',
   AUTH_USER: 'syncexc:auth-user',
   ACTIVE_WORKSPACE: 'syncexc:active-workspace',
-  THEME: 'syncexc:theme',
+  THEME: 'syncexc:theme:v2',
   SIDEBAR_COLLAPSED: 'syncexc:sidebar-collapsed',
   DENSITY: 'syncexc:density',
   LAST_ROUTE: 'syncexc:last-route',

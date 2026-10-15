@@ -67,7 +67,7 @@ export const storage = {
 export const STORAGE_KEYS = Object.freeze({
   AUTH_TOKEN: 'syncexc:admin:auth-token',
   AUTH_ADMIN: 'syncexc:admin:auth-admin',
-  THEME: 'syncexc:admin:theme',
+  THEME: 'syncexc:admin:theme:v2',
   SIDEBAR_COLLAPSED: 'syncexc:admin:sidebar-collapsed',
   LAST_ROUTE: 'syncexc:admin:last-route',
   SAVED_VIEWS: 'syncexc:admin:saved-views',

@@ -1,0 +1,35 @@
+.dark {
+  color-scheme: dark;
+
+  --background: 230 37% 8%;
+  --foreground: 220 25% 94%;
+
+  --card: 229 31% 12%;
+  --card-foreground: 220 25% 94%;
+  --popover: 229 31% 12%;
+  --popover-foreground: 220 25% 94%;
+
+  --primary: 275 91% 68%;
+  --primary-foreground: 230 37% 8%;
+
+  --secondary: 185 82% 52%;
+  --secondary-foreground: 230 37% 8%;
+
+  --muted: 229 26% 17%;
+  --muted-foreground: 220 13% 65%;
+  --accent: 231 28% 19%;
+  --accent-foreground: 220 25% 94%;
+
+  --destructive: 0 76% 62%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 158 62% 48%;
+  --success-foreground: 230 37% 8%;
+  --warning: 39 92% 58%;
+  --warning-foreground: 230 37% 8%;
+  --info: 192 85% 55%;
+  --info-foreground: 230 37% 8%;
+
+  --border: 226 25% 22%;
+  --input: 226 25% 22%;
+  --ring: 275 91% 68%;
+}

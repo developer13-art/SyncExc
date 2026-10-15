@@ -16,7 +16,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { PlanPriceEditor } from './PlanPriceEditor.jsx';
 import { adminUiActions } from '../../app/slices/adminUiSlice.js';
 import { plansApi } from '../../api/index.js';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query.js';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../lib/errors.js';
 

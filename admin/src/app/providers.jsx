@@ -5,7 +5,7 @@ import { AuthProvider } from '../context/AuthContext.jsx';
 
 export function AppProviders({ children }) {
   return (
-    <ThemeProvider defaultTheme="light">
+    <ThemeProvider defaultTheme="dark">
       <AuthProvider>
         <TooltipProvider delayDuration={200} skipDelayDuration={300}>
           {children}

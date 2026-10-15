@@ -13,7 +13,7 @@ export function Topbar({ className }) {
   return (
     <header
       className={cn(
-        'sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white/85 px-4 backdrop-blur md:px-6',
+        'client-topbar sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/85 px-4 backdrop-blur md:px-6',
         className,
       )}
     >
@@ -27,14 +27,14 @@ export function Topbar({ className }) {
             'hidden items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-2xs font-medium md:inline-flex',
             wsConnected
               ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
-              : 'border-slate-200 bg-slate-100 text-slate-500',
+              : 'border-border bg-muted text-muted-foreground',
           )}
           title={wsConnected ? 'Realtime connected' : 'Realtime disconnected'}
         >
           <span
             className={cn(
               'h-1.5 w-1.5 rounded-full',
-              wsConnected ? 'bg-emerald-500 animate-pulse-subtle' : 'bg-slate-400',
+              wsConnected ? 'bg-emerald-500 animate-pulse-subtle' : 'bg-muted-foreground',
             )}
           />
           {wsConnected ? 'Live' : 'Offline'}

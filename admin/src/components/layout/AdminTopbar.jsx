@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { Command, LogOut, ShieldAlert, User } from 'lucide-react';
+import { Command, LogOut, Search, ShieldAlert, User } from 'lucide-react';
 
 import { IconButton } from '../ui/IconButton.jsx';
 import { Badge } from '../ui/Badge.jsx';
@@ -52,7 +52,7 @@ export function AdminTopbar() {
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/85 px-4 backdrop-blur md:px-6">
+    <header className="admin-topbar sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/85 px-4 backdrop-blur md:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <ConsoleBreadcrumbs className="min-w-0" />
       </div>
@@ -62,11 +62,11 @@ export function AdminTopbar() {
           type="button"
           onClick={() => dispatch(uiActions.openCommandPalette())}
           className={cn(
-            'hidden items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground md:inline-flex',
+            'admin-search-button hidden items-center gap-2 rounded-lg border border-border bg-card/80 px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground md:inline-flex',
             commandPaletteOpen && 'border-primary text-primary',
           )}
         >
-          <Command className="h-3 w-3" />
+          <Search className="h-3.5 w-3.5" />
           <span>Search or jump</span>
           <span className="ml-2 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
             ⌘K
@@ -88,7 +88,7 @@ export function AdminTopbar() {
               )}
               aria-label="Account menu"
             >
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-2xs font-semibold text-muted-foreground">
+              <div className="admin-avatar flex h-7 w-7 items-center justify-center rounded-full bg-muted text-2xs font-semibold text-muted-foreground">
                 {initials}
               </div>
               <span className="hidden max-w-[10rem] truncate text-xs font-medium text-foreground md:inline">

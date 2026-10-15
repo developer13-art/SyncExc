@@ -15,6 +15,13 @@
     overflow-x: hidden;
   }
 
+  .dark body {
+    background-image:
+      radial-gradient(ellipse at 82% 0%, hsl(var(--primary) / 0.1), transparent 36rem),
+      radial-gradient(ellipse at 5% 92%, hsl(var(--secondary) / 0.06), transparent 34rem);
+    background-attachment: fixed;
+  }
+
   h1,
   h2,
   h3,
@@ -66,6 +73,48 @@
   .admin-console-pattern {
     background-image: radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px);
     background-size: 24px 24px;
+  }
+
+  .admin-console-shell {
+    background:
+      radial-gradient(ellipse at 82% 0%, hsl(var(--primary) / 0.08), transparent 34rem),
+      hsl(var(--background));
+  }
+
+  .admin-sidebar {
+    background: hsl(var(--background) / 0.92);
+    box-shadow: 12px 0 40px hsl(230 50% 3% / 0.12);
+  }
+
+  .admin-brand-mark {
+    background: linear-gradient(140deg, hsl(var(--primary)), hsl(var(--secondary)));
+    box-shadow: 0 0 22px hsl(var(--primary) / 0.26);
+  }
+
+  .admin-nav-link {
+    position: relative;
+  }
+
+  .admin-nav-link[aria-current='page'] {
+    background: linear-gradient(100deg, hsl(var(--primary) / 0.2), hsl(var(--secondary) / 0.08));
+    color: hsl(var(--foreground));
+    box-shadow: inset 2px 0 hsl(var(--primary));
+  }
+
+  .admin-topbar {
+    background: hsl(var(--background) / 0.78);
+  }
+
+  .admin-avatar {
+    background: linear-gradient(145deg, hsl(var(--primary) / 0.3), hsl(var(--secondary) / 0.18));
+    color: hsl(var(--foreground));
+  }
+
+  .metric-tile {
+    background:
+      linear-gradient(145deg, hsl(var(--primary) / 0.055), transparent 62%),
+      hsl(var(--card) / 0.94);
+    box-shadow: 0 12px 32px hsl(230 50% 3% / 0.15);
   }
 }
 

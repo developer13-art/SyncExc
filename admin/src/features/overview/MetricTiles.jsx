@@ -1,3 +1,5 @@
+import { Building2, CreditCard, Radio, Users } from 'lucide-react';
+
 import { Skeleton } from '../../components/ui/Skeleton.jsx';
 import { StatCard } from '../../components/ui/StatCard.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
@@ -30,6 +32,8 @@ export function MetricTiles({ metrics, isLoading, error }) {
     {
       label: 'Active users',
       value: metrics.activeUsers?.toLocaleString() ?? '—',
+      icon: Users,
+      iconClassName: 'bg-primary/10 text-primary',
       hint:
         metrics.newUsersToday !== undefined
           ? `${metrics.newUsersToday.toLocaleString()} new today`
@@ -42,6 +46,8 @@ export function MetricTiles({ metrics, isLoading, error }) {
     {
       label: 'Active subscriptions',
       value: metrics.activeSubscriptions?.toLocaleString() ?? '—',
+      icon: CreditCard,
+      iconClassName: 'bg-secondary/10 text-secondary',
       hint:
         metrics.trialingSubscriptions !== undefined
           ? `${metrics.trialingSubscriptions} trialing`
@@ -55,6 +61,8 @@ export function MetricTiles({ metrics, isLoading, error }) {
     {
       label: 'Workspace count',
       value: metrics.workspaceCount?.toLocaleString() ?? '—',
+      icon: Building2,
+      iconClassName: 'bg-info/10 text-info',
       hint:
         metrics.organizationWorkspaceCount !== undefined
           ? `${metrics.organizationWorkspaceCount} organization`
@@ -64,6 +72,8 @@ export function MetricTiles({ metrics, isLoading, error }) {
     {
       label: 'Connected exchanges',
       value: metrics.connectedExchangeCount?.toLocaleString() ?? '—',
+      icon: Radio,
+      iconClassName: 'bg-success/10 text-success',
       hint:
         metrics.degradedConnectionCount !== undefined
           ? `${metrics.degradedConnectionCount} degraded`
@@ -80,6 +90,8 @@ export function MetricTiles({ metrics, isLoading, error }) {
           key={card.label}
           label={card.label}
           value={card.value}
+          icon={card.icon}
+          iconClassName={card.iconClassName}
           hint={card.hint}
           tone={card.tone}
           trend={

@@ -18,7 +18,7 @@ export function StatCard({
   };
 
   return (
-    <div className={cn('rounded-lg border border-border bg-card p-5 shadow-sm', className)}>
+    <div className={cn('client-card rounded-xl border border-border bg-card p-5 shadow-sm', className)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -30,7 +30,7 @@ export function StatCard({
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
         {Icon ? (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Icon className="h-4 w-4" />
           </div>
         ) : null}

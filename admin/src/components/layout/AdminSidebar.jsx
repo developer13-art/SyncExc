@@ -61,7 +61,7 @@ export function AdminSidebar() {
   return (
     <aside
       className={cn(
-        'sticky top-0 flex h-screen flex-col border-r border-border bg-background transition-all',
+        'admin-sidebar sticky top-0 flex h-screen flex-col border-r border-border bg-background transition-all',
         collapsed ? 'w-16' : 'w-64',
       )}
     >
@@ -71,7 +71,7 @@ export function AdminSidebar() {
           collapsed && 'justify-center px-0',
         )}
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary">
+        <div className="admin-brand-mark flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
           <ShieldCheck className="h-5 w-5 text-primary-foreground" />
         </div>
         {!collapsed ? (
@@ -79,8 +79,8 @@ export function AdminSidebar() {
             <p className="truncate text-sm font-semibold leading-tight text-foreground">
               SyncExc Admin
             </p>
-            <p className="truncate text-2xs text-muted-foreground">
-              Administrator Console
+            <p className="truncate text-2xs uppercase tracking-[0.12em] text-muted-foreground">
+              Admin Console
             </p>
           </div>
         ) : null}
@@ -90,7 +90,7 @@ export function AdminSidebar() {
         {ADMIN_NAV_SECTIONS.map((section) => (
           <div key={section.id} className="mb-4 last:mb-0">
             {!collapsed ? (
-              <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="mb-2 px-2 text-2xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 {section.label}
               </p>
             ) : null}
@@ -103,7 +103,7 @@ export function AdminSidebar() {
                       to={item.path}
                       title={collapsed ? item.label : undefined}
                       className={cn(
-                        'flex items-center gap-3 rounded-md px-2 py-1.5 text-sm font-medium transition',
+                        'admin-nav-link flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition',
                         collapsed && 'justify-center px-2',
                         active
                           ? 'bg-primary/10 text-primary'

@@ -7,7 +7,7 @@ import { NotificationProvider } from '../context/NotificationContext.jsx';
 
 export function AppProviders({ children }) {
   return (
-    <ThemeProvider defaultTheme="light">
+    <ThemeProvider defaultTheme="dark">
       <AuthProvider>
         <WorkspaceProvider>
           <NotificationProvider>

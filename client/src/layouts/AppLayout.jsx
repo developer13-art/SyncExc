@@ -16,14 +16,14 @@ export function AppLayout() {
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen bg-slate-100 text-slate-900">
+    <div className="client-app-shell flex min-h-screen bg-background text-foreground">
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col bg-slate-100">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
         <main
           data-app-main
           className={cn(
-            'flex-1 overflow-y-auto scrollbar-thin bg-slate-100 px-4 py-6 md:px-6 lg:px-8',
+            'client-app-main flex-1 overflow-y-auto scrollbar-thin px-4 py-6 md:px-6 lg:px-8',
           )}
         >
           <div className="mx-auto w-full max-w-[1600px]">

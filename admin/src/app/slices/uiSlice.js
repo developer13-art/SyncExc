@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-const THEME_STORAGE_KEY = 'syncexc:admin:theme';
+const THEME_STORAGE_KEY = 'syncexc:admin:theme:v2';
 const SIDEBAR_STORAGE_KEY = 'syncexc:admin:sidebar-collapsed';
 
 function readStoredValue(key, fallback) {
@@ -21,7 +21,7 @@ function writeStoredValue(key, value) {
 }
 
 const initialState = {
-  theme: readStoredValue(THEME_STORAGE_KEY, 'light'),
+  theme: readStoredValue(THEME_STORAGE_KEY, 'dark'),
   sidebarCollapsed: readStoredValue(SIDEBAR_STORAGE_KEY, 'false') === 'true',
   activeModal: null,
   pageTitle: null,

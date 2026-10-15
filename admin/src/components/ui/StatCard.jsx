@@ -1,6 +1,15 @@
 import { cn } from '../../lib/utils/cn.util.js';
 
-export function StatCard({ label, value, hint, icon: Icon, trend, tone, className }) {
+export function StatCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  trend,
+  tone,
+  className,
+  iconClassName,
+}) {
   const toneClasses = {
     default: 'text-foreground',
     success: 'text-success',
@@ -12,7 +21,7 @@ export function StatCard({ label, value, hint, icon: Icon, trend, tone, classNam
   return (
     <div
       className={cn(
-        'rounded-lg border border-border bg-card p-5 shadow-sm',
+        'metric-tile relative overflow-hidden rounded-xl border border-border bg-card p-5 shadow-sm',
         className,
       )}
     >
@@ -32,7 +41,12 @@ export function StatCard({ label, value, hint, icon: Icon, trend, tone, classNam
           {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
         </div>
         {Icon ? (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <div
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary',
+              iconClassName,
+            )}
+          >
             <Icon className="h-4 w-4" />
           </div>
         ) : null}
