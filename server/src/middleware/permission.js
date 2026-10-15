@@ -180,6 +180,38 @@ export function requireRole(...roles) {
   };
 }
 
+export function requireAdmin() {
+  return async function requireAdminMiddleware(req, _res, next) {
+    if (!req.auth?.isAuthenticated) {
+      return next(new AuthorizationError('Authentication required'));
+    }
+
+    try {
+      const access = await req.services.admin.permission.getEffectivePermissions(
+        req.auth.userId,
+      );
+      if (access.roles.length === 0) {
+        throw new AuthorizationError('Administrator access required', 'ADMIN_REQUIRED');
+      }
+      req.admin = access;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+export function requireAdminPermission(permission) {
+  return async function requireAdminPermissionMiddleware(req, _res, next) {
+    try {
+      await req.services.admin.permission.require(req.auth.userId, permission);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
 /* =============================================================================
  * ENTITLEMENTS
  * ========================================================================== */
@@ -272,6 +304,8 @@ export default {
   requireAnyPermission,
   requireAllPermissions,
   requireRole,
+  requireAdmin,
+  requireAdminPermission,
   requireEntitlement,
   requireFeatureFlag,
   requireSelf,

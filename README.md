@@ -45,7 +45,7 @@ SyncExc is a Node.js monorepo with four workspaces:
 | Workspace | Purpose | Stack |
 |-----------|---------|-------|
 | `shared/` | Constants, schemas, validators, utilities shared by all workspaces | Node.js ESM |
-| `server/` | REST API, WebSocket gateway, background workers, database | Node.js, Express, PostgreSQL, Redis |
+| `server/` | REST API, WebSocket gateway, background workers, database | Node.js, Express, PostgreSQL |
 | `client/` | User-facing web application | React, Vite, TailwindCSS |
 | `admin/` | Administrator console | React, Vite, TailwindCSS |
 
@@ -94,7 +94,6 @@ SyncExc implements 18 product modules:
 - **Node.js** >= 20.11.0
 - **npm** >= 10.2.0
 - **PostgreSQL** >= 15
-- **Redis** >= 7
 - **Docker** and **Docker Compose** (for local development)
 
 ## Getting Started
@@ -106,7 +105,10 @@ git clone <repository-url>
 cd syncexc
 cp .env.example .env
 npm install
-2. Start PostgreSQL and Redis, configure the required server environment
+
+```
+
+### 2. Start PostgreSQL and configure the required server environment
 variables in `.env`, then start the full application:
 
 ```bash
@@ -114,9 +116,11 @@ npm run dev
 ```
 
 This starts the API server on port 4000, the client on port 5173, and the admin
-console on port 5174. The server requires PostgreSQL, Redis, and the environment
-variables validated in `server/src/config.js`. To start just one application,
-use `npm run dev:server`, `npm run dev:client`, or `npm run dev:admin`.
+console on port 5174. The server requires PostgreSQL and the environment
+variables validated in `server/src/config.js`. Rate limits are kept in process
+memory and are not shared between multiple server instances. To start one
+application, use `npm run dev:server`, `npm run dev:client`, or
+`npm run dev:admin`.
 
 Development
 Workspace Commands
@@ -153,8 +157,6 @@ Server: Kubernetes (containerized Node.js)
 Client/Admin: Static hosting behind CDN
 
 Database: Managed PostgreSQL
-
-Redis: Managed Redis
 
 Storage: S3-compatible object storage
 
@@ -206,23 +208,6 @@ services:
     networks:
       - syncexc
 
-  redis:
-    image: redis:7-alpine
-    container_name: syncexc-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ""
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - syncexc
-
   server:
     build:
       context: .
@@ -235,7 +220,6 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/syncexc
-      REDIS_URL: redis://redis:6379
     ports:
       - "4000:4000"
     volumes:
@@ -245,8 +229,6 @@ services:
       - shared_node_modules:/app/shared/node_modules
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - syncexc
@@ -295,8 +277,6 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
   server_node_modules:
     driver: local

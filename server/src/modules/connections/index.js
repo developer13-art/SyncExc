@@ -35,12 +35,15 @@ export function createConnectionsModule({ services }) {
   const queries = createConnectionsQueries({ db: services.db });
   const credentialVault = createCredentialVault({ logger });
   const adapterRegistry = createAdapterRegistry({ logger, config: services.config });
-  const rateLimitCoordinator = createRateLimitCoordinator({ db: services.db, redis: services.redis, logger });
+  const rateLimitCoordinator = createRateLimitCoordinator({
+    rateLimiter: services.rateLimiter,
+    logger,
+  });
 
   const service = createConnectionsService({
     db: services.db,
     queries,
-    redis: services.redis,
+    rateLimiter: services.rateLimiter,
     credentialVault,
     adapterRegistry,
     rateLimitCoordinator,

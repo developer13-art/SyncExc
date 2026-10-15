@@ -1,7 +1,7 @@
 /**
  * SyncExc Server — Rate limiting middleware
  *
- * Token-based rate limiting backed by Redis. Multiple limiters can be
+ * Token-based in-memory rate limiting. Multiple limiters can be
  * applied to the same request with different keys.
  *
  * Keys are built from:
@@ -53,11 +53,11 @@ export function createLimiter({ scope, max, windowMs, keyFn }) {
 
   return async function rateLimitMiddleware(req, res, next) {
     try {
-      const { redis } = req.services;
+      const { rateLimiter } = req.services;
       const key = keyFn ? keyFn(req) : clientKey(req, scope);
       const windowSeconds = Math.ceil(effectiveWindow / 1000);
 
-      const current = await redis.incrementWithTtl(key, windowSeconds);
+      const current = rateLimiter.incrementWithTtl(key, windowSeconds);
       const remaining = Math.max(0, max - current);
       const resetAt = Date.now() + effectiveWindow;
 

@@ -20,6 +20,8 @@ export {
   requireAnyPermission,
   requireAllPermissions,
   requireRole,
+  requireAdmin,
+  requireAdminPermission,
   requireEntitlement,
   requireFeatureFlag,
   requireSelf,
@@ -52,7 +54,9 @@ export {
   verifyBearerToken,
 } from './webhook.js';
 export { applyErrorMiddleware } from './error.js';
+export { asyncHandler } from '../lib/async-handler.js';
 
+import { asyncHandler } from '../lib/async-handler.js';
 import { optionalAuth, requireAuth, requireStepUp, loadUserIfAuthenticated } from './auth.js';
 import {
   requireWorkspace,
@@ -60,6 +64,8 @@ import {
   requireAnyPermission,
   requireAllPermissions,
   requireRole,
+  requireAdmin,
+  requireAdminPermission,
   requireEntitlement,
   requireFeatureFlag,
   requireSelf,
@@ -89,6 +95,8 @@ import {
  *   router.post('/orders', mw.requireAuth(), mw.requireWorkspace(), handler);
  */
 const middleware = {
+  asyncHandler,
+
   // Auth
   optionalAuth,
   requireAuth,
@@ -101,6 +109,8 @@ const middleware = {
   requireAnyPermission,
   requireAllPermissions,
   requireRole,
+  requireAdmin,
+  requireAdminPermission,
   requireEntitlement,
   requireFeatureFlag,
   requireSelf,

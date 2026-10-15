@@ -32,7 +32,7 @@ const HEARTBEAT_INTERVAL_MS = 25000;
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const MAX_CONNECTIONS_PER_USER = 10;
 
-export function createWebSocketServer({ rooms, broadcaster, redis, logger: injectedLogger }) {
+export function createWebSocketServer({ rooms, broadcaster, db, logger: injectedLogger }) {
   const logger = injectedLogger || createLogger({ component: 'realtime:server' });
 
   let wss;
@@ -86,7 +86,7 @@ export function createWebSocketServer({ rooms, broadcaster, redis, logger: injec
       return;
     }
 
-    const session = await resolveSessionFromToken(token, { redis, logger });
+    const session = await resolveSessionFromToken(token, { db, logger });
     if (!session) {
       send(ws, { type: 'auth_error', code: 'INVALID_TOKEN' });
       ws.close(4401, 'Authentication failed');

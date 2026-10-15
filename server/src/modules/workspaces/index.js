@@ -31,7 +31,7 @@ export function createWorkspacesModule({ services }) {
   const service = createWorkspacesService({
     db: services.db,
     queries,
-    redis: services.redis,
+    rateLimiter: services.rateLimiter,
     mailer: services.mailer,
     events: services.events,
     audit: services.audit,

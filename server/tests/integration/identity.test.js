@@ -14,10 +14,8 @@ before(async () => {
 
   const services = {
     db,
-    redis: {
-      incrementWithTtl: async () => 1,
-      setJson: async () => 'OK',
-      getJson: async () => null,
+    rateLimiter: {
+      incrementWithTtl: () => 1,
     },
     mailer: {
       send: async () => ({ messageId: 'test' }),

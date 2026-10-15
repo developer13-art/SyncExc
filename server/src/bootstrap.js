@@ -5,7 +5,7 @@
 import config from './config.js';
 import { createLogger } from './lib/logger.js';
 import { initDatabase } from './database/index.js';
-import { initRedis } from './lib/redis.js';
+import { createInMemoryRateLimiter } from './lib/in-memory-rate-limiter.js';
 import { initEvents } from './events/index.js';
 import { initJobs } from './jobs/index.js';
 import { initRealtime } from './realtime/index.js';
@@ -26,15 +26,13 @@ export async function bootstrap() {
     logger,
     middleware,
     modules: {},
+    rateLimiter: createInMemoryRateLimiter(),
   };
 
   logger.info('Initializing database pool');
   services.db = await initDatabase();
 
   try {
-    logger.info('Initializing Redis');
-    services.redis = await initRedis();
-
     services.metrics = initMetrics();
     services.storage = await initStorage();
     services.mailer = await initMailer();
@@ -44,13 +42,9 @@ export async function bootstrap() {
     services.idempotency = createIdempotencyService({ db: services.db });
 
     logger.info('Initializing event bus and outbox');
-    services.events = await initEvents({
-      db: services.db,
-      redis: services.redis,
-      logger,
-    });
+    services.events = await initEvents({ db: services.db, logger });
     services.realtime = initRealtime({
-      redis: services.redis,
+      db: services.db,
       logger,
       events: services.events,
     });
@@ -84,7 +78,6 @@ export async function bootstrap() {
     await Promise.allSettled([
       services.realtime?.shutdown?.(),
       services.events?.shutdown?.(),
-      services.redis?.quit?.(),
       services.db?.close?.(),
     ]);
     throw err;

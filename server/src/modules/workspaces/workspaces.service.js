@@ -35,7 +35,7 @@ function permissionsForRole(role) {
   return roleDef ? roleDef.permissions : [];
 }
 
-export function createWorkspacesService({ db, queries, redis, mailer, events, audit, logger }) {
+export function createWorkspacesService({ db, queries, rateLimiter, mailer, events, audit, logger }) {
   /* ===========================================================================
    * WORKSPACES
    * ======================================================================== */

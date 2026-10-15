@@ -52,7 +52,7 @@ function normalizeUsername(username) {
   return String(username).trim().toLowerCase();
 }
 
-export function createIdentityService({ db, queries, redis, mailer, push, events, audit, logger }) {
+export function createIdentityService({ db, queries, rateLimiter, mailer, push, events, audit, logger }) {
   /* ===========================================================================
    * HELPERS
    * ======================================================================== */
@@ -71,7 +71,7 @@ export function createIdentityService({ db, queries, redis, mailer, push, events
 
   async function checkLoginRateLimit(emailNormalized) {
     const key = `auth:login:${emailNormalized}`;
-    const count = await redis.incrementWithTtl(key, LOGIN_WINDOW_SECONDS);
+    const count = rateLimiter.incrementWithTtl(key, LOGIN_WINDOW_SECONDS);
     if (count > MAX_LOGIN_ATTEMPTS_PER_WINDOW) {
       throw new AuthenticationError('Too many login attempts. Try again later.', 'LOGIN_RATE_LIMITED');
     }

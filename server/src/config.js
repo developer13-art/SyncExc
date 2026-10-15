@@ -42,12 +42,6 @@ const envSchema = Joi.object({
   DATABASE_STATEMENT_TIMEOUT: Joi.number().integer().default(30000),
   DATABASE_IDLE_TIMEOUT: Joi.number().integer().default(10000),
 
-  // Redis
-  REDIS_URL: Joi.string().required(),
-  REDIS_PASSWORD: Joi.string().allow('').optional(),
-  REDIS_DB: Joi.number().integer().min(0).default(0),
-  REDIS_KEY_PREFIX: Joi.string().default('syncexc:'),
-
   // JWT & Session
   JWT_ACCESS_SECRET: Joi.string().min(32).required(),
   JWT_REFRESH_SECRET: Joi.string().min(32).required(),
@@ -252,13 +246,6 @@ const config = {
     poolMax: env.DATABASE_POOL_MAX,
     statementTimeout: env.DATABASE_STATEMENT_TIMEOUT,
     idleTimeout: env.DATABASE_IDLE_TIMEOUT,
-  },
-
-  redis: {
-    url: env.REDIS_URL,
-    password: env.REDIS_PASSWORD || undefined,
-    db: env.REDIS_DB,
-    keyPrefix: env.REDIS_KEY_PREFIX,
   },
 
   jwt: {

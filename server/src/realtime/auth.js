@@ -18,26 +18,13 @@ function hashSessionToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
-export async function resolveSessionFromToken(token, { redis, logger, db }) {
+export async function resolveSessionFromToken(token, { logger, db }) {
   if (!token || typeof token !== 'string') return null;
 
   // ---------------------------------------------------------------------------
   // 1. Try the opaque session token against the database
   // ---------------------------------------------------------------------------
-  try {
-    const { db: database } = await import('../database/index.js').then(async (mod) => {
-      // Reuse whatever DB instance the app already created.
-      // The realtime subsystem receives `redis` but not `db`; import lazily.
-      return { db: null };
-    });
-  } catch {
-    // ignore
-  }
-
-  // The realtime subsystem receives a `services` object indirectly; but to
-  // keep this module self-contained, the DB is passed via the caller in
-  // practice. Fall back to the global singleton created at bootstrap.
-  const database = db || globalThis.__syncexcDb;
+  const database = db;
 
   if (database) {
     const tokenHash = hashSessionToken(token);

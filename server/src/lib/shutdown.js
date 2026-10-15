@@ -7,8 +7,7 @@
  *   3. Stop accepting new jobs; wait for in-flight jobs.
  *   4. Close the event bus.
  *   5. Close the DB pool.
- *   6. Close Redis.
- *   7. Exit.
+ *   6. Exit.
  *
  * Idempotent: multiple signals do not run shutdown twice.
  */
@@ -53,7 +52,6 @@ export function gracefulShutdown({ server, services, logger }) {
         ]),
         ['Closing event bus', services.events, 'shutdown'],
         ['Closing database pool', services.db, 'close'],
-        ['Closing Redis', services.redis, 'quit'],
       ];
 
       for (const [message, service, method] of shutdownSteps) {

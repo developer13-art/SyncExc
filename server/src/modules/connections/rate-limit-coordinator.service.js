@@ -6,12 +6,12 @@
  *   - refuses requests that would exceed limits
  *   - returns a "wait until" timestamp when a request is throttled
  *
- * Backed by Redis for cross-process coordination.
+ * Uses a process-local counter for request throttling.
  */
 
 import { createLogger } from '../../lib/logger.js';
 
-export function createRateLimitCoordinator({ db, redis, logger }) {
+export function createRateLimitCoordinator({ rateLimiter, logger }) {
   const log = logger || createLogger({ component: 'connections:ratelimit' });
 
   // Weight definitions per exchange. Approximation of each exchange's
@@ -33,7 +33,7 @@ export function createRateLimitCoordinator({ db, redis, logger }) {
       if (!config) return { ok: true };
 
       const windowKey = `ratelimit:${exchangeCode}:${Math.floor(Date.now() / 60000)}`;
-      const current = await redis.incrementWithTtl(windowKey, 120);
+      const current = rateLimiter.incrementWithTtl(windowKey, 120, weight);
 
       if (current > config.perMinute) {
         log.warn({ exchangeCode, current, limit: config.perMinute }, 'Rate limit exceeded');

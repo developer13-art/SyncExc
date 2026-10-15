@@ -11,7 +11,7 @@ import { CONNECTION_STATUS } from '@syncexc/shared';
 export function createConnectionsService({
   db,
   queries,
-  redis,
+  rateLimiter,
   credentialVault,
   adapterRegistry,
   rateLimitCoordinator,

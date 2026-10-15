@@ -32,7 +32,7 @@ export function createIdentityModule({ services }) {
   const service = createIdentityService({
     db: services.db,
     queries,
-    redis: services.redis,
+    rateLimiter: services.rateLimiter,
     mailer: services.mailer,
     push: services.push,
     events: services.events,

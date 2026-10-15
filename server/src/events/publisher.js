@@ -17,7 +17,7 @@ const POLL_INTERVAL_MS = 500;
 const BATCH_SIZE = 100;
 const MAX_CONCURRENT = 20;
 
-export function createPublisher({ db, redis, bus, subscribers, envelope, logger: injectedLogger }) {
+export function createPublisher({ db, bus, subscribers, envelope, logger: injectedLogger }) {
   const logger = injectedLogger || createLogger({ component: 'events:publisher' });
 
   let running = false;

@@ -20,7 +20,7 @@ import { createWebSocketServer } from './server.js';
 import { createRoomManager } from './rooms.js';
 import { createBroadcaster } from './broadcaster.js';
 
-export function initRealtime({ redis, logger: injectedLogger, events }) {
+export function initRealtime({ db, logger: injectedLogger, events }) {
   const logger = injectedLogger || createLogger({ component: 'realtime' });
 
   const rooms = createRoomManager({ logger });
@@ -29,7 +29,7 @@ export function initRealtime({ redis, logger: injectedLogger, events }) {
   const server = createWebSocketServer({
     rooms,
     broadcaster,
-    redis,
+    db,
     logger,
   });
 

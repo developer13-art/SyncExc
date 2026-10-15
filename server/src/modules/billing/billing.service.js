@@ -31,7 +31,7 @@ function computePeriodEnd(start, interval) {
   return end;
 }
 
-export function createBillingService({ db, queries, redis, mailer, events, audit, providerFactory, logger }) {
+export function createBillingService({ db, queries, rateLimiter, mailer, events, audit, providerFactory, logger }) {
   /* ===========================================================================
    * PLANS
    * ======================================================================== */

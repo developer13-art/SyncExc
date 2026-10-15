@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { useAuthContext } from '../context/AuthContext.js';
+import { useAuthContext } from '../context/AuthContext.jsx';
 
 export function useStepUpAuth() {
   const { stepUp } = useAuthContext();

@@ -33,7 +33,7 @@ import { createSubscriberRegistry } from './subscriber.js';
 import { createConsumerRunner } from './consumer.js';
 import { registerDefaultListeners } from './listeners.js';
 
-export async function initEvents({ db, redis, logger: injectedLogger }) {
+export async function initEvents({ db, logger: injectedLogger }) {
   const logger = injectedLogger || createLogger({ component: 'events' });
 
   const bus = createEventBus({ logger });
@@ -43,7 +43,6 @@ export async function initEvents({ db, redis, logger: injectedLogger }) {
 
   const publisher = createPublisher({
     db,
-    redis,
     bus,
     subscribers,
     envelope,
