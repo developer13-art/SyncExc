@@ -21,14 +21,14 @@
 import { createSignalsQueries } from './signals.queries.js';
 import { createIngestionService } from './ingestion.service.js';
 import { createDeduplicationService } from './deduplication.service.js';
-import { createParserService } from './parser.service.js';
+import { createParserService } from './parsers.js';
 import { createAiInterpreterService } from './ai-interpreter.service.js';
 import { createExtractionService } from './extraction.service.js';
 import { createIssueDetectionService } from './issue-detection.service.js';
 import { createUpdateTrackerService } from './update-tracker.service.js';
 import { createConfidenceService } from './confidence.service.js';
 import { createReviewService } from './review.service.js';
-import { createValidationService } from './validation.service.js';
+import { createValidationService } from './validation.js';
 import { createEligibilityService } from './eligibility.service.js';
 import { createIntentHandoffService } from './intent-handoff.service.js';
 import { createSignalsRoutes } from './signals.routes.js';

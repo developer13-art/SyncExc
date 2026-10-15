@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => ({
         secure: false,
       },
       '/ws': {
-        target: process.env.VITE_WS_URL || 'ws://localhost:4001',
+        target: process.env.VITE_WS_URL || 'ws://localhost:4000',
         ws: true,
       },
     },

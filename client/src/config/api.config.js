@@ -12,7 +12,7 @@ function requireInProduction(value, name, fallback) {
 
 export const apiConfig = Object.freeze({
   baseURL: requireInProduction(env.VITE_API_URL, 'VITE_API_URL', 'http://localhost:4000/api/v1'),
-  wsURL: requireInProduction(env.VITE_WS_URL, 'VITE_WS_URL', 'ws://localhost:4001/ws'),
+  wsURL: requireInProduction(env.VITE_WS_URL, 'VITE_WS_URL', 'ws://localhost:4000/ws'),
   appName: env.VITE_APP_NAME ?? 'SyncExc',
   appURL: env.VITE_APP_URL ?? 'http://localhost:5173',
   environment: env.VITE_ENVIRONMENT ?? (env.DEV ? 'development' : 'production'),

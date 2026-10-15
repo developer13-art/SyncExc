@@ -18,13 +18,13 @@
  *   sync.handleDestinationOutcome(params)
  */
 
-import { createSyncQueries } from './sync.queries.js';
-import { createSyncService } from './sync.service.js';
+import { createSyncQueries } from './synchronization.queries.js';
+import { createSyncService } from './synchronization.service.js';
 import { createOrchestrator } from './orchestrator.service.js';
 import { createDispatcher } from './dispatcher.service.js';
 import { createReconciliation } from './reconciliation.service.js';
 import { createRetryScheduler } from './retry.service.js';
-import { createSyncRoutes } from './sync.routes.js';
+import { createSyncRoutes } from './synchronization.routes.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createSynchronizationModule({ services }) {

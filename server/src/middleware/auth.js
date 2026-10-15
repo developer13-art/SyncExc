@@ -19,7 +19,7 @@
 import config from '../config.js';
 import { AuthenticationError } from '../lib/errors.js';
 import { verifyAccessToken } from '../lib/jwt.js';
-import { hashSessionToken } from '../modules/identity/session.service.js';
+import { hashSessionToken } from '../modules/identity/identity.service.js';
 import { createLogger } from '../lib/logger.js';
 
 const logger = createLogger({ component: 'auth' });

@@ -20,7 +20,7 @@ import { createSourcesQueries } from './sources.queries.js';
 import { createSourceRegistryService } from './source-registry.service.js';
 import { createDiscoveryService } from './discovery.service.js';
 import { createReviewService } from './review.service.js';
-import { createValidationService } from './validation.service.js';
+import { createValidationService } from './validation.js';
 import { createHealthService } from './health.service.js';
 import { createQualityService } from './quality.service.js';
 import { createSandboxService } from './sandbox.service.js';

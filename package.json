@@ -17,7 +17,7 @@
   },
   "scripts": {
     "install:all": "npm install",
-    "dev": "concurrently -k \"npm:dev:client\" \"npm:dev:admin\"",
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\" \"npm:dev:admin\"",
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
     "dev:admin": "npm run dev --workspace=admin",

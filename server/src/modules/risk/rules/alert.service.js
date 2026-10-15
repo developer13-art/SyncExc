@@ -2,7 +2,7 @@
  * SyncExc Server — Alert service
  */
 
-import { NotFoundError } from '../../lib/errors.js';
+import { NotFoundError } from '../../../lib/errors.js';
 
 export function createAlertService({ db, queries, events, realtime, logger }) {
   async function create({ workspaceId, severity, category, title, message, resourceType, resourceId }) {

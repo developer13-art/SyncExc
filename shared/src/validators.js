@@ -128,6 +128,24 @@ export function validateInstrument(instrument) {
   return { valid: true };
 }
 
+export function extractInstrument(value) {
+  if (typeof value !== 'string') return null;
+  const candidate = value
+    .trim()
+    .toUpperCase()
+    .replace(/^\$/, '')
+    .match(/[A-Z0-9]{2,20}(?:[/:_-][A-Z0-9]{2,20})?/)?.[0];
+  return candidate && validateInstrument(candidate).valid ? candidate : null;
+}
+
+export function normalizeDirection(value) {
+  if (typeof value !== 'string') return null;
+  const direction = value.trim().toLowerCase();
+  if (['long', 'buy', 'bullish'].includes(direction)) return 'long';
+  if (['short', 'sell', 'bearish'].includes(direction)) return 'short';
+  return null;
+}
+
 /* =============================================================================
  * PRICE / QUANTITY
  * ========================================================================== */

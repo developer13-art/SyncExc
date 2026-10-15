@@ -11,7 +11,7 @@ import {
   PaginationSchema,
   UuidSchema,
 } from '@syncexc/shared';
-import { createSyncController } from './sync.controller.js';
+import { createSyncController } from './synchronization.controller.js';
 
 export function createSyncRoutes({ service, orchestrator, reconciliation, middleware }) {
   const controller = createSyncController({ service, reconciliation });

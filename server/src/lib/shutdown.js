@@ -45,9 +45,12 @@ export function gracefulShutdown({ server, services, logger }) {
 
       const shutdownSteps = [
         ['Stopping WebSocket server', services.realtime, 'shutdown'],
-        ['Stopping source listeners', services.sourceListeners, 'shutdown'],
-        ['Stopping exchange streams', services.exchangeStreams, 'shutdown'],
         ['Stopping job runner', services.jobs, 'shutdown'],
+        ...Object.values(services.modules ?? {}).reverse().map((module) => [
+          `Stopping ${module.name} module`,
+          module,
+          'shutdown',
+        ]),
         ['Closing event bus', services.events, 'shutdown'],
         ['Closing database pool', services.db, 'close'],
         ['Closing Redis', services.redis, 'quit'],

@@ -16,7 +16,7 @@
  */
 
 import { createIncidentsQueries } from './incidents.queries.js';
-import { createIncidentService } from './incident.service.js';
+import { createIncidentService } from './incidents.service.js';
 import { createIncidentRoutes } from './incidents.routes.js';
 import { createLogger } from '../../lib/logger.js';
 

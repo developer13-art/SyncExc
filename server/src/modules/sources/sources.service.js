@@ -2,14 +2,14 @@
  * SyncExc Server — Source adapter registry
  */
 
-import { createLogger } from '../../../lib/logger.js';
-import { createTelegramAdapter } from './telegram.adapter.js';
-import { createDiscordAdapter } from './discord.adapter.js';
-import { createWhatsAppAdapter } from './whatsapp.adapter.js';
-import { createWebhookAdapter } from './webhook.adapter.js';
-import { createWebsiteAdapter } from './website.adapter.js';
-import { createRestApiAdapter } from './rest-api.adapter.js';
-import { createEmailAdapter } from './email.adapter.js';
+import { createLogger } from '../../lib/logger.js';
+import { createTelegramAdapter } from './adapters/telegram.js';
+import { createDiscordAdapter } from './adapters/discord.js';
+import { createWhatsAppAdapter } from './adapters/whatsapp.js';
+import { createWebhookAdapter } from './adapters/webhook.js';
+import { createWebsiteAdapter } from './adapters/website.js';
+import { createRestApiAdapter } from './adapters/rest-api.adapter.js';
+import { createEmailAdapter } from './adapters/email.adapter.js';
 
 export function createSourceAdapterRegistry({ logger, config, db }) {
   const log = logger || createLogger({ component: 'sources:adapters' });

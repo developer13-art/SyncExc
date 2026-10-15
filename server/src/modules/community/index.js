@@ -21,7 +21,7 @@
 import { createCommunityQueries } from './community.queries.js';
 import { createProfileService } from './profile.service.js';
 import { createSocialGraphService } from './social-graph.service.js';
-import { createPostService } from './post.service.js';
+import { createPostService } from './ost.service.js';
 import { createCommentService } from './comment.service.js';
 import { createReactionService } from './reaction.service.js';
 import { createGroupService } from './group.service.js';
@@ -30,7 +30,7 @@ import { createAnalysisService } from './analysis.service.js';
 import { createBookmarkService } from './bookmark.service.js';
 import { createRecommendationService } from './recommendation.service.js';
 import { createSearchService } from './search.service.js';
-import { createModerationService } from './moderation.service.js';
+import { createModerationService } from './moderation.js';
 import { createCommunityRoutes } from './community.routes.js';
 import { createCommunityListeners } from './listeners.js';
 import { createLogger } from '../../lib/logger.js';

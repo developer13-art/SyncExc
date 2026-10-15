@@ -19,7 +19,7 @@
 import { createDeveloperQueries } from './developer.queries.js';
 import { createApplicationService } from './application.service.js';
 import { createCredentialService } from './credential.service.js';
-import { createOAuthService } from './oauth.service.js';
+import { createOAuthService } from './oauth.js';
 import { createWebhookSubscriptionService } from './webhook-subscription.service.js';
 import { createWebhookDeliveryService } from './webhook-delivery.service.js';
 import { createUsageAnalyticsService } from './usage-analytics.service.js';

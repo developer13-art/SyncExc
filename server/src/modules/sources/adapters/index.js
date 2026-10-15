@@ -3,11 +3,11 @@
  */
 
 import { createLogger } from '../../../lib/logger.js';
-import { createTelegramAdapter } from './telegram.adapter.js';
-import { createDiscordAdapter } from './discord.adapter.js';
-import { createWhatsAppAdapter } from './whatsapp.adapter.js';
-import { createWebhookAdapter } from './webhook.adapter.js';
-import { createWebsiteAdapter } from './website.adapter.js';
+import { createTelegramAdapter } from './telegram.js';
+import { createDiscordAdapter } from './discord.js';
+import { createWhatsAppAdapter } from './whatsapp.js';
+import { createWebhookAdapter } from './webhook.js';
+import { createWebsiteAdapter } from './website.js';
 import { createRestApiAdapter } from './rest-api.adapter.js';
 import { createEmailAdapter } from './email.adapter.js';
 

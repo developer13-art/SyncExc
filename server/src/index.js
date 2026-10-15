@@ -3,7 +3,7 @@
  *
  * 1. Loads configuration (exits on failure).
  * 2. Initializes logger.
- * 3. Starts the health-only HTTP shell.
+ * 3. Initializes services and starts the API + realtime gateway.
  * 4. Wires SIGTERM/SIGINT for graceful shutdown.
  */
 
@@ -11,6 +11,7 @@ import http from 'node:http';
 import config from './config.js';
 import { createLogger } from './lib/logger.js';
 import { buildApp } from './app.js';
+import { bootstrap } from './bootstrap.js';
 import { gracefulShutdown } from './lib/shutdown.js';
 
 const logger = createLogger({ component: 'server' });
@@ -21,9 +22,10 @@ async function main() {
     'Starting SyncExc server'
   );
 
-  const services = {};
+  const services = await bootstrap();
   const app = buildApp({ services });
   const server = http.createServer(app);
+  services.realtime.attach(server);
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);

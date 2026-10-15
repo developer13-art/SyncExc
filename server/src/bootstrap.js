@@ -1,10 +1,5 @@
 /**
- * SyncExc Server — Bootstrap
- *
- * Every subsystem is initialized here, in dependency order, and returned as
- * a single `services` object. Anything that needs the DB, Redis, event bus,
- * or job runner receives them from this object — nothing imports infrastructure
- * singletons directly.
+ * Initializes the infrastructure and domain modules in dependency order.
  */
 
 import config from './config.js';
@@ -19,106 +14,81 @@ import { initStorage } from './lib/storage.js';
 import { initMailer } from './lib/mailer.js';
 import { initPush } from './lib/push.js';
 import { initAI } from './lib/ai.js';
-import { initExchangeAdapters } from './modules/connections/adapters/index.js';
-import { initExchangeStreams } from './modules/connections/streams.js';
-import { initSourceListeners } from './modules/sources/listeners.js';
+import { createAuditService } from './lib/audit.js';
+import { createIdempotencyService } from './lib/idempotency.js';
+import middleware from './middleware/index.js';
+import { initializeModules } from './modules/index.js';
 
 export async function bootstrap() {
   const logger = createLogger({ component: 'bootstrap' });
-
-  // ---------------------------------------------------------------------------
-  // Infrastructure
-  // ---------------------------------------------------------------------------
-  logger.info('Initializing database pool');
-  const db = await initDatabase();
-
-  logger.info('Initializing Redis');
-  const redis = await initRedis();
-
-  logger.info('Initializing metrics');
-  const metrics = initMetrics();
-
-  // ---------------------------------------------------------------------------
-  // Cross-cutting services
-  // ---------------------------------------------------------------------------
-  logger.info('Initializing storage');
-  const storage = await initStorage();
-
-  logger.info('Initializing mailer');
-  const mailer = await initMailer();
-
-  logger.info('Initializing push notifications');
-  const push = await initPush();
-
-  logger.info('Initializing AI clients');
-  const ai = await initAI();
-
-  // ---------------------------------------------------------------------------
-  // Events
-  // ---------------------------------------------------------------------------
-  logger.info('Initializing event bus and outbox');
-  const events = await initEvents({ db, redis, logger });
-
-  // ---------------------------------------------------------------------------
-  // Realtime gateway
-  // ---------------------------------------------------------------------------
-  logger.info('Initializing realtime gateway');
-  const realtime = initRealtime({ redis, logger, events });
-
-  // ---------------------------------------------------------------------------
-  // Exchange adapters and streams
-  // ---------------------------------------------------------------------------
-  logger.info('Initializing exchange adapters');
-  const exchange = await initExchangeAdapters({ logger, db });
-
-  logger.info('Initializing exchange streams');
-  const exchangeStreams = await initExchangeStreams({
-    db,
-    exchange,
-    events,
-    realtime,
-    logger,
-  });
-
-  // ---------------------------------------------------------------------------
-  // Source listeners
-  // ---------------------------------------------------------------------------
-  logger.info('Initializing source listeners');
-  const sourceListeners = await initSourceListeners({
-    db,
-    events,
-    realtime,
-    logger,
-  });
-
-  // ---------------------------------------------------------------------------
-  // Services bundle (passed to app + jobs)
-  // ---------------------------------------------------------------------------
   const services = {
     config,
     logger,
-    db,
-    redis,
-    metrics,
-    storage,
-    mailer,
-    push,
-    ai,
-    events,
-    realtime,
-    exchange,
-    exchangeStreams,
-    sourceListeners,
+    middleware,
+    modules: {},
   };
 
-  // ---------------------------------------------------------------------------
-  // Jobs — initialized last since handlers use every service above
-  // ---------------------------------------------------------------------------
-  logger.info('Initializing job runner and scheduler');
-  const jobs = await initJobs({ services });
-  services.jobs = jobs;
+  logger.info('Initializing database pool');
+  services.db = await initDatabase();
 
-  logger.info('All subsystems initialized');
+  try {
+    logger.info('Initializing Redis');
+    services.redis = await initRedis();
 
-  return services;
+    services.metrics = initMetrics();
+    services.storage = await initStorage();
+    services.mailer = await initMailer();
+    services.push = await initPush();
+    services.ai = await initAI();
+    services.audit = createAuditService({ db: services.db });
+    services.idempotency = createIdempotencyService({ db: services.db });
+
+    logger.info('Initializing event bus and outbox');
+    services.events = await initEvents({
+      db: services.db,
+      redis: services.redis,
+      logger,
+    });
+    services.realtime = initRealtime({
+      redis: services.redis,
+      logger,
+      events: services.events,
+    });
+
+    const jobsFacade = {
+      enqueue(...args) {
+        if (!services.jobsRunner) {
+          throw new Error('Job runner is not initialized yet');
+        }
+        return services.jobsRunner.enqueue(...args);
+      },
+      enqueueBulk(...args) {
+        if (!services.jobsRunner) {
+          throw new Error('Job runner is not initialized yet');
+        }
+        return services.jobsRunner.enqueueBulk(...args);
+      },
+    };
+    services.jobs = jobsFacade;
+
+    logger.info('Initializing domain modules');
+    initializeModules(services);
+
+    logger.info('Initializing job runner and scheduler');
+    services.jobsRunner = await initJobs({ services });
+    Object.assign(jobsFacade, services.jobsRunner);
+
+    logger.info('All subsystems initialized');
+    return services;
+  } catch (err) {
+    await Promise.allSettled([
+      services.realtime?.shutdown?.(),
+      services.events?.shutdown?.(),
+      services.redis?.quit?.(),
+      services.db?.close?.(),
+    ]);
+    throw err;
+  }
 }
+
+export default bootstrap;

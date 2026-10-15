@@ -95,8 +95,8 @@ export function createScheduleService({ db, queries, events, logger }) {
    * Compute the next run time for a schedule expression.
    * Supports:
    *   - @every <duration>       e.g. @every 5m, @every 1h
-   *   - * / numbers in cron      e.g. "* /5 * * * *" (without space)
-   *   - standard cron            "*/5 * * * *"
+   *   - wildcard, step, and numeric cron fields
+   *   - five-field cron expressions
    */
   function computeNextRun({ expression, timezone = 'UTC', from = new Date() }) {
     if (!expression) return null;

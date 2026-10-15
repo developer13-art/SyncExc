@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import Joi from 'joi';
 import { UuidSchema, PaginationSchema } from '@syncexc/shared';
-import { createNotificationsController } from './notification.controller.js';
+import { createNotificationsController } from './notifications.controller.js';
 
 const PreferenceSchema = Joi.object({
   notificationType: Joi.string().required(),

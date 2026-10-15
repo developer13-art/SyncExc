@@ -1,0 +1,118 @@
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { getTestDb, closeTestDb } from '../setup.js';
+import { truncateAllTables } from '../helpers/db.helper.js';
+import { createTestUser } from '../helpers/factory.helper.js';
+import { createWorkspacesModule } from '../../src/modules/workspaces/index.js';
+
+let db;
+let module;
+let workspaceService;
+
+before(async () => {
+  db = await getTestDb();
+  await truncateAllTables(db);
+
+  const services = {
+    db,
+    redis: { incrementWithTtl: async () => 1 },
+    mailer: { send: async () => ({}) },
+    events: { publish: async () => ({}), emitNow: () => ({}), subscribe: () => () => {} },
+    audit: { write: async () => ({}) },
+    logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, trace: () => {} },
+  };
+
+  module = createWorkspacesModule({ services });
+  workspaceService = module.service;
+});
+
+after(async () => {
+  await closeTestDb();
+});
+
+test('ensurePersonalWorkspace creates one workspace per user', async () => {
+  const user = await createTestUser(db);
+  const ws1 = await workspaceService.ensurePersonalWorkspace(user.id);
+  const ws2 = await workspaceService.ensurePersonalWorkspace(user.id);
+
+  assert.equal(ws1.id, ws2.id);
+  assert.equal(ws1.type, 'personal');
+  assert.equal(ws1.owner_id, user.id);
+});
+
+test('organization workspace creation assigns owner role', async () => {
+  const user = await createTestUser(db);
+  await workspaceService.ensurePersonalWorkspace(user.id);
+
+  const org = await workspaceService.createOrganizationWorkspace({
+    userId: user.id,
+    name: 'Acme Corp',
+  });
+
+  assert.equal(org.type, 'organization');
+  const membership = await workspaceService.getMembership({
+    userId: user.id,
+    workspaceId: org.id,
+  });
+  assert.equal(membership.role, 'owner');
+  assert.equal(membership.status, 'active');
+});
+
+test('effective permissions include all permissions for owner', async () => {
+  const user = await createTestUser(db);
+  const ws = await workspaceService.ensurePersonalWorkspace(user.id);
+
+  const permissions = await workspaceService.getEffectivePermissions({
+    userId: user.id,
+    workspaceId: ws.id,
+  });
+
+  assert.ok(permissions.includes('workspace.view'));
+  assert.ok(permissions.includes('trading.monitor'));
+  assert.ok(permissions.length >= 30);
+});
+
+test('non-member cannot access workspace', async () => {
+  const owner = await createTestUser(db);
+  const outsider = await createTestUser(db);
+  const ws = await workspaceService.ensurePersonalWorkspace(owner.id);
+
+  const membership = await workspaceService.getMembership({
+    userId: outsider.id,
+    workspaceId: ws.id,
+  });
+  assert.equal(membership, null);
+});
+
+test('invitation flow creates membership on acceptance', async () => {
+  const owner = await createTestUser(db);
+  const invitee = await createTestUser(db);
+  const ws = await workspaceService.createOrganizationWorkspace({
+    userId: owner.id,
+    name: 'Test Org',
+  });
+
+  const inviteResult = await workspaceService.inviteMember({
+    actorId: owner.id,
+    workspaceId: ws.id,
+    email: invitee.email,
+    role: 'analyst',
+    expiresInDays: 7,
+  });
+
+  assert.ok(inviteResult.token);
+
+  const accepted = await workspaceService.acceptInvitation({
+    userId: invitee.id,
+    token: inviteResult.token,
+  });
+
+  assert.equal(accepted.workspaceId, ws.id);
+  assert.equal(accepted.role, 'analyst');
+
+  const membership = await workspaceService.getMembership({
+    userId: invitee.id,
+    workspaceId: ws.id,
+  });
+  assert.equal(membership.status, 'active');
+});

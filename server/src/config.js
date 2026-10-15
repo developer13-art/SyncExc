@@ -6,8 +6,14 @@
  * the process to exit before it starts serving traffic.
  */
 
-import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import Joi from 'joi';
+
+const configDirectory = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(configDirectory, '../.env') });
+dotenv.config({ path: path.resolve(configDirectory, '../../.env') });
 
 /* =============================================================================
  * SCHEMA — full environment contract

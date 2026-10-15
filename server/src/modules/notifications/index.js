@@ -17,20 +17,20 @@
  *   notifications.channels.{email,push,inapp} — direct channel sends
  */
 
-import { createNotificationQueries } from './notification.queries.js';
+import { createNotificationQueries } from './notifications.queries.js';
 import { createEventRegistry } from './event-registry.service.js';
-import { createTemplateService } from './template.service.js';
+import { createTemplateService } from './templates.js';
 import { createPreferencesService } from './preferences.service.js';
 import { createDeduplicationService } from './deduplication.service.js';
 import { createPriorityService } from './priority.service.js';
 import { createOrchestratorService } from './orchestrator.service.js';
-import { createNotificationService } from './notification.service.js';
+import { createNotificationService } from './notifications.service.js';
 import { createDeliveryService } from './delivery.service.js';
 import { createDeviceService } from './device.service.js';
 import { createEscalationService } from './escalation.service.js';
 import { createUsageService } from './usage.service.js';
 import { createChannelRegistry } from './channels/index.js';
-import { createNotificationRoutes } from './notification.routes.js';
+import { createNotificationRoutes } from './notifications.routes.js';
 import { createNotificationListeners } from './listeners.js';
 import { createLogger } from '../../lib/logger.js';
 
