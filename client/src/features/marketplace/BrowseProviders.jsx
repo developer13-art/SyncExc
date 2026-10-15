@@ -17,9 +17,7 @@ import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 const SORT_OPTIONS = [
-  { value: 'recent', label: 'Recent' },
-  { value: 'popular', label: 'Popular' },
-  { value: 'rating', label: 'Rating' },
+  { value: 'desc', label: 'Recent' },
 ];
 
 const MARKET_OPTIONS = [
@@ -31,7 +29,7 @@ const MARKET_OPTIONS = [
 export default function BrowseProviders() {
   const dispatch = useDispatch();
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState('recent');
+  const [sort, setSort] = useState('desc');
   const [markets, setMarkets] = useState([]);
 
   useEffect(() => {

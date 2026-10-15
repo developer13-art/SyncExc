@@ -321,6 +321,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
 
       return {
         mfaRequired: true,
+        userId: user.id,
         challengeId: tokenHash,
         challengeToken,
       };

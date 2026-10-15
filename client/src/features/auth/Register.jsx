@@ -21,6 +21,7 @@ export default function Register() {
 
   const [form, setForm] = useState({
     displayName: '',
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -51,6 +52,16 @@ export default function Register() {
       next.displayName = 'Display name must be at least 2 characters';
     } else if (form.displayName.trim().length > 64) {
       next.displayName = 'Display name must not exceed 64 characters';
+    }
+
+    const username = form.username.trim();
+    if (!username) {
+      next.username = 'Username is required';
+    } else if (username.length < 3 || username.length > 32) {
+      next.username = 'Username must be between 3 and 32 characters';
+    } else if (!/^[a-z0-9_][a-z0-9_-]*[a-z0-9_]$/i.test(username)) {
+      next.username =
+        'Username must start and end with a letter or number, and may contain hyphens and underscores';
     }
 
     if (!form.email.trim()) {
@@ -92,9 +103,11 @@ export default function Register() {
     try {
       await register({
         displayName: form.displayName.trim(),
+        username: form.username.trim().toLowerCase(),
         email: normalizeEmail(form.email),
         password: form.password,
-        termsAcceptedAt: new Date().toISOString(),
+        acceptedTerms: true,
+        acceptedPrivacy: true,
       });
 
       toast.success('Account created', {
@@ -139,6 +152,23 @@ export default function Register() {
             value={form.displayName}
             onChange={(e) => updateField('displayName')(e.target.value)}
             error={errors.displayName}
+          />
+        </FormField>
+
+        <FormField
+          label="Username"
+          htmlFor="register-username"
+          required
+          error={errors.username}
+          hint="3–32 characters; letters, numbers, hyphens, and underscores."
+        >
+          <Input
+            id="register-username"
+            autoComplete="username"
+            placeholder="jane_doe"
+            value={form.username}
+            onChange={(e) => updateField('username')(e.target.value)}
+            error={errors.username}
           />
         </FormField>
 

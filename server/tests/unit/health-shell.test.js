@@ -35,6 +35,18 @@ describe('server health and API routes', () => {
     assert.equal(response.body.error.code, 'NOT_READY');
   });
 
+  it('allows the client identification headers in CORS preflight requests', async () => {
+    const response = await request(app)
+      .options('/api/v1/workspaces')
+      .set('Origin', 'http://localhost:5173')
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Headers', 'x-client-name,x-client-version')
+      .expect(204);
+
+    assert.match(response.headers['access-control-allow-headers'], /X-Client-Name/i);
+    assert.match(response.headers['access-control-allow-headers'], /X-Client-Version/i);
+  });
+
   it('mounts API routes and returns not found for an unregistered endpoint', async () => {
     const response = await request(app).get('/api/v1/auth/session').expect(404);
 

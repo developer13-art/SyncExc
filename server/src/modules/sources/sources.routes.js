@@ -29,6 +29,12 @@ export function createSourcesRoutes(services) {
    * Sources
    * ------------------------------------------------------------------------ */
   router.get(
+    '/categories',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.listCategories)
+  );
+
+  router.get(
     '/',
     middleware.requireAuth(),
     middleware.requireWorkspace(),

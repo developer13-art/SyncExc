@@ -311,16 +311,25 @@ export function createSignalsQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async listCandidatesForWorkspace(workspaceId, { status, limit = 50, cursor = null } = {}) {
+    async listCandidatesForWorkspace(
+      workspaceId,
+      { status, query, sort = 'desc', limit = 50, cursor = null } = {}
+    ) {
       const params = [workspaceId, limit + 1];
       const conditions = ['s.workspace_id = $1'];
       if (status) {
         params.push(status);
         conditions.push(`c.status = $${params.length}`);
       }
+      if (query) {
+        params.push(`%${query}%`);
+        conditions.push(
+          `(c.instrument ILIKE $${params.length} OR c.direction ILIKE $${params.length} OR s.name ILIKE $${params.length})`
+        );
+      }
       if (cursor) {
         params.push(cursor);
-        conditions.push(`c.created_at < $${params.length}`);
+        conditions.push(`c.created_at ${sort === 'asc' ? '>' : '<'} $${params.length}`);
       }
       const result = await db.query(
         `
@@ -328,7 +337,7 @@ export function createSignalsQueries({ db }) {
         FROM trading_signal_candidates c
         JOIN signal_sources s ON s.id = c.source_id
         WHERE ${conditions.join(' AND ')}
-        ORDER BY c.created_at DESC
+        ORDER BY c.created_at ${sort === 'asc' ? 'ASC' : 'DESC'}
         LIMIT $2
         `,
         params

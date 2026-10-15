@@ -26,11 +26,27 @@ export function useReferralProfile() {
 }
 
 export function useReferralDashboard() {
-  return useQuery({
+  const profileQuery = useQuery({
+    queryKey: queryKeys.referral.profile,
+    queryFn: () => referralApi.getProfile(),
+    staleTime: 60_000,
+  });
+
+  const dashboardQuery = useQuery({
     queryKey: queryKeys.referral.dashboard,
     queryFn: () => referralApi.getDashboard(),
+    enabled: Boolean(profileQuery.data),
     staleTime: 30_000,
   });
+
+  return {
+    ...dashboardQuery,
+    data: profileQuery.data ? dashboardQuery.data : null,
+    isLoading:
+      profileQuery.isLoading ||
+      (Boolean(profileQuery.data) && dashboardQuery.isLoading),
+    error: profileQuery.error ?? dashboardQuery.error,
+  };
 }
 
 export function useReferralLinks(params = {}) {

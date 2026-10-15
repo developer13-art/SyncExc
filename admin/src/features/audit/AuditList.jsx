@@ -74,9 +74,10 @@ export function AuditList() {
 
   const events = auditQuery.data?.items ?? [];
 
-  if (auditQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(auditQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = auditQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [auditQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

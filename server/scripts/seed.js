@@ -18,6 +18,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { config } from 'dotenv';
+import DEFAULT_WORKSPACE_ROLES from '../src/database/seeds/roles.js';
+import { ADMIN_PERMISSIONS, DEFAULT_ADMIN_ROLES } from '../src/database/seeds/permissions.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,113 +41,76 @@ function error(...args) {
  * SEED DATA
  * ========================================================================== */
 
-const ROLES = [
-  {
-    name: 'owner',
-    description: 'Full authority over the workspace',
-    permissions: ['*'],
-    scope: 'workspace',
-  },
-  {
-    name: 'administrator',
-    description: 'Manages workspace settings, members, and configuration',
-    permissions: [
-      'workspace.view', 'workspace.update',
-      'members.view', 'members.invite', 'members.remove', 'members.role.update',
-      'connections.view', 'connections.create', 'connections.update', 'connections.disconnect',
-      'connections.share', 'connections.grants.manage', 'connections.grants.revoke',
-      'strategies.view', 'strategies.create', 'strategies.update',
-      'sync.view', 'sync.configure', 'sync.pause', 'sync.resume',
-      'trading.monitor', 'trading.request_execution', 'trading.manage_automation',
-      'risk.view', 'risk.configure',
-      'reports.view', 'reports.export',
-      'audit.view',
-      'billing.view',
-    ],
-    scope: 'workspace',
-  },
-  {
-    name: 'trading_operator',
-    description: 'Manages trading configurations and initiates execution',
-    permissions: [
-      'workspace.view',
-      'members.view',
-      'connections.view',
-      'strategies.view', 'strategies.create', 'strategies.update',
-      'sync.view', 'sync.configure', 'sync.pause', 'sync.resume',
-      'trading.monitor', 'trading.request_execution', 'trading.approve_execution',
-      'risk.view',
-      'reports.view', 'reports.export',
-    ],
-    scope: 'workspace',
-  },
-  {
-    name: 'analyst',
-    description: 'Reads market data, strategies, and performance',
-    permissions: [
-      'workspace.view',
-      'members.view',
-      'connections.view',
-      'strategies.view',
-      'sync.view',
-      'trading.monitor',
-      'risk.view',
-      'reports.view', 'reports.export',
-    ],
-    scope: 'workspace',
-  },
-  {
-    name: 'viewer',
-    description: 'Read-only access to authorized workspace resources',
-    permissions: [
-      'workspace.view',
-      'connections.view',
-      'strategies.view',
-      'sync.view',
-      'trading.monitor',
-      'risk.view',
-      'reports.view',
-    ],
-    scope: 'workspace',
-  },
-];
-
-const ADMIN_ROLES = [
-  { name: 'platform_operations', description: 'Service health and operational controls' },
-  { name: 'user_support_administrator', description: 'Account status and recovery workflows' },
-  { name: 'workspace_administrator', description: 'Workspace records and sharing governance' },
-  { name: 'billing_administrator', description: 'Plans, subscriptions, and financial exceptions' },
-  { name: 'financial_approver', description: 'Approval of refunds, adjustments, and payouts' },
-  { name: 'exchange_integration_operator', description: 'Adapter status and integration releases' },
-  { name: 'source_reviewer', description: 'Source validation and review decisions' },
-  { name: 'referral_administrator', description: 'Referral policies, commissions, and payouts' },
-  { name: 'support_operations_manager', description: 'Queues, escalation, and service metrics' },
-  { name: 'feature_release_manager', description: 'Feature flags, rollouts, and rollback' },
-  { name: 'security_administrator', description: 'Security events and incident response' },
-  { name: 'audit_reviewer', description: 'Read-only audit access and compliance' },
-  { name: 'platform_administrator', description: 'Broad platform configuration' },
-];
-
-const ADMIN_PERMISSIONS = [
-  'admin.dashboard.view',
-  'admin.users.view', 'admin.users.suspend', 'admin.users.restore',
-  'admin.workspaces.view', 'admin.workspaces.suspend',
-  'admin.plans.view', 'admin.plans.create', 'admin.plans.publish',
-  'admin.subscriptions.view', 'admin.subscriptions.manage',
-  'admin.payments.view', 'admin.refunds.view', 'admin.refunds.initiate', 'admin.refunds.approve',
-  'admin.exchanges.view', 'admin.exchanges.restrict', 'admin.exchanges.health_check',
-  'admin.sources.review', 'admin.sources.manage',
-  'admin.referrals.view', 'admin.referrals.policies', 'admin.referrals.payouts',
-  'admin.support.view', 'admin.support.queues',
-  'admin.feature_flags.view', 'admin.feature_flags.create', 'admin.feature_flags.rollout', 'admin.feature_flags.rollback',
-  'admin.roles.view', 'admin.roles.manage',
-  'admin.permissions.view',
-  'admin.approvals.view', 'admin.approvals.decide',
-  'admin.audit.view', 'admin.audit.export',
-  'admin.alerts.view', 'admin.alerts.manage',
-  'admin.operation_jobs.view', 'admin.operation_jobs.cancel',
-  'admin.exports.create', 'admin.exports.download',
-];
+// const ROLES = [
+//   {
+//     name: 'owner',
+//     description: 'Full authority over the workspace',
+//     permissions: ['*'],
+//     scope: 'workspace',
+//   },
+//   {
+//     name: 'administrator',
+//     description: 'Manages workspace settings, members, and configuration',
+//     permissions: [
+//       'workspace.view', 'workspace.update',
+//       'members.view', 'members.invite', 'members.remove', 'members.role.update',
+//       'connections.view', 'connections.create', 'connections.update', 'connections.disconnect',
+//       'connections.share', 'connections.grants.manage', 'connections.grants.revoke',
+//       'strategies.view', 'strategies.create', 'strategies.update',
+//       'sync.view', 'sync.configure', 'sync.pause', 'sync.resume',
+//       'trading.monitor', 'trading.request_execution', 'trading.manage_automation',
+//       'risk.view', 'risk.configure',
+//       'reports.view', 'reports.export',
+//       'audit.view',
+//       'billing.view',
+//     ],
+//     scope: 'workspace',
+//   },
+//   {
+//     name: 'trading_operator',
+//     description: 'Manages trading configurations and initiates execution',
+//     permissions: [
+//       'workspace.view',
+//       'members.view',
+//       'connections.view',
+//       'strategies.view', 'strategies.create', 'strategies.update',
+//       'sync.view', 'sync.configure', 'sync.pause', 'sync.resume',
+//       'trading.monitor', 'trading.request_execution', 'trading.approve_execution',
+//       'risk.view',
+//       'reports.view', 'reports.export',
+//     ],
+//     scope: 'workspace',
+//   },
+//   {
+//     name: 'analyst',
+//     description: 'Reads market data, strategies, and performance',
+//     permissions: [
+//       'workspace.view',
+//       'members.view',
+//       'connections.view',
+//       'strategies.view',
+//       'sync.view',
+//       'trading.monitor',
+//       'risk.view',
+//       'reports.view', 'reports.export',
+//     ],
+//     scope: 'workspace',
+//   },
+//   {
+//     name: 'viewer',
+//     description: 'Read-only access to authorized workspace resources',
+//     permissions: [
+//       'workspace.view',
+//       'connections.view',
+//       'strategies.view',
+//       'sync.view',
+//       'trading.monitor',
+//       'risk.view',
+//       'reports.view',
+//     ],
+//     scope: 'workspace',
+//   },
+// ];
 
 const PLANS = [
   {
@@ -237,24 +202,54 @@ const FEATURE_FLAGS = [
  * SEED EXECUTION
  * ========================================================================== */
 
+
 async function seedWorkspaceRoles(client) {
-  for (const role of ROLES) {
-    await client.query(
-      `
-      INSERT INTO workspace_roles (id, name, description, permissions, scope, is_system, created_at)
-      VALUES (gen_random_uuid(), $1, $2, $3, $4, true, NOW())
-      ON CONFLICT (name) DO UPDATE SET
-        description = EXCLUDED.description,
-        permissions = EXCLUDED.permissions
-      `,
-      [role.name, role.description, JSON.stringify(role.permissions), role.scope]
-    );
+  const workspacesResult = await client.query(
+    `SELECT id FROM workspaces ORDER BY created_at ASC`
+  );
+
+  let seededCount = 0;
+
+  for (const workspace of workspacesResult.rows) {
+    for (const role of DEFAULT_WORKSPACE_ROLES) {
+      await client.query(
+        `
+        INSERT INTO workspace_roles (
+          workspace_id,
+          name,
+          description,
+          permissions,
+          is_system
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (workspace_id, name)
+        DO UPDATE SET
+          description = EXCLUDED.description,
+          permissions = EXCLUDED.permissions,
+          is_system = EXCLUDED.is_system,
+          updated_at = NOW()
+        `,
+        [
+          workspace.id,
+          role.name,
+          role.description,
+          role.permissions,
+          role.isSystem,
+        ]
+      );
+
+      seededCount += 1;
+    }
   }
-  log(`seeded ${ROLES.length} workspace roles`);
+
+  log(
+    `seeded ${DEFAULT_WORKSPACE_ROLES.length} default roles across ${workspacesResult.rows.length} workspaces (${seededCount} role records processed)`
+  );
 }
 
+
 async function seedAdminRoles(client) {
-  for (const role of ADMIN_ROLES) {
+  for (const role of DEFAULT_ADMIN_ROLES) {
     await client.query(
       `
       INSERT INTO admin_role_definitions (id, name, description, created_at)
@@ -264,21 +259,88 @@ async function seedAdminRoles(client) {
       [role.name, role.description]
     );
   }
-  log(`seeded ${ADMIN_ROLES.length} admin roles`);
+  log(`seeded ${DEFAULT_ADMIN_ROLES.length} admin roles`);
 }
+
 
 async function seedAdminPermissions(client) {
   for (const permission of ADMIN_PERMISSIONS) {
+    const permissionKey = permission.key;
+
+    if (!permissionKey) {
+      throw new Error(
+        `Invalid admin permission definition: ${JSON.stringify(permission)}`
+      );
+    }
+
+    const category = permission.category || permissionKey.split('.')[0] || 'general';
+    const description =
+      permission.description || `Allows the administrator to perform: ${permissionKey}`;
+
     await client.query(
       `
-      INSERT INTO admin_permission_definitions (id, name, created_at)
-      VALUES (gen_random_uuid(), $1, NOW())
-      ON CONFLICT (name) DO NOTHING
+      INSERT INTO admin_permission_definitions (
+        id,
+        permission_key,
+        category,
+        description,
+        created_at
+      )
+      VALUES (gen_random_uuid(), $1, $2, $3, NOW())
+      ON CONFLICT (permission_key) DO UPDATE SET
+        category = EXCLUDED.category,
+        description = EXCLUDED.description
       `,
-      [permission]
+      [permissionKey, category, description]
     );
   }
+
   log(`seeded ${ADMIN_PERMISSIONS.length} admin permissions`);
+}
+
+async function seedAdminRolePermissions(client) {
+  for (const role of DEFAULT_ADMIN_ROLES) {
+    const roleResult = await client.query(
+      `SELECT id FROM admin_role_definitions WHERE name = $1`,
+      [role.name]
+    );
+    const roleId = roleResult.rows[0]?.id;
+    if (!roleId) {
+      throw new Error(`Admin role was not seeded: ${role.name}`);
+    }
+
+    const permissionResult = role.permissions.includes('*')
+      ? await client.query(
+          `SELECT id FROM admin_permission_definitions`
+        )
+      : await client.query(
+          `SELECT id, permission_key
+           FROM admin_permission_definitions
+           WHERE permission_key = ANY($1::text[])`,
+          [role.permissions]
+        );
+
+    if (!role.permissions.includes('*') && permissionResult.rowCount !== role.permissions.length) {
+      const found = new Set(
+        (permissionResult.rows || []).map((permission) => permission.permission_key)
+      );
+      const missing = role.permissions.filter((permission) => !found.has(permission));
+      throw new Error(
+        `Admin role ${role.name} references unknown permissions: ${missing.join(', ')}`
+      );
+    }
+
+    for (const permission of permissionResult.rows) {
+      await client.query(
+        `INSERT INTO admin_role_permissions (role_id, permission_id)
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [roleId, permission.id]
+      );
+    }
+  }
+
+  log(`seeded permission mappings for ${DEFAULT_ADMIN_ROLES.length} admin roles`);
 }
 
 async function seedPlans(client) {
@@ -339,23 +401,102 @@ async function seedPlans(client) {
   log(`seeded ${PLANS.length} subscription plans`);
 }
 
+
 async function seedFeatureFlags(client) {
+  const flagMetadata = {
+    'marketplace.enabled': {
+      owningTeam: 'product',
+      relatedModule: 'marketplace',
+    },
+    'automation.enabled': {
+      owningTeam: 'trading',
+      relatedModule: 'automation',
+    },
+    'simulation.enabled': {
+      owningTeam: 'trading',
+      relatedModule: 'simulation',
+    },
+    'referral.enabled': {
+      owningTeam: 'growth',
+      relatedModule: 'referrals',
+    },
+    'community.enabled': {
+      owningTeam: 'product',
+      relatedModule: 'community',
+    },
+    'developer_api.enabled': {
+      owningTeam: 'platform',
+      relatedModule: 'developer_api',
+    },
+    'signals.ai_interpretation': {
+      owningTeam: 'intelligence',
+      relatedModule: 'signal_interpretation',
+    },
+    'sources.auto_discovery': {
+      owningTeam: 'intelligence',
+      relatedModule: 'signal_sources',
+    },
+  };
+
   for (const flag of FEATURE_FLAGS) {
+    const metadata = flagMetadata[flag.key];
+
+    if (!metadata) {
+      throw new Error(
+        `Missing feature flag metadata for "${flag.key}". Add its owningTeam and relatedModule.`
+      );
+    }
+
     await client.query(
       `
-      INSERT INTO admin_feature_flags (id, key, description, type, default_value, environment, enabled, created_at, updated_at)
-      VALUES (gen_random_uuid(), $1, $2, $3, $4, 'production', true, NOW(), NOW())
+      INSERT INTO admin_feature_flags (
+        id,
+        key,
+        description,
+        owning_team,
+        related_module,
+        type,
+        default_value,
+        environment,
+        enabled,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        gen_random_uuid(),
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        'production',
+        true,
+        NOW(),
+        NOW()
+      )
       ON CONFLICT (key) DO UPDATE SET
         description = EXCLUDED.description,
+        owning_team = EXCLUDED.owning_team,
+        related_module = EXCLUDED.related_module,
         type = EXCLUDED.type,
         default_value = EXCLUDED.default_value,
         updated_at = NOW()
       `,
-      [flag.key, flag.description, flag.type, flag.defaultValue]
+      [
+        flag.key,
+        flag.description,
+        metadata.owningTeam,
+        metadata.relatedModule,
+        flag.type,
+        flag.defaultValue,
+      ]
     );
   }
+
   log(`seeded ${FEATURE_FLAGS.length} feature flags`);
 }
+
 
 async function seedAdminUser(client) {
   const email = process.env.SEED_ADMIN_EMAIL || 'admin@syncexc.com';
@@ -416,6 +557,7 @@ async function main() {
     await seedWorkspaceRoles(client);
     await seedAdminRoles(client);
     await seedAdminPermissions(client);
+    await seedAdminRolePermissions(client);
     await seedPlans(client);
     await seedFeatureFlags(client);
 

@@ -2,16 +2,17 @@ import * as Popover from '@radix-ui/react-popover';
 import { Link } from 'react-router-dom';
 import { Bell, Check, Inbox } from 'lucide-react';
 import { useMemo } from 'react';
+import { useSelector } from 'react-redux';
 
 import { cn } from '../../lib/utils/cn.util.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
-import { useNotificationContext } from '../../context/NotificationContext.jsx';
 import { useNotifications } from '../../hooks/useNotifications.js';
+import { selectUnreadCount } from '../../features/notifications/notificationsSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 export function NotificationsMenu() {
-  const { unreadCount, markAllRead } = useNotificationContext();
-  const { notifications, isLoading, markRead } = useNotifications({ limit: 10 });
+  const unreadCount = useSelector(selectUnreadCount);
+  const { notifications, isLoading, markRead, markAllRead } = useNotifications({ limit: 10 });
 
   const top = useMemo(() => notifications.slice(0, 10), [notifications]);
 

@@ -68,8 +68,14 @@ export default function TerminalOverview() {
     dispatch(uiActions.setBreadcrumbs([{ label: 'Terminal', path: '/app/terminal' }]));
   }, [dispatch]);
 
+  const activeConnection = useMemo(() => {
+    const account = accounts.find((a) => a.id === selectedAccountId);
+    return connections.find((c) => c.id === account?.connectionId) ?? null;
+  }, [accounts, connections, selectedAccountId]);
+
   const marketsQuery = useTerminalMarkets(activeWorkspaceId, {
-    accountId: selectedAccountId ?? undefined,
+    exchangeCode: activeConnection?.exchange,
+    marketType: 'spot',
   });
 
   const ordersQuery = useTerminalOrders(activeWorkspaceId, {
@@ -78,11 +84,6 @@ export default function TerminalOverview() {
   });
 
   const instruments = marketsQuery.data ?? [];
-
-  const activeConnection = useMemo(() => {
-    const account = accounts.find((a) => a.id === selectedAccountId);
-    return connections.find((c) => c.id === account?.connectionId) ?? null;
-  }, [accounts, connections, selectedAccountId]);
 
   const connectionDetailQuery = useConnection(activeConnection?.id);
 

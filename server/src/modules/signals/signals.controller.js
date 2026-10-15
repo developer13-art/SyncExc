@@ -43,6 +43,8 @@ export function createSignalsController(services) {
         req.workspace.id,
         {
           status: req.query.status,
+          query: req.query.q,
+          sort: req.query.sort,
           limit: Number(req.query.limit) || 50,
           cursor: req.query.cursor || null,
         }

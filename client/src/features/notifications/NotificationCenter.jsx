@@ -9,7 +9,6 @@ import { Pagination } from '../../components/ui/Pagination.jsx';
 import { NotificationList } from './components/NotificationList.jsx';
 import { NotificationFilters } from './components/NotificationFilters.jsx';
 import { useNotifications, useUnreadCount } from '../../hooks/useNotifications.js';
-import { useNotificationContext } from '../../context/NotificationContext.jsx';
 import { usePagination } from '../../hooks/usePagination.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { useToast } from '../../hooks/useToast.js';
@@ -19,7 +18,6 @@ import { ROUTES } from '../../config/routes.config.js';
 export default function NotificationCenter() {
   const dispatch = useDispatch();
   const toast = useToast();
-  const { markAllRead: ctxMarkAllRead } = useNotificationContext();
   const pagination = usePagination({ initialPageSize: 25 });
 
   const [query, setQuery] = useState('');
@@ -53,7 +51,7 @@ export default function NotificationCenter() {
 
   const handleMarkAllRead = async () => {
     try {
-      await ctxMarkAllRead();
+      await notificationsQuery.markAllRead();
       toast.success('All notifications marked read');
       await notificationsQuery.refetch?.();
     } catch (err) {

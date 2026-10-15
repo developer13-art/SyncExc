@@ -38,6 +38,16 @@ export function WorkspaceProvider({ children }) {
     [workspaces, activeWorkspaceId],
   );
 
+  const permissionsQuery = useQuery({
+    queryKey: queryKeys.workspaces.permissions(activeWorkspaceId),
+    queryFn: () => workspacesApi.getMyPermissions(activeWorkspaceId),
+    enabled:
+      isAuthenticated &&
+      listQuery.isSuccess &&
+      Boolean(activeWorkspace),
+    staleTime: 60_000,
+  });
+
   const switchWorkspace = useCallback(
     async (workspaceId) => {
       if (workspaceId === activeWorkspaceId) {
@@ -57,19 +67,39 @@ export function WorkspaceProvider({ children }) {
   const reloadWorkspaces = useCallback(async () => {
     const result = await workspacesApi.list({ pageSize: 100 });
     dispatch(workspaceActions.workspacesLoaded(result.items));
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.workspaces.permissions(activeWorkspaceId),
+    });
     return result.items;
-  }, [dispatch]);
+  }, [activeWorkspaceId, dispatch, queryClient]);
 
   const value = useMemo(
     () => ({
       workspaces,
       activeWorkspace,
       activeWorkspaceId,
-      isLoading: listQuery.isLoading,
+      permissions: permissionsQuery.data?.permissions ?? [],
+      isLoading: listQuery.isLoading || (Boolean(activeWorkspace) && permissionsQuery.isLoading),
+      isWorkspaceReady:
+        listQuery.isSuccess && Boolean(activeWorkspace) && permissionsQuery.isSuccess,
+      error: listQuery.error ?? permissionsQuery.error,
       switchWorkspace,
       reloadWorkspaces,
     }),
-    [workspaces, activeWorkspace, activeWorkspaceId, listQuery.isLoading, switchWorkspace, reloadWorkspaces],
+    [
+      workspaces,
+      activeWorkspace,
+      activeWorkspaceId,
+      listQuery.isLoading,
+      listQuery.isSuccess,
+      listQuery.error,
+      permissionsQuery.data,
+      permissionsQuery.isLoading,
+      permissionsQuery.isSuccess,
+      permissionsQuery.error,
+      switchWorkspace,
+      reloadWorkspaces,
+    ],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

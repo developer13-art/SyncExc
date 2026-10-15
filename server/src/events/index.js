@@ -52,6 +52,7 @@ export async function initEvents({ db, logger: injectedLogger }) {
   const consumer = createConsumerRunner({
     db,
     publisher,
+    envelope,
     logger,
   });
 
@@ -76,6 +77,10 @@ export async function initEvents({ db, logger: injectedLogger }) {
      */
     async publish(tx, eventType, payload, options = {}) {
       return outbox.enqueue(tx, eventType, payload, options);
+    },
+
+    pollOnce() {
+      return publisher.pollOnce();
     },
 
     /**

@@ -67,8 +67,8 @@ export function createProviderService({ db, queries, events, logger }) {
     return queries.findProviderByHandle(handle);
   }
 
-  async function listProviders({ moderationState, limit, cursor }) {
-    return queries.listProviders({ moderationState, limit, cursor });
+  async function listProviders({ moderationState, limit, cursor, search, markets }) {
+    return queries.listProviders({ moderationState, limit, cursor, search, markets });
   }
 
   async function updateProvider({ userId, providerId, updates }) {

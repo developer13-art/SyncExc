@@ -7,6 +7,10 @@ import Joi from 'joi';
 import { UuidSchema, PaginationSchema } from '@syncexc/shared';
 import { createCommunityController } from './community.controller.js';
 
+const FeedQuerySchema = PaginationSchema.keys({
+  following: Joi.boolean().truthy('true').falsy('false').optional(),
+});
+
 const UpdateProfileSchema = Joi.object({
   displayName: Joi.string().trim().min(1).max(100).optional(),
   handle: Joi.string().trim().lowercase().pattern(/^[a-z0-9_]{3,32}$/).optional(),
@@ -213,7 +217,7 @@ export function createCommunityRoutes(services) {
   router.get(
     '/feed',
     middleware.requireAuth(),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(FeedQuerySchema),
     middleware.asyncHandler(controller.listFeed)
   );
 

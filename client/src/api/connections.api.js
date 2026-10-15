@@ -46,5 +46,5 @@ export const connectionsApi = {
   getConnectionRequirements: (exchangeId) =>
     api.get(endpoints.connections.connectionRequirements(exchangeId)),
 
-  listExchangeRegistry: () => api.get('/exchanges'),
+  listExchangeRegistry: () => api.get(endpoints.connections.exchangeRegistry),
 };

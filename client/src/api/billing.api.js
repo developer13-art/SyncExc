@@ -6,6 +6,8 @@ const { endpoints } = apiConfig;
 export const billingApi = {
   listPlans: (params) => api.get(endpoints.billing.plans, { params }),
 
+  listPaymentProviders: () => api.get(endpoints.billing.paymentProviders),
+
   getPlan: (planId) => api.get(endpoints.billing.plan(planId)),
 
   getSubscription: () => api.get(endpoints.billing.subscription),

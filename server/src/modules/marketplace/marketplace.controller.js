@@ -25,6 +25,8 @@ export function createMarketplaceController(services) {
         moderationState: 'approved',
         limit: Number(req.query.limit) || 50,
         cursor: req.query.cursor || null,
+        search: req.query.q || null,
+        markets: req.query.markets ? req.query.markets.split(',') : null,
       });
       return paginated(res, rows.map(serializeProvider), {
         nextCursor,

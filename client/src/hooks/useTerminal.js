@@ -119,7 +119,7 @@ export function useTerminalMarkets(workspaceId, params = {}) {
   return useQuery({
     queryKey: queryKeys.terminal.markets(workspaceId, params),
     queryFn: () => terminalApi.listMarkets(workspaceId, params),
-    enabled: Boolean(workspaceId),
+    enabled: Boolean(workspaceId && params.exchangeCode),
     staleTime: 10_000,
   });
 }

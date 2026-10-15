@@ -1,14 +1,13 @@
-import { useLocation } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 
 import { cn } from '../../lib/utils/cn.util.js';
 import { Breadcrumbs } from './Breadcrumbs.jsx';
 import { UserMenu } from './UserMenu.jsx';
 import { NotificationsMenu } from './NotificationsMenu.jsx';
-import { useNotificationContext } from '../../context/NotificationContext.jsx';
+import { selectWsConnected } from '../../features/notifications/notificationsSlice.js';
 
 export function Topbar({ className }) {
-  const location = useLocation();
-  const { wsConnected } = useNotificationContext();
+  const wsConnected = useSelector(selectWsConnected);
 
   return (
     <header
@@ -47,4 +46,4 @@ export function Topbar({ className }) {
   );
 }
 
-export { useLocation };
+export { useLocation } from 'react-router-dom';

@@ -55,9 +55,10 @@ export default function ApprovalsList() {
 
   const approvals = approvalsQuery.data?.items ?? [];
 
-  if (approvalsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(approvalsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = approvalsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [approvalsQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

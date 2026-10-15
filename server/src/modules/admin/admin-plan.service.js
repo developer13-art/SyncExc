@@ -28,6 +28,38 @@ export function createAdminPlanService({ db, queries, events, audit, logger }) {
     return result.rows;
   }
 
+  async function getPlan({ planId }) {
+    const result = await db.query(
+      `
+      SELECT p.*, v.version_number AS version, v.features, v.limits,
+        COALESCE(prices.items, '[]'::json) AS prices
+      FROM subscription_plans p
+      LEFT JOIN LATERAL (
+        SELECT version_number, features, limits, id
+        FROM subscription_plan_versions
+        WHERE plan_id = p.id
+        ORDER BY version_number DESC
+        LIMIT 1
+      ) v ON true
+      LEFT JOIN LATERAL (
+        SELECT json_agg(json_build_object(
+          'id', price.id,
+          'currency', price.currency,
+          'amountMinor', price.amount_minor,
+          'billingInterval', price.billing_interval
+        ) ORDER BY price.effective_from DESC) AS items
+        FROM subscription_plan_prices price
+        WHERE price.plan_version_id = v.id
+          AND price.effective_until IS NULL
+      ) prices ON true
+      WHERE p.id = $1
+      `,
+      [planId]
+    );
+    if (result.rows.length === 0) throw new NotFoundError('Plan');
+    return result.rows[0];
+  }
+
   async function createPlan({ userId, code, name, description, features, limits, prices }) {
     const existing = await db.query(
       `SELECT 1 FROM subscription_plans WHERE code = $1`,
@@ -71,8 +103,8 @@ export function createAdminPlanService({ db, queries, events, audit, logger }) {
       await audit.write({
         actorId: userId,
         action: 'plan.created',
-        targetResource: 'subscription_plan',
-        targetId: plan.rows[0].id,
+        resourceType: 'subscription_plan',
+        resourceId: plan.rows[0].id,
         after: { code, name, features, limits },
       });
 
@@ -89,6 +121,49 @@ export function createAdminPlanService({ db, queries, events, audit, logger }) {
 
       return plan.rows[0];
     });
+  }
+
+  async function updatePlan({ userId, planId, name, description, features }) {
+    const current = await getPlan({ planId });
+    const normalizedFeatures = Array.isArray(features)
+      ? Object.fromEntries(features.map((feature) => [feature, true]))
+      : features;
+    const nextFeatures = normalizedFeatures ?? current.features;
+    const featuresChanged =
+      normalizedFeatures !== undefined &&
+      JSON.stringify(nextFeatures) !== JSON.stringify(current.features);
+
+    if (name !== undefined || description !== undefined) {
+      await db.query(
+        `UPDATE subscription_plans
+         SET name = COALESCE($2, name),
+             description = COALESCE($3, description),
+             updated_at = now()
+         WHERE id = $1`,
+        [planId, name ?? null, description ?? null]
+      );
+    }
+
+    if (featuresChanged) {
+      await createPlanVersion({
+        userId,
+        planId,
+        features: nextFeatures,
+        limits: current.limits ?? {},
+        prices: current.prices ?? [],
+        effectiveFrom: new Date(),
+      });
+    } else {
+      await audit.write({
+        actorId: userId,
+        action: 'plan.updated',
+        resourceType: 'subscription_plan',
+        resourceId: planId,
+        after: { name, description },
+      });
+    }
+
+    return getPlan({ planId });
   }
 
   async function publishPlan({ planId, actorId }) {
@@ -108,8 +183,8 @@ export function createAdminPlanService({ db, queries, events, audit, logger }) {
       await audit.write({
         actorId,
         action: 'plan.published',
-        targetResource: 'subscription_plan',
-        targetId: planId,
+        resourceType: 'subscription_plan',
+        resourceId: planId,
         before: before.rows[0],
         after: { status: 'active' },
       });
@@ -133,8 +208,8 @@ export function createAdminPlanService({ db, queries, events, audit, logger }) {
       await audit.write({
         actorId,
         action: 'plan.retired',
-        targetResource: 'subscription_plan',
-        targetId: planId,
+        resourceType: 'subscription_plan',
+        resourceId: planId,
         before: before.rows[0],
         after: { status: 'retired' },
         reason,
@@ -190,8 +265,8 @@ export function createAdminPlanService({ db, queries, events, audit, logger }) {
       await audit.write({
         actorId: userId,
         action: 'plan.version_created',
-        targetResource: 'subscription_plan',
-        targetId: planId,
+        resourceType: 'subscription_plan',
+        resourceId: planId,
         after: { versionNumber: nextVersion },
       });
 
@@ -201,7 +276,9 @@ export function createAdminPlanService({ db, queries, events, audit, logger }) {
 
   return {
     listPlans,
+    getPlan,
     createPlan,
+    updatePlan,
     publishPlan,
     retirePlan,
     createPlanVersion,

@@ -59,9 +59,10 @@ export default function FlagsList() {
 
   const flags = flagsQuery.data?.items ?? [];
 
-  if (flagsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(flagsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = flagsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [flagsQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

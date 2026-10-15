@@ -102,7 +102,7 @@ export default function UserDetails() {
     );
   }
 
-  const user = userQuery.data;
+  const user = userQuery.data.user ?? userQuery.data;
   const auditEvents = auditQuery.data?.items ?? [];
 
   const initials = (user.displayName ?? user.email ?? '?')

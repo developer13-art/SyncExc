@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
-import { DEMO_CREDENTIALS } from '../../lib/utils/storage.util.js';
 import { Input } from '../../components/ui/Input.jsx';
 import { FormField } from '../../components/forms/FormField.jsx';
 import { FormError } from '../../components/forms/FormError.jsx';
@@ -21,8 +20,8 @@ export default function Login() {
   const { login } = useAuthContext();
 
   const [form, setForm] = useState({
-    email: import.meta.env.DEV ? DEMO_CREDENTIALS.email : '',
-    password: import.meta.env.DEV ? DEMO_CREDENTIALS.password : '',
+    email: '',
+    password: '',
     remember: true,
   });
   const [errors, setErrors] = useState({});
@@ -70,7 +69,7 @@ export default function Login() {
       const result = await login({
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        remember: form.remember,
+        rememberMe: form.remember,
       });
 
       if (result?.mfaRequired) {

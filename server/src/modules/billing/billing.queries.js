@@ -527,6 +527,20 @@ export function createBillingQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async listUsageCountersForScope({ scopeType, scopeId, periodStart, periodEnd }) {
+      const result = await db.query(
+        `
+        SELECT usage_dimension, current_value
+        FROM subscription_usage_counters
+        WHERE billing_scope_type = $1 AND billing_scope_id = $2
+          AND period_start >= $3 AND period_start < $4
+        ORDER BY usage_dimension
+        `,
+        [scopeType, scopeId, periodStart, periodEnd]
+      );
+      return result.rows;
+    },
+
     /* =========================================================================
      * WEBHOOK EVENTS
      * ====================================================================== */

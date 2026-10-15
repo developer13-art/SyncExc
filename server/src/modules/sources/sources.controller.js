@@ -16,9 +16,14 @@ export function createSourcesController(services) {
     sandboxService,
     connectionService,
     duplicateDetectionService,
+    queries,
   } = services;
 
   return {
+    async listCategories(_req, res) {
+      return success(res, await queries.listCategories());
+    },
+
     /* Sources */
     async list(req, res) {
       const sources = await sourceRegistryService.listSources({

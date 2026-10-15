@@ -47,7 +47,11 @@ export default function PlanEditor() {
       setForm({
         name: plan.name ?? '',
         description: plan.description ?? '',
-        features: plan.features ?? [],
+        features: Array.isArray(plan.features)
+          ? plan.features
+          : Object.entries(plan.features ?? {})
+              .filter(([, enabled]) => Boolean(enabled))
+              .map(([feature]) => feature),
         status: plan.status ?? 'draft',
       });
       dispatch(adminUiActions.setPageTitle(`Edit · ${plan.name}`));
@@ -210,7 +214,12 @@ export default function PlanEditor() {
         </CardContent>
       </Card>
 
-      <PlanPriceEditor planId={planId} prices={plan.prices ?? []} />
+      <PlanPriceEditor
+        planId={planId}
+        prices={plan.prices ?? []}
+        features={plan.features ?? {}}
+        limits={plan.limits ?? {}}
+      />
 
       <ConfirmDialog
         open={publishOpen}

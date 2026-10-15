@@ -167,6 +167,40 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     return out;
   }
 
+  async function getUsageForScope({ scopeType, scopeId }) {
+    const periodStart = new Date();
+    periodStart.setUTCDate(1);
+    periodStart.setUTCHours(0, 0, 0, 0);
+    const periodEnd = new Date(periodStart);
+    periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
+
+    const [entitlements, counters] = await Promise.all([
+      listEntitlementsForScope({ scopeType, scopeId }),
+      queries.listUsageCountersForScope({
+        scopeType,
+        scopeId,
+        periodStart,
+        periodEnd,
+      }),
+    ]);
+    const usedByDimension = new Map(
+      counters.map((counter) => [counter.usage_dimension, Number(counter.current_value)])
+    );
+
+    return {
+      periodStart: periodStart.toISOString(),
+      periodEnd: periodEnd.toISOString(),
+      metrics: Object.entries(entitlements)
+        .filter(([, limit]) => typeof limit === 'number')
+        .map(([key, limit]) => ({
+          key,
+          label: key.replace(/[_-]/g, ' '),
+          used: usedByDimension.get(key) ?? 0,
+          limit,
+        })),
+    };
+  }
+
   async function checkEntitlement({ scopeType, scopeId, featureKey }) {
     // Owner of a personal workspace is covered by the personal scope
     const entitlements = await listEntitlementsForScope({ scopeType, scopeId });
@@ -607,6 +641,7 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     // Plans
     listPlans,
     getPlan,
+    listPaymentProviders: () => providerFactory.list(),
 
     // Checkout
     createCheckoutSession,
@@ -615,6 +650,7 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     getActiveSubscriptionForScope,
     listSubscriptionsForScope,
     listEntitlementsForScope,
+    getUsageForScope,
     checkEntitlement,
     recordUsage,
     cancelSubscription,

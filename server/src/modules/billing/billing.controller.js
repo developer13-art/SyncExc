@@ -7,6 +7,10 @@ import { success, created, paginated } from '../../lib/response.js';
 
 export function createBillingController({ service }) {
   return {
+    async listPaymentProviders(_req, res) {
+      return success(res, service.listPaymentProviders());
+    },
+
     async listPlans(req, res) {
       const plans = await service.listPlans();
       return success(res, plans);
@@ -43,6 +47,21 @@ export function createBillingController({ service }) {
         ...serializeSubscription(sub),
         entitlements,
       });
+    },
+
+    async getEntitlements(req, res) {
+      const scopeType = req.workspace?.id ? 'workspace' : 'user';
+      const scopeId = req.workspace?.id || req.auth.userId;
+      return success(
+        res,
+        await service.listEntitlementsForScope({ scopeType, scopeId })
+      );
+    },
+
+    async getUsage(req, res) {
+      const scopeType = req.workspace?.id ? 'workspace' : 'user';
+      const scopeId = req.workspace?.id || req.auth.userId;
+      return success(res, await service.getUsageForScope({ scopeType, scopeId }));
     },
 
     async cancelSubscription(req, res) {

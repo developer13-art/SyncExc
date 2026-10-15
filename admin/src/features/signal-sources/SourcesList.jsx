@@ -59,9 +59,10 @@ export default function SourcesList() {
 
   const sources = sourcesQuery.data?.items ?? [];
 
-  if (sourcesQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(sourcesQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = sourcesQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [sourcesQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

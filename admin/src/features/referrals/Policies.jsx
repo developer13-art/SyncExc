@@ -44,9 +44,10 @@ export default function Policies() {
 
   const policies = policiesQuery.data?.items ?? [];
 
-  if (policiesQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(policiesQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = policiesQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [policiesQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

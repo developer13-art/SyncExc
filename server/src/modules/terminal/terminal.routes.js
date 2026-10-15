@@ -11,6 +11,11 @@ import {
 } from '@syncexc/shared';
 import { createTerminalController } from './terminal.controller.js';
 
+const OrdersQuerySchema = PaginationSchema.keys({
+  status: Joi.string().max(64).optional(),
+  accountId: UuidSchema.optional(),
+});
+
 export function createTerminalRoutes({ service, orderSubmissionService, portfolioService, middleware }) {
   const controller = createTerminalController({ service, orderSubmissionService, portfolioService });
   const router = Router();
@@ -34,7 +39,7 @@ export function createTerminalRoutes({ service, orderSubmissionService, portfoli
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.requirePermission('trading.monitor'),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(OrdersQuerySchema),
     middleware.asyncHandler(controller.listOrders)
   );
 

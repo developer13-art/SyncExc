@@ -122,7 +122,7 @@ export function createCommunityController(services) {
     async listFeed(req, res) {
       const { rows, nextCursor } = await postService.listFeed({
         userId: req.auth.userId,
-        followingOnly: req.query.following === 'true',
+        followingOnly: req.query.following === true || req.query.following === 'true',
         limit: Number(req.query.limit) || 50,
         cursor: req.query.cursor || null,
       });

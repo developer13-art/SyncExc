@@ -25,7 +25,18 @@ export const communityApi = {
 
   getFeed: (params) => api.getPaged(endpoints.community.feed, { params }),
 
-  listPosts: (params) => api.getPaged(endpoints.community.posts, { params }),
+  listPosts: (params = {}) => {
+    const query = { ...params };
+    const authorId = query.authorId;
+    delete query.authorId;
+    delete query.groupId;
+    if (authorId) {
+      return api.getPaged(endpoints.community.profilePosts(authorId), { params: query });
+    }
+    return api.getPaged(endpoints.community.posts, {
+      params: { ...query, following: false },
+    });
+  },
 
   createPost: (payload) => api.post(endpoints.community.posts, payload),
 

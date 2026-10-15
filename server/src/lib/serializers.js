@@ -723,12 +723,16 @@ export function serializeNotification(row) {
     eventType: row.event_type,
     category: row.category,
     priority: row.priority,
+    severity: row.priority,
     title: row.title,
     message: row.message,
+    body: row.message,
     action: row.action || null,
+    actionUrl: row.action?.url || null,
     status: row.status,
     createdAt: row.created_at,
     readAt: row.read_at || null,
+    read: Boolean(row.read_at),
   };
 }
 

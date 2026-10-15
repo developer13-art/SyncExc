@@ -75,9 +75,7 @@ if (config.observability.logFormat === 'pretty' && config.isDevelopment) {
   }
 }
 
-const rootLogger = pino(
-  transport ? { ...baseOptions, transport } : baseOptions
-);
+const rootLogger = pino(baseOptions);
 
 export function createLogger(bindings = {}) {
   return rootLogger.child(bindings);

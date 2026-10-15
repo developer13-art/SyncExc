@@ -121,8 +121,11 @@ export function createNotificationQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async listNotificationsForUser(userId, { category, unreadOnly, limit = 50, cursor = null } = {}) {
-      const params = [userId, limit + 1];
+    async listNotificationsForUser(
+      userId,
+      { category, unreadOnly, readOnly, q, limit = 50, offset = 0, cursor = null } = {}
+    ) {
+      const params = [userId];
       const conditions = ['user_id = $1', 'archived_at IS NULL'];
       if (category) {
         params.push(category);
@@ -130,17 +133,33 @@ export function createNotificationQueries({ db }) {
       }
       if (unreadOnly) {
         conditions.push('read_at IS NULL');
+      } else if (readOnly) {
+        conditions.push('read_at IS NOT NULL');
+      }
+      if (q) {
+        params.push(`%${q}%`);
+        conditions.push(`(title ILIKE $${params.length} OR message ILIKE $${params.length})`);
       }
       if (cursor) {
         params.push(cursor);
         conditions.push(`created_at < $${params.length}`);
       }
+      const where = conditions.join(' AND ');
+      const countResult = await db.query(
+        `SELECT count(*)::int AS total FROM notifications WHERE ${where}`,
+        params
+      );
+      const total = countResult.rows[0].total;
+      params.push(limit + 1);
+      const limitParameter = params.length;
+      params.push(offset);
+      const offsetParameter = params.length;
       const result = await db.query(
         `
         SELECT * FROM notifications
-        WHERE ${conditions.join(' AND ')}
+        WHERE ${where}
         ORDER BY created_at DESC
-        LIMIT $2
+        LIMIT $${limitParameter} OFFSET $${offsetParameter}
         `,
         params
       );
@@ -150,6 +169,7 @@ export function createNotificationQueries({ db }) {
       return {
         rows,
         nextCursor: hasMore && last ? last.created_at.toISOString() : null,
+        total,
       };
     },
 
@@ -165,8 +185,8 @@ export function createNotificationQueries({ db }) {
       const result = await db.query(
         `
         UPDATE notifications
-        SET read_at = now(), status = 'read'
-        WHERE id = $1 AND user_id = $2 AND read_at IS NULL
+        SET read_at = COALESCE(read_at, now()), status = 'read'
+        WHERE id = $1 AND user_id = $2 AND archived_at IS NULL
         RETURNING *
         `,
         [notificationId, userId]

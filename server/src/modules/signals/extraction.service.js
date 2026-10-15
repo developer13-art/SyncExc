@@ -267,8 +267,8 @@ export function createExtractionService({
     return { candidate, targets, issues, relationships };
   }
 
-  async function listCandidatesForWorkspace(workspaceId, { status, limit, cursor }) {
-    return queries.listCandidatesForWorkspace(workspaceId, { status, limit, cursor });
+  async function listCandidatesForWorkspace(workspaceId, { status, query, sort, limit, cursor }) {
+    return queries.listCandidatesForWorkspace(workspaceId, { status, query, sort, limit, cursor });
   }
 
   return {

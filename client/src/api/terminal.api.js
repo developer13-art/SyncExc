@@ -9,8 +9,13 @@ export const terminalApi = {
   listAccounts: (workspaceId, params) =>
     api.get(endpoints.terminal.accounts(workspaceId), { params }),
 
-  listMarkets: (workspaceId, params) =>
-    api.get(endpoints.terminal.markets(workspaceId), { params }),
+  listMarkets: (workspaceId, params = {}) => {
+    const { exchangeCode, ...query } = params;
+    if (!exchangeCode) {
+      throw new Error('An exchange code is required to list instruments.');
+    }
+    return api.get(endpoints.terminal.markets(workspaceId, exchangeCode), { params: query });
+  },
 
   listOrders: (workspaceId, params) =>
     api.getPaged(endpoints.terminal.orders(workspaceId), { params }),

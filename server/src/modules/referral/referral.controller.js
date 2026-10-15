@@ -107,7 +107,7 @@ export function createReferralController(services) {
     /* Dashboard */
     async getDashboard(req, res) {
       const affiliate = await affiliateService.getAffiliateByUserId(req.auth.userId);
-      if (!affiliate) return res.status(404).json({ error: { code: 'NOT_AFFILIATE', message: 'Not an affiliate' } });
+      if (!affiliate) return success(res, null);
       const dashboard = await dashboardService.getDashboard({
         affiliateId: affiliate.id,
         currency: affiliate.payout_currency || 'USD',

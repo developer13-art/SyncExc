@@ -31,10 +31,10 @@ export function createPublisher({ db, bus, subscribers, envelope, logger: inject
       try {
         validated = envelope.validate(event);
       } catch (err) {
-        logger.error({ err, eventId: event.id }, 'Invalid outbox event');
+        logger.error({ err, eventId: event.eventId }, 'Invalid outbox event');
         await db.query(
           `UPDATE outbox_events SET status = 'dead_lettered', last_error = $2 WHERE id = $1`,
-          [event.id, `invalid_envelope: ${err.message}`.slice(0, 1000)]
+          [event.eventId, `invalid_envelope: ${err.message}`.slice(0, 1000)]
         );
         return;
       }
@@ -53,7 +53,7 @@ export function createPublisher({ db, bus, subscribers, envelope, logger: inject
       if (failures.length > 0) {
         for (const failure of failures) {
           logger.error(
-            { err: failure.reason, eventType: validated.eventType, eventId: event.id },
+            { err: failure.reason, eventType: validated.eventType, eventId: event.eventId },
             'Subscriber handler failed'
           );
         }
@@ -63,11 +63,11 @@ export function createPublisher({ db, bus, subscribers, envelope, logger: inject
       // 4. Mark published
       await db.query(
         `UPDATE outbox_events SET status = 'published', published_at = now() WHERE id = $1`,
-        [event.id]
+        [event.eventId]
       );
 
       logger.trace(
-        { eventType: validated.eventType, eventId: event.id, handlers: handlers.length },
+        { eventType: validated.eventType, eventId: event.eventId, handlers: handlers.length },
         'Event published'
       );
     } catch (err) {
@@ -82,11 +82,11 @@ export function createPublisher({ db, bus, subscribers, envelope, logger: inject
             last_error = $2
         WHERE id = $1
         `,
-        [event.id, String(err.message).slice(0, 1000)]
+        [event.eventId, String(err.message).slice(0, 1000)]
       );
 
       logger.warn(
-        { err, eventId: event.id, eventType: event.eventType },
+        { err, eventId: event.eventId, eventType: event.eventType },
         'Event dispatch failed'
       );
     }
@@ -134,22 +134,7 @@ export function createPublisher({ db, bus, subscribers, envelope, logger: inject
       [batchSize]
     );
 
-    return result.rows.map((row) => ({
-      id: row.id,
-      eventId: row.id,
-      eventType: row.event_type,
-      schemaVersion: row.schema_version,
-      occurredAt: row.occurred_at.toISOString(),
-      ingestedAt: new Date().toISOString(),
-      correlationId: row.correlation_id,
-      actorId: row.actor_id,
-      workspaceId: row.workspace_id,
-      resourceType: row.resource_type,
-      resourceId: row.resource_id,
-      payload: row.payload,
-      idempotencyKey: null,
-      sourceModule: row.event_type.split('.')[0],
-    }));
+    return result.rows.map((row) => envelope.fromOutboxRow(row));
   }
 
   async function runLoop() {

@@ -100,9 +100,10 @@ export function createEnvelopeBuilder() {
 
       const now = new Date();
       const occurredAt = options.occurredAt || now;
+      const eventId = options.eventId || randomUUID();
 
       const envelope = {
-        eventId: options.eventId || randomUUID(),
+        eventId,
         eventType,
         schemaVersion: options.schemaVersion || DEFAULT_SCHEMA_VERSION,
         occurredAt: occurredAt.toISOString(),
@@ -111,13 +112,26 @@ export function createEnvelopeBuilder() {
         actorId: options.actorId || null,
         workspaceId: options.workspaceId || null,
         resourceType: options.resourceType || eventType.split('.')[0],
-        resourceId: String(options.resourceId || ''),
+        resourceId: String(options.resourceId || eventId),
         payload: payload || {},
         idempotencyKey: options.idempotencyKey || null,
         sourceModule: options.sourceModule || deriveSourceModule(eventType),
       };
 
       return envelope;
+    },
+
+    fromOutboxRow(row) {
+      return this.create(row.event_type, row.payload, {
+        eventId: row.id,
+        schemaVersion: row.schema_version,
+        occurredAt: row.occurred_at,
+        correlationId: row.correlation_id,
+        actorId: row.actor_id,
+        workspaceId: row.workspace_id,
+        resourceType: row.resource_type,
+        resourceId: row.resource_id ?? '',
+      });
     },
 
     /**

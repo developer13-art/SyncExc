@@ -37,12 +37,13 @@ export function createOutbox({ db, envelope, logger: injectedLogger }) {
       await tx.query(
         `
         INSERT INTO outbox_events (
-          event_type, schema_version, payload, correlation_id,
+          id, event_type, schema_version, payload, correlation_id,
           actor_id, workspace_id, resource_type, resource_id, occurred_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `,
         [
+          envelopeData.eventId,
           envelopeData.eventType,
           envelopeData.schemaVersion,
           JSON.stringify(envelopeData.payload),

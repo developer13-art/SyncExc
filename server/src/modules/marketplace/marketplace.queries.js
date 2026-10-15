@@ -56,12 +56,22 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async listProviders({ moderationState, limit = 50, cursor = null } = {}) {
+    async listProviders({ moderationState, limit = 50, cursor = null, search = null, markets = null } = {}) {
       const params = [limit + 1];
       const conditions = ["moderation_state = 'approved'"];
       if (moderationState) {
         conditions[0] = `moderation_state = $${params.length + 1}`;
         params.push(moderationState);
+      }
+      if (search) {
+        params.push(`%${search}%`);
+        conditions.push(
+          `(display_name ILIKE $${params.length} OR handle ILIKE $${params.length} OR biography ILIKE $${params.length})`
+        );
+      }
+      if (markets?.length) {
+        params.push(markets);
+        conditions.push(`supported_markets && $${params.length}::text[]`);
       }
       if (cursor) {
         params.push(cursor);

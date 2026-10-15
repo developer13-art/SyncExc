@@ -64,9 +64,10 @@ export default function JobsList() {
 
   const jobs = jobsQuery.data?.items ?? [];
 
-  if (jobsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(jobsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = jobsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [jobsQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

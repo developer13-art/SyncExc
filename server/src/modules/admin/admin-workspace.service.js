@@ -5,7 +5,7 @@
 import { NotFoundError } from '../../lib/errors.js';
 
 export function createAdminWorkspaceService({ db, queries, events, audit, logger }) {
-  async function searchWorkspaces({ query, type, status, limit = 50, cursor = null } = {}) {
+  async function searchWorkspaces({ query, type, status, limit = 50, cursor = null, offset } = {}) {
     const params = [limit + 1];
     const conditions = [];
     if (query) {
@@ -28,21 +28,25 @@ export function createAdminWorkspaceService({ db, queries, events, audit, logger
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const result = await db.query(
       `
-      SELECT w.*, u.email AS owner_email
+      SELECT w.*, u.email AS owner_email, COUNT(*) OVER () AS total_count
       FROM workspaces w      JOIN users u ON u.id = w.owner_id
       ${where}
       ORDER BY w.created_at DESC
       LIMIT $1
+      ${offset === undefined ? '' : `OFFSET $${params.push(offset)}`}
       `,
       params
     );
 
     const hasMore = result.rows.length > limit;
-    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const selectedRows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const total = Number(selectedRows[0]?.total_count ?? 0);
+    const rows = selectedRows.map(({ total_count: _totalCount, ...row }) => row);
     const last = rows[rows.length - 1];
     return {
       rows,
       nextCursor: hasMore && last ? last.created_at.toISOString() : null,
+      total,
     };
   }
 
@@ -83,8 +87,8 @@ export function createAdminWorkspaceService({ db, queries, events, audit, logger
     await audit.write({
       actorId,
       action: 'workspace.viewed',
-      targetResource: 'workspace',
-      targetId: workspaceId,
+      resourceType: 'workspace',
+      resourceId: workspaceId,
     });
 
     return {
@@ -112,8 +116,8 @@ export function createAdminWorkspaceService({ db, queries, events, audit, logger
       await audit.write({
         actorId,
         action: 'workspace.suspended',
-        targetResource: 'workspace',
-        targetId: workspaceId,
+        resourceType: 'workspace',
+        resourceId: workspaceId,
         before: before.rows[0],
         after: { status: 'suspended' },
         reason,
@@ -138,8 +142,8 @@ export function createAdminWorkspaceService({ db, queries, events, audit, logger
       await audit.write({
         actorId,
         action: 'workspace.restored',
-        targetResource: 'workspace',
-        targetId: workspaceId,
+        resourceType: 'workspace',
+        resourceId: workspaceId,
         before: before.rows[0],
         after: { status: 'active' },
         reason,
@@ -170,8 +174,8 @@ export function createAdminWorkspaceService({ db, queries, events, audit, logger
       await audit.write({
         actorId,
         action: 'connection_share.revoked',
-        targetResource: 'connection_sharing_grant',
-        targetId: grantId,
+        resourceType: 'connection_sharing_grant',
+        resourceId: grantId,
         before: before.rows[0],
         after: updated.rows[0],
         reason,

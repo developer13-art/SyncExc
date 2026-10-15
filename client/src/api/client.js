@@ -50,7 +50,12 @@ function unwrapPaged(response) {
   if ('data' in body) {
     return {
       items: Array.isArray(body.data) ? body.data : (body.data?.items ?? []),
-      meta: body.meta ?? body.data?.meta ?? {},
+      meta: {
+        ...(body.meta ?? body.data?.meta ?? {}),
+        ...(body.pagination?.total !== undefined
+          ? { total: body.pagination.total }
+          : {}),
+      },
     };
   }
   return {

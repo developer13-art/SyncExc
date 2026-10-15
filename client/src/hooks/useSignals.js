@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { signalsApi } from '../api/index.js';
 import { queryKeys } from './queryKeys.js';
 
-export function useSignals(params = {}) {
+export function useSignals(params = {}, enabled = true) {
   const queryClient = useQueryClient();
 
   const listQuery = useQuery({
     queryKey: queryKeys.signals.list(params),
     queryFn: () => signalsApi.listSignals(params),
+    enabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
   });

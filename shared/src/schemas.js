@@ -99,6 +99,8 @@ export const TimeframeSchema = Joi.string().valid(
 export const PaginationSchema = Joi.object({
   cursor: Joi.string().max(512).optional(),
   limit: Joi.number().integer().min(1).max(200).default(50),
+  page: Joi.number().integer().min(1).optional(),
+  pageSize: Joi.number().integer().min(1).max(200).optional(),
   sort: Joi.string().valid('asc', 'desc').default('desc'),
 });
 
@@ -969,12 +971,12 @@ export const EventEnvelopeSchema = Joi.object({
   occurredAt: Joi.date().iso().required(),
   ingestedAt: Joi.date().iso().required(),
   correlationId: UuidSchema.required(),
-  actorId: UuidSchema.optional(),
-  workspaceId: UuidSchema.optional(),
+  actorId: UuidSchema.allow(null).optional(),
+  workspaceId: UuidSchema.allow(null).optional(),
   resourceType: Joi.string().max(64).required(),
   resourceId: Joi.string().max(128).required(),
   payload: Joi.object().unknown(true).required(),
-  idempotencyKey: Joi.string().max(256).optional(),
+  idempotencyKey: Joi.string().max(256).allow(null).optional(),
   sourceModule: Joi.string().max(64).required(),
 });
 

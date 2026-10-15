@@ -84,7 +84,7 @@ export function HealthWidgets({ health, isLoading, error }) {
                 const Icon = config.icon;
                 return (
                   <li
-                    key={service.id}
+                    key={service.id ?? service.name}
                     className="flex items-center justify-between gap-3 px-5 py-3"
                   >
                     <div className="flex min-w-0 items-center gap-3">

@@ -40,9 +40,10 @@ export default function ExchangesList() {
 
   const exchanges = exchangesQuery.data?.items ?? [];
 
-  if (exchangesQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(exchangesQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = exchangesQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [exchangesQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

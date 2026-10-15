@@ -24,7 +24,7 @@ export async function initJobs({ services }) {
   const logger = createLogger({ component: 'jobs' });
 
   const registry = createJobRegistry({ logger });
-  const runner = createJobRunner({ db: services.db, registry, logger });
+  const runner = createJobRunner({ db: services.db, registry, logger, services });
   const scheduler = createJobScheduler({ db: services.db, runner, logger });
 
   // Register every job handler exactly once

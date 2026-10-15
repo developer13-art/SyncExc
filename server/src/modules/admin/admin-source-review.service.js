@@ -5,25 +5,35 @@
 import { NotFoundError, ValidationError } from '../../lib/errors.js';
 
 export function createAdminSourceReviewService({ db, queries, sources, events, audit, logger }) {
-  async function listCandidates({ status, limit = 100 } = {}) {
+  async function listCandidates({ status, search, limit = 100, offset } = {}) {
     const params = [limit];
-    let statusClause = '';
+    const conditions = [];
     if (status) {
       params.push(status);
-      statusClause = `WHERE status = $${params.length}`;
+      conditions.push(`c.status = $${params.length}`);
     }
+    if (search) {
+      params.push(`%${search}%`);
+      conditions.push(
+        `(c.name ILIKE $${params.length} OR c.url ILIKE $${params.length} OR c.identifier ILIKE $${params.length})`
+      );
+    }
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const result = await db.query(
       `
-      SELECT c.*, w.name AS workspace_name
+      SELECT c.*, w.name AS workspace_name, COUNT(*) OVER () AS total_count
       FROM signal_source_candidates c
       JOIN workspaces w ON w.id = c.workspace_id
-      ${statusClause}
+      ${whereClause}
       ORDER BY c.confidence_score DESC NULLS LAST, c.discovered_at DESC
       LIMIT $1
+      ${offset === undefined ? '' : `OFFSET $${params.push(offset)}`}
       `,
       params
     );
-    return result.rows;
+    const total = Number(result.rows[0]?.total_count ?? 0);
+    const rows = result.rows.map(({ total_count: _totalCount, ...row }) => row);
+    return { rows, total };
   }
 
   async function getCandidate({ candidateId, actorId }) {

@@ -43,6 +43,7 @@ export const ADMIN_PERMISSIONS = [
 
   // Referral
   { key: 'admin.referral.policies.manage', category: 'referral', description: 'Manage referral policies' },
+  { key: 'admin.referral.commissions.view', category: 'referral', description: 'View referral commission accruals' },
   { key: 'admin.referral.payouts.review', category: 'referral', description: 'Review payout requests' },
   { key: 'admin.referral.fraud.review', category: 'referral', description: 'Review fraud cases' },
 
@@ -160,6 +161,7 @@ export const DEFAULT_ADMIN_ROLES = [
     description: 'Referral policies, commission records, and payout oversight.',
     permissions: [
       'admin.referral.policies.manage',
+      'admin.referral.commissions.view',
       'admin.referral.payouts.review',
       'admin.referral.fraud.review',
       'admin.payments.view',

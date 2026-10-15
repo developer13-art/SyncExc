@@ -66,9 +66,10 @@ export default function WorkspacesList() {
 
   const workspaces = workspacesQuery.data?.items ?? [];
 
-  if (workspacesQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(workspacesQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = workspacesQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [workspacesQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {
@@ -192,7 +193,9 @@ export default function WorkspacesList() {
                 ? 'Try adjusting your search or filters.'
                 : 'Workspaces will appear here as users create them.'
             }
-            onRowClick={(row) => navigate(ROUTES.console.workspaces.details(row.id))}
+            onRowClick={(row) => {
+              if (row.id) navigate(ROUTES.console.workspaces.details(row.id));
+            }}
           />
           {pagination.total > pagination.pageSize ? (
             <div className="mt-4 flex justify-end">

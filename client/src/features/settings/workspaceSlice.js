@@ -19,11 +19,14 @@ const workspaceSlice = createSlice({
       state.isLoading = false;
       state.error = null;
 
-      if (!state.activeWorkspaceId && action.payload.length > 0) {
-        state.activeWorkspaceId = action.payload[0].id;
-        storage.set(STORAGE_KEYS.ACTIVE_WORKSPACE, action.payload[0].id, {
-          stringify: false,
-        });
+      if (!action.payload.some((workspace) => workspace.id === state.activeWorkspaceId)) {
+        const fallback = action.payload[0]?.id ?? null;
+        state.activeWorkspaceId = fallback;
+        if (fallback) {
+          storage.set(STORAGE_KEYS.ACTIVE_WORKSPACE, fallback, { stringify: false });
+        } else {
+          storage.remove(STORAGE_KEYS.ACTIVE_WORKSPACE);
+        }
       }
     },
     workspaceAdded(state, action) {
@@ -48,7 +51,11 @@ const workspaceSlice = createSlice({
     },
     setActiveWorkspace(state, action) {
       state.activeWorkspaceId = action.payload;
-      storage.set(STORAGE_KEYS.ACTIVE_WORKSPACE, action.payload, { stringify: false });
+      if (action.payload) {
+        storage.set(STORAGE_KEYS.ACTIVE_WORKSPACE, action.payload, { stringify: false });
+      } else {
+        storage.remove(STORAGE_KEYS.ACTIVE_WORKSPACE);
+      }
     },
     pendingInvitationsLoaded(state, action) {
       state.pendingInvitations = action.payload;

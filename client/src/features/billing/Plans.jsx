@@ -42,6 +42,12 @@ export default function Plans() {
     staleTime: 5 * 60_000,
   });
 
+  const paymentProvidersQuery = useQuery({
+    queryKey: ['billing', 'payment-providers'],
+    queryFn: () => billingApi.listPaymentProviders(),
+    staleTime: 5 * 60_000,
+  });
+
   const plans = plansQuery.data ?? [];
   const currentPlanId = subscription.subscription?.planId;
 
@@ -49,12 +55,34 @@ export default function Plans() {
     if (plan.id === currentPlanId) {
       return;
     }
+    const price = plan.prices?.[0];
+    if (!price) {
+      toast.error('Unable to start checkout', {
+        description: 'This plan does not currently have an available price.',
+      });
+      return;
+    }
+    const provider = paymentProvidersQuery.data?.[0];
+    if (paymentProvidersQuery.isError || !provider) {
+      toast.error('Unable to start checkout', {
+        description: paymentProvidersQuery.isError
+          ? 'Available payment methods could not be loaded. Please try again.'
+          : 'No payment provider is currently available. Please contact support.',
+      });
+      return;
+    }
     try {
-      const checkout = await billingApi.createCheckout({ planId: plan.id });
-      if (checkout?.checkoutUrl) {
-        window.location.assign(checkout.checkoutUrl);
-      } else if (checkout?.id) {
-        navigate(ROUTES.app.billing.checkout(checkout.id));
+      const checkout = await billingApi.createCheckout({
+        planId: plan.id,
+        planPriceId: price.id,
+        provider,
+        successUrl: new URL(ROUTES.app.billing.overview, window.location.origin).toString(),
+        cancelUrl: new URL(ROUTES.app.billing.plans, window.location.origin).toString(),
+      });
+      if (checkout?.redirectUrl) {
+        window.location.assign(checkout.redirectUrl);
+      } else if (checkout?.checkoutId) {
+        navigate(ROUTES.app.billing.checkout(checkout.checkoutId));
       }
     } catch (err) {
       toast.error('Unable to start checkout', { description: getErrorMessage(err) });

@@ -5,7 +5,7 @@
 import { NotFoundError } from '../../lib/errors.js';
 
 export function createAdminUserService({ db, queries, events, approvals, audit, logger }) {
-  async function searchUsers({ query, status, limit = 50, cursor = null } = {}) {
+  async function searchUsers({ query, status, limit = 50, cursor = null, offset } = {}) {
     const params = [limit + 1];
     const conditions = ['deleted_at IS NULL'];
     if (query) {
@@ -24,20 +24,25 @@ export function createAdminUserService({ db, queries, events, approvals, audit, 
     const result = await db.query(
       `
       SELECT id, email, username, display_name, status, email_verified_at, created_at, updated_at
+        , COUNT(*) OVER () AS total_count
       FROM users
       WHERE ${conditions.join(' AND ')}
       ORDER BY created_at DESC
       LIMIT $1
+      ${offset === undefined ? '' : `OFFSET $${params.push(offset)}`}
       `,
       params
     );
 
     const hasMore = result.rows.length > limit;
-    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const selectedRows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const total = Number(selectedRows[0]?.total_count ?? 0);
+    const rows = selectedRows.map(({ total_count: _totalCount, ...row }) => row);
     const last = rows[rows.length - 1];
     return {
       rows,
       nextCursor: hasMore && last ? last.created_at.toISOString() : null,
+      total,
     };
   }
 

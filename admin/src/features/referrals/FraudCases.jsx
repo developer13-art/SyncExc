@@ -48,9 +48,10 @@ export default function FraudCases() {
 
   const cases = fraudCasesQuery.data?.items ?? [];
 
-  if (fraudCasesQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(fraudCasesQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = fraudCasesQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [fraudCasesQuery.data?.meta?.total, pagination.setTotal]);
 
   return (
     <div className="flex flex-col gap-6">

@@ -79,9 +79,10 @@ export default function AlertEvents() {
 
   const events = eventsQuery.data?.items ?? [];
 
-  if (eventsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(eventsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = eventsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [eventsQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

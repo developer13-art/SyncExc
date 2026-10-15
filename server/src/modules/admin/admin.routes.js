@@ -9,6 +9,7 @@ import { Router } from 'express';
 import Joi from 'joi';
 import { UuidSchema, PaginationSchema } from '@syncexc/shared';
 import { createAdminController } from './admin.controller.js';
+import { createAdminAuthRoutes } from './admin-auth.routes.js';
 
 const SuspendUserSchema = Joi.object({
   reason: Joi.string().min(10).max(1000).required(),
@@ -39,6 +40,28 @@ const CreatePlanSchema = Joi.object({
   ).min(1).required(),
 });
 
+const UpdatePlanSchema = Joi.object({
+  name: Joi.string().trim().min(1).max(100).optional(),
+  description: Joi.string().trim().max(2000).allow('').optional(),
+  features: Joi.alternatives().try(
+    Joi.array().items(Joi.string().trim().min(1).max(100)),
+    Joi.object().unknown(true)
+  ).optional(),
+}).min(1);
+
+const CreatePlanVersionSchema = Joi.object({
+  features: Joi.object().unknown(true).required(),
+  limits: Joi.object().unknown(true).required(),
+  prices: Joi.array().items(
+    Joi.object({
+      currency: Joi.string().uppercase().length(3).required(),
+      amountMinor: Joi.number().integer().min(0).required(),
+      billingInterval: Joi.string().valid('monthly', 'yearly').required(),
+    })
+  ).default([]),
+  effectiveFrom: Joi.date().iso().optional(),
+});
+
 const ApplyCreditSchema = Joi.object({
   amountMinor: Joi.number().integer().positive().required(),
   currency: Joi.string().uppercase().length(3).required(),
@@ -62,6 +85,22 @@ const SourceCandidateDecisionSchema = Joi.object({
   decision: Joi.string().valid('approve', 'reject', 'request_information', 'suspend').required(),
   reason: Joi.string().min(10).max(2000).required(),
   scope: Joi.string().optional(),
+});
+
+export const SourceCandidateQuerySchema = PaginationSchema.keys({
+  status: Joi.string().valid(
+    'new',
+    'pending_review',
+    'under_review',
+    'approved_for_validation',
+    'validation_in_progress',
+    'approved',
+    'rejected',
+    'additional_information_required',
+    'suspended',
+    'archived',
+  ).optional(),
+  q: Joi.string().trim().max(200).optional(),
 });
 
 const SignalSourceActionSchema = Joi.object({
@@ -142,6 +181,15 @@ export function createAdminRoutes(services) {
   const { middleware } = services;
   const router = Router();
 
+  router.use(
+    '/auth',
+    createAdminAuthRoutes({
+      identity: services.identity,
+      permission: services.adminPermissionService,
+      middleware,
+    })
+  );
+
   // Every admin route requires admin authentication
   router.use(middleware.requireAuth());
   router.use(middleware.requireAdmin());
@@ -151,6 +199,11 @@ export function createAdminRoutes(services) {
     '/dashboard',
     middleware.requireAdminPermission('admin.dashboard.view'),
     middleware.asyncHandler(controller.getOverview)
+  );
+  router.get(
+    '/health',
+    middleware.requireAdminPermission('admin.metrics.view'),
+    middleware.asyncHandler(controller.getHealth)
   );
 
   /* Users */
@@ -165,6 +218,13 @@ export function createAdminRoutes(services) {
     '/users/:userId',
     middleware.requireAdminPermission('admin.users.view'),
     middleware.asyncHandler(controller.getUser)
+  );
+
+  router.get(
+    '/users/:userId/audit',
+    middleware.requireAdminPermission('admin.audit.view'),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.searchUserAudit)
   );
 
   router.post(
@@ -239,11 +299,24 @@ export function createAdminRoutes(services) {
     middleware.asyncHandler(controller.listPlans)
   );
 
+  router.get(
+    '/plans/:planId',
+    middleware.requireAdminPermission('admin.plans.view'),
+    middleware.asyncHandler(controller.getPlan)
+  );
+
   router.post(
     '/plans',
     middleware.requireAdminPermission('admin.plans.manage'),
     middleware.validateBody(CreatePlanSchema),
     middleware.asyncHandler(controller.createPlan)
+  );
+
+  router.patch(
+    '/plans/:planId',
+    middleware.requireAdminPermission('admin.plans.manage'),
+    middleware.validateBody(UpdatePlanSchema),
+    middleware.asyncHandler(controller.updatePlan)
   );
 
   router.post(
@@ -262,6 +335,7 @@ export function createAdminRoutes(services) {
   router.post(
     '/plans/:planId/versions',
     middleware.requireAdminPermission('admin.plans.manage'),
+    middleware.validateBody(CreatePlanVersionSchema),
     middleware.asyncHandler(controller.createPlanVersion)
   );
 
@@ -345,6 +419,7 @@ export function createAdminRoutes(services) {
   router.get(
     '/source-discovery/candidates',
     middleware.requireAdminPermission('admin.sources.review'),
+    middleware.validateQuery(SourceCandidateQuerySchema),
     middleware.asyncHandler(controller.listSourceCandidates)
   );
 
@@ -388,8 +463,21 @@ export function createAdminRoutes(services) {
     middleware.asyncHandler(controller.listReferralPolicies)
   );
 
+  router.get(
+    '/referrals/policies',
+    middleware.requireAdminPermission('admin.referral.policies.manage'),
+    middleware.asyncHandler(controller.listReferralPolicies)
+  );
+
   router.post(
     '/referral/policies',
+    middleware.requireAdminPermission('admin.referral.policies.manage'),
+    middleware.validateBody(CreateReferralPolicySchema),
+    middleware.asyncHandler(controller.createReferralPolicy)
+  );
+
+  router.post(
+    '/referrals/policies',
     middleware.requireAdminPermission('admin.referral.policies.manage'),
     middleware.validateBody(CreateReferralPolicySchema),
     middleware.asyncHandler(controller.createReferralPolicy)
@@ -402,11 +490,32 @@ export function createAdminRoutes(services) {
     middleware.asyncHandler(controller.publishReferralPolicy)
   );
 
+  router.post(
+    '/referrals/policies/:policyId/publish',
+    middleware.requireAdminPermission('admin.referral.policies.manage'),
+    middleware.validateBody(ReasonSchema),
+    middleware.asyncHandler(controller.publishReferralPolicy)
+  );
+
   router.get(
     '/referral/payouts',
     middleware.requireAdminPermission('admin.referral.payouts.review'),
     middleware.validateQuery(PaginationSchema),
     middleware.asyncHandler(controller.listPayouts)
+  );
+
+  router.get(
+    '/referrals/payouts',
+    middleware.requireAdminPermission('admin.referral.payouts.review'),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listPayouts)
+  );
+
+  router.get(
+    '/referrals/commissions',
+    middleware.requireAdminPermission('admin.referral.commissions.view'),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listCommissions)
   );
 
   router.post(
@@ -422,8 +531,21 @@ export function createAdminRoutes(services) {
     middleware.asyncHandler(controller.listFraudCases)
   );
 
+  router.get(
+    '/referrals/fraud-cases',
+    middleware.requireAdminPermission('admin.referral.fraud.review'),
+    middleware.asyncHandler(controller.listFraudCases)
+  );
+
   router.post(
     '/referral/fraud-cases/:caseId/decide',
+    middleware.requireAdminPermission('admin.referral.fraud.review'),
+    middleware.validateBody(FraudCaseDecisionSchema),
+    middleware.asyncHandler(controller.decideFraudCase)
+  );
+
+  router.post(
+    '/referrals/fraud-cases/:caseId/decisions',
     middleware.requireAdminPermission('admin.referral.fraud.review'),
     middleware.validateBody(FraudCaseDecisionSchema),
     middleware.asyncHandler(controller.decideFraudCase)

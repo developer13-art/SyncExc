@@ -12,6 +12,7 @@
  */
 
 import { createLogger } from '../lib/logger.js';
+import { NotFoundError } from '../lib/errors.js';
 
 export async function registerAllHandlers({ registry, services }) {
   const logger = createLogger({ component: 'jobs:handlers' });
@@ -32,7 +33,7 @@ export async function registerAllHandlers({ registry, services }) {
    * ======================================================================== */
 
   register('outbox_publish', async ({ services: s }) => {
-    await s.events.publisher.pollOnce();
+    await s.events.pollOnce();
   });
 
   register('audit_writer', async ({ payload }) => {
@@ -97,7 +98,30 @@ export async function registerAllHandlers({ registry, services }) {
   });
 
   register('sync_reconcile', async ({ payload, services: s }) => {
-    await s.synchronization.reconciliation.reconcileOperation(payload.operationId);
+    const reconciliation = s.synchronization.reconciliation;
+
+    if (payload.operationId) {
+      try {
+        await reconciliation.reconcileOperation(payload.operationId);
+      } catch (err) {
+        if (!(err instanceof NotFoundError)) throw err;
+        logger.warn(
+          { operationId: payload.operationId },
+          'Skipping reconciliation for missing operation'
+        );
+      }
+      return;
+    }
+
+    if (payload.sweep) {
+      const operationIds = await s.synchronization.queries.listOperationsPendingReconciliation();
+      for (const operationId of operationIds) {
+        await reconciliation.reconcileOperation(operationId);
+      }
+      return;
+    }
+
+    throw new Error('sync_reconcile job requires operationId or sweep');
   });
 
   /* ===========================================================================

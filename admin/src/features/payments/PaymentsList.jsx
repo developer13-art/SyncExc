@@ -60,9 +60,10 @@ export default function PaymentsList() {
 
   const payments = paymentsQuery.data?.items ?? [];
 
-  if (paymentsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(paymentsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = paymentsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [paymentsQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

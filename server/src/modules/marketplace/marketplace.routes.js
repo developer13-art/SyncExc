@@ -26,6 +26,11 @@ const ModerationDecisionSchema = Joi.object({
   reason: Joi.string().min(10).max(500).required(),
 });
 
+const ProviderQuerySchema = PaginationSchema.keys({
+  q: Joi.string().trim().max(100).optional(),
+  markets: Joi.string().trim().max(200).optional(),
+});
+
 export function createMarketplaceRoutes(services) {
   const controller = createMarketplaceController(services);
   const { middleware } = services;
@@ -37,7 +42,7 @@ export function createMarketplaceRoutes(services) {
   router.get(
     '/providers',
     middleware.optionalAuth(),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(ProviderQuerySchema),
     middleware.asyncHandler(controller.listProviders)
   );
 

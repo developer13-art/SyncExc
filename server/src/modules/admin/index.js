@@ -234,6 +234,7 @@ export function createAdminModule({ services }) {
   });
 
   const routes = createAdminRoutes({
+    db: services.db,
     dashboardService,
     adminUserService,
     adminWorkspaceService,
@@ -256,6 +257,8 @@ export function createAdminModule({ services }) {
     alertEventService,
     operationJobService,
     exportService,
+    identity: services.identity,
+    adminPermissionService,
     middleware: services.middleware,
   });
 

@@ -1,4 +1,5 @@
-export { adminApi, adminAxios } from './client.js';
+export { adminAxios } from './client.js';
+export { adminApi } from './admin.api.js';
 export {
   AdminApiError,
   parseAxiosError,

@@ -70,10 +70,11 @@ export function useRiskPolicy(policyId) {
   };
 }
 
-export function useRiskExposure(params = {}) {
+export function useRiskExposure(params = {}, enabled = true) {
   return useQuery({
     queryKey: queryKeys.risk.exposure(params),
     queryFn: () => riskApi.getExposure(params),
+    enabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
@@ -114,12 +115,13 @@ export function useRiskApprovals(params = {}) {
   };
 }
 
-export function useRiskAlerts(params = {}) {
+export function useRiskAlerts(params = {}, enabled = true) {
   const queryClient = useQueryClient();
 
   const listQuery = useQuery({
     queryKey: queryKeys.risk.alerts(params),
     queryFn: () => riskApi.listAlerts(params),
+    enabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
   });

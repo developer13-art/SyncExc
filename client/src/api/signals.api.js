@@ -24,7 +24,7 @@ export const signalsApi = {
   listSignalIssues: (signalId) => api.get(endpoints.signals.issues(signalId)),
 
   submitReview: (signalId, payload) =>
-    api.post(endpoints.signals.submitReview(signalId), payload),
+    api.post(endpoints.signals.submitReview, { ...payload, candidateId: signalId }),
 
   validateSignal: (signalId, payload) =>
     api.post(endpoints.signals.validate(signalId), payload),
@@ -34,7 +34,7 @@ export const signalsApi = {
   getEligibility: (signalId) => api.get(endpoints.signals.eligibility(signalId)),
 
   createIntent: (signalId, payload) =>
-    api.post(endpoints.signals.createIntent(signalId), payload),
+    api.post(endpoints.signals.createIntent, { ...payload, candidateId: signalId }),
 
   getIntent: (intentId) => api.get(endpoints.signals.intent(intentId)),
 

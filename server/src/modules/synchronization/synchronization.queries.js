@@ -289,6 +289,20 @@ export function createSyncQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async listOperationsPendingReconciliation() {
+      const result = await db.query(
+        `
+        SELECT operation_id
+        FROM sync_destination_operations
+        WHERE status IN ('outcome_unknown', 'reconciliation_required')
+        GROUP BY operation_id
+        ORDER BY min(updated_at) ASC
+        LIMIT 100
+        `
+      );
+      return result.rows.map((row) => row.operation_id);
+    },
+
     async updateOperation(id, fields) {
       const result = await db.query(
         `

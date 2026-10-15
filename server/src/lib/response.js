@@ -40,7 +40,7 @@ export function noContent(res) {
   return res.status(204).end();
 }
 
-export function paginated(res, items, { nextCursor, prevCursor, limit, total } = {}) {
+export function paginated(res, items, { nextCursor, prevCursor, limit, total, totals } = {}) {
   return res.status(200).json({
     data: items,
     pagination: {
@@ -52,6 +52,7 @@ export function paginated(res, items, { nextCursor, prevCursor, limit, total } =
     meta: {
       requestId: getRequestId(res.req),
       timestamp: new Date().toISOString(),
+      ...(totals ? { totals } : {}),
     },
   });
 }

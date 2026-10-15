@@ -24,7 +24,7 @@ const POLL_INTERVAL_MS = 1000;
 const BATCH_SIZE = 50;
 const MAX_ATTEMPTS = 10;
 
-export function createConsumerRunner({ db, publisher, logger: injectedLogger }) {
+export function createConsumerRunner({ db, publisher, envelope, logger: injectedLogger }) {
   const logger = injectedLogger || createLogger({ component: 'events:consumer' });
 
   const transports = new Map();
@@ -119,22 +119,7 @@ export function createConsumerRunner({ db, publisher, logger: injectedLogger }) 
       [eventId]
     );
     if (result.rows.length === 0) return null;
-    const row = result.rows[0];
-    return {
-      eventId: row.id,
-      eventType: row.event_type,
-      schemaVersion: row.schema_version,
-      occurredAt: row.occurred_at.toISOString(),
-      ingestedAt: new Date().toISOString(),
-      correlationId: row.correlation_id,
-      actorId: row.actor_id,
-      workspaceId: row.workspace_id,
-      resourceType: row.resource_type,
-      resourceId: row.resource_id,
-      payload: row.payload,
-      idempotencyKey: null,
-      sourceModule: row.event_type.split('.')[0],
-    };
+    return envelope.fromOutboxRow(result.rows[0]);
   }
 
   async function deliverOne(delivery) {

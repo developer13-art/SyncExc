@@ -4,6 +4,15 @@
 
 import { success, created, paginated } from '../../lib/response.js';
 
+function pageOptions(req, fallbackLimit = 50) {
+  const limit = Number(req.query.pageSize ?? req.query.limit) || fallbackLimit;
+  const page = Number(req.query.page);
+  return {
+    limit,
+    offset: Number.isInteger(page) && page > 0 ? (page - 1) * limit : undefined,
+  };
+}
+
 export function createAdminController(services) {
   const {
     dashboardService,
@@ -27,6 +36,7 @@ export function createAdminController(services) {
     alertEventService,
     operationJobService,
     exportService,
+    db,
   } = services;
 
   return {
@@ -36,15 +46,33 @@ export function createAdminController(services) {
       return success(res, data);
     },
 
+    async getHealth(_req, res) {
+      const database = await db.health();
+      const healthy = database.ok;
+      return success(res, {
+        overallStatus: healthy ? 'healthy' : 'degraded',
+        services: [
+          {
+            name: 'Database',
+            status: healthy ? 'healthy' : 'unavailable',
+          },
+        ],
+        activeIncidents: [],
+        dataFreshness: null,
+      });
+    },
+
     /* Users */
     async searchUsers(req, res) {
-      const { rows, nextCursor } = await adminUserService.searchUsers({
+      const { limit, offset } = pageOptions(req);
+      const { rows, nextCursor, total } = await adminUserService.searchUsers({
         query: req.query.q,
         status: req.query.status,
-        limit: Number(req.query.limit) || 50,
+        limit,
         cursor: req.query.cursor || null,
+        offset,
       });
-      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+      return paginated(res, rows, { nextCursor, limit, total });
     },
 
     async getUser(req, res) {
@@ -53,6 +81,16 @@ export function createAdminController(services) {
         actorId: req.auth.userId,
       });
       return success(res, result);
+    },
+
+    async searchUserAudit(req, res) {
+      const limit = Number(req.query.pageSize ?? req.query.limit) || 50;
+      const { rows, nextCursor } = await adminAuditService.search({
+        targetId: req.params.userId,
+        limit,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows, { nextCursor, limit });
     },
 
     async suspendUser(req, res) {
@@ -95,14 +133,16 @@ export function createAdminController(services) {
 
     /* Workspaces */
     async searchWorkspaces(req, res) {
-      const { rows, nextCursor } = await adminWorkspaceService.searchWorkspaces({
+      const { limit, offset } = pageOptions(req);
+      const { rows, nextCursor, total } = await adminWorkspaceService.searchWorkspaces({
         query: req.query.q,
         type: req.query.type,
         status: req.query.status,
-        limit: Number(req.query.limit) || 50,
+        limit,
         cursor: req.query.cursor || null,
+        offset,
       });
-      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+      return paginated(res, rows, { nextCursor, limit, total });
     },
 
     async getWorkspace(req, res) {
@@ -146,6 +186,11 @@ export function createAdminController(services) {
       return success(res, plans);
     },
 
+    async getPlan(req, res) {
+      const plan = await adminPlanService.getPlan({ planId: req.params.planId });
+      return success(res, plan);
+    },
+
     async createPlan(req, res) {
       const plan = await adminPlanService.createPlan({
         userId: req.auth.userId,
@@ -157,6 +202,15 @@ export function createAdminController(services) {
         prices: req.body.prices,
       });
       return created(res, plan);
+    },
+
+    async updatePlan(req, res) {
+      const plan = await adminPlanService.updatePlan({
+        userId: req.auth.userId,
+        planId: req.params.planId,
+        ...req.body,
+      });
+      return success(res, plan);
     },
 
     async publishPlan(req, res) {
@@ -190,15 +244,17 @@ export function createAdminController(services) {
 
     /* Subscriptions */
     async searchSubscriptions(req, res) {
-      const { rows, nextCursor } = await adminSubscriptionService.searchSubscriptions({
+      const { limit, offset } = pageOptions(req);
+      const { rows, nextCursor, total } = await adminSubscriptionService.searchSubscriptions({
         status: req.query.status,
         planId: req.query.planId,
         scopeType: req.query.scopeType,
         scopeId: req.query.scopeId,
-        limit: Number(req.query.limit) || 50,
+        limit,
         cursor: req.query.cursor || null,
+        offset,
       });
-      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+      return paginated(res, rows, { nextCursor, limit, total });
     },
 
     async getSubscription(req, res) {
@@ -222,15 +278,17 @@ export function createAdminController(services) {
 
     /* Payments */
     async searchPayments(req, res) {
-      const { rows, nextCursor } = await adminPaymentService.searchPayments({
+      const { limit, offset } = pageOptions(req);
+      const { rows, nextCursor, total } = await adminPaymentService.searchPayments({
         status: req.query.status,
         provider: req.query.provider,
         from: req.query.from,
         to: req.query.to,
-        limit: Number(req.query.limit) || 50,
+        limit,
         cursor: req.query.cursor || null,
+        offset,
       });
-      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+      return paginated(res, rows, { nextCursor, limit, total });
     },
 
     async getPayment(req, res) {
@@ -296,11 +354,14 @@ export function createAdminController(services) {
 
     /* Source review */
     async listSourceCandidates(req, res) {
-      const candidates = await adminSourceReviewService.listCandidates({
+      const { limit, offset } = pageOptions(req, 100);
+      const { rows, total } = await adminSourceReviewService.listCandidates({
         status: req.query.status,
-        limit: Number(req.query.limit) || 100,
+        search: req.query.q,
+        limit,
+        offset,
       });
-      return success(res, candidates);
+      return paginated(res, rows, { limit, total });
     },
 
     async getSourceCandidate(req, res) {
@@ -377,12 +438,25 @@ export function createAdminController(services) {
     },
 
     async listPayouts(req, res) {
-      const { rows, nextCursor } = await adminReferralService.listPayouts({
+      const { limit, offset } = pageOptions(req);
+      const { rows, nextCursor, total, totals } = await adminReferralService.listPayouts({
         status: req.query.status,
-        limit: Number(req.query.limit) || 50,
+        limit,
         cursor: req.query.cursor || null,
+        offset,
       });
-      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+      return paginated(res, rows, { nextCursor, limit, total, totals });
+    },
+
+    async listCommissions(req, res) {
+      const { limit, offset } = pageOptions(req);
+      const { rows, nextCursor, total, totals } = await adminReferralService.listCommissions({
+        state: req.query.state,
+        limit,
+        cursor: req.query.cursor || null,
+        offset,
+      });
+      return paginated(res, rows, { nextCursor, limit, total, totals });
     },
 
     async reviewPayout(req, res) {

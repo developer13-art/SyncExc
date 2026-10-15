@@ -2,9 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { notificationsApi } from '../api/index.js';
 import { queryKeys } from './queryKeys.js';
+import { useToast } from './useToast.js';
+import { getErrorMessage } from '../api/errors.js';
 
 export function useNotifications(params = {}) {
   const queryClient = useQueryClient();
+  const toast = useToast();
+
+  const notifyMutationError = (action) => (error) => {
+    toast.error(action, { description: getErrorMessage(error) });
+  };
 
   const listQuery = useQuery({
     queryKey: queryKeys.notifications.list(params),
@@ -19,31 +26,35 @@ export function useNotifications(params = {}) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
+    onError: notifyMutationError('Unable to mark notification as read'),
   });
 
   const markAllRead = useMutation({
     mutationFn: () => notificationsApi.markAllRead(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onError: notifyMutationError('Unable to mark all notifications as read'),
   });
 
   const archive = useMutation({
     mutationFn: (notificationId) => notificationsApi.archive(notificationId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onError: notifyMutationError('Unable to archive notification'),
   });
 
   const dismiss = useMutation({
     mutationFn: (notificationId) => notificationsApi.dismiss(notificationId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onError: notifyMutationError('Unable to dismiss notification'),
   });
 
   return {
     notifications: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
-    markRead: markRead.mutateAsync,
+    markRead: markRead.mutate,
     markAllRead: markAllRead.mutateAsync,
-    archive: archive.mutateAsync,
-    dismiss: dismiss.mutateAsync,
+    archive: archive.mutate,
+    dismiss: dismiss.mutate,
   };
 }
 

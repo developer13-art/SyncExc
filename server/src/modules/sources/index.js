@@ -120,6 +120,7 @@ export function createSourcesModule({ services }) {
     sandboxService,
     connectionService,
     duplicateDetectionService,
+    queries,
     middleware: services.middleware,
   });
 

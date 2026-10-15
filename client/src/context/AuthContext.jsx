@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { identityApi } from '../api/index.js';
 import { queryKeys } from '../hooks/queryKeys.js';
-import { DEMO_CREDENTIALS, DEMO_USER } from '../lib/utils/storage.util.js';
 import {
   authActions,
   selectAccessToken,
@@ -60,25 +59,6 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(
     async (credentials) => {
-      const email = credentials?.email?.trim().toLowerCase();
-      const password = credentials?.password;
-      const isDemoLogin =
-        import.meta.env.DEV &&
-        email === DEMO_CREDENTIALS.email &&
-        password === DEMO_CREDENTIALS.password;
-
-      if (isDemoLogin) {
-        const demoSession = {
-          user: { ...DEMO_USER },
-          accessToken: 'demo-access-token-123',
-          refreshToken: 'demo-refresh-token-123',
-        };
-
-        dispatch(authActions.loginSucceeded(demoSession));
-        queryClient.setQueryData(queryKeys.auth.me, demoSession.user);
-        return { success: true };
-      }
-
       const result = await identityApi.login(credentials);
 
       if (result?.mfaRequired) {
@@ -91,6 +71,11 @@ export function AuthProvider({ children }) {
       return { success: true };
     },
     [dispatch, queryClient],
+  );
+
+  const register = useCallback(
+    (details) => identityApi.register(details),
+    [],
   );
 
   const verifyMfa = useCallback(
@@ -132,11 +117,12 @@ export function AuthProvider({ children }) {
       isAuthenticated,
       isBootstrapping,
       login,
+      register,
       verifyMfa,
       logout,
       logoutAll,
     }),
-    [user, isAuthenticated, isBootstrapping, login, verifyMfa, logout, logoutAll],
+    [user, isAuthenticated, isBootstrapping, login, register, verifyMfa, logout, logoutAll],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -12,7 +12,11 @@ export function createWorkspacesController({ service }) {
      * ====================================================================== */
 
     async list(req, res) {
-      const rows = await service.listWorkspacesForUser(req.auth.userId);
+      let rows = await service.listWorkspacesForUser(req.auth.userId);
+      if (rows.length === 0) {
+        await service.ensurePersonalWorkspace(req.auth.userId);
+        rows = await service.listWorkspacesForUser(req.auth.userId);
+      }
       return success(
         res,
         rows.map((w) => ({

@@ -4,6 +4,8 @@ import { RefreshCw } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { IconButton } from '../../components/ui/IconButton.jsx';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
+import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { useTerminalOverview } from '../../hooks/useTerminal.js';
@@ -31,15 +33,39 @@ import { ReferralSummaryWidget } from './ReferralSummaryWidget.jsx';
 export default function DashboardOverview() {
   const dispatch = useDispatch();
   const toast = useToast();
-  const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const {
+    activeWorkspaceId,
+    activeWorkspace,
+    permissions,
+    isLoading: isLoadingWorkspaces,
+    isWorkspaceReady,
+    error: workspaceError,
+    reloadWorkspaces,
+  } = useWorkspaceContext();
+  const workspaceId = isWorkspaceReady ? activeWorkspaceId : null;
+  const canMonitorTrading = permissions.includes('trading.monitor');
+  const canViewRisk = permissions.includes('risk.view');
+  const canViewConnections = permissions.includes('connections.view');
 
-  const overviewQuery = useTerminalOverview(activeWorkspaceId);
-  const positionsQuery = useTerminalPositions(activeWorkspaceId, { status: 'open' });
-  const ordersQuery = useTerminalOrders(activeWorkspaceId, { status: 'open', limit: 10 });
-  const exposureQuery = useRiskExposure({});
-  const alertsQuery = useRiskAlerts({ limit: 5, status: 'active' });
-  const connectionsQuery = useConnections({ status: 'active' });
-  const signalsQuery = useSignals({ limit: 5, sort: '-occurredAt' });
+  const overviewQuery = useTerminalOverview(canMonitorTrading ? workspaceId : null);
+  const positionsQuery = useTerminalPositions(
+    canMonitorTrading ? workspaceId : null,
+    { status: 'open' },
+  );
+  const ordersQuery = useTerminalOrders(
+    canMonitorTrading ? workspaceId : null,
+    { limit: 10 },
+  );
+  const exposureQuery = useRiskExposure({}, isWorkspaceReady && canViewRisk);
+  const alertsQuery = useRiskAlerts(
+    { limit: 5, status: 'active' },
+    isWorkspaceReady && canViewRisk,
+  );
+  const connectionsQuery = useConnections(
+    { status: 'active' },
+    isWorkspaceReady && canViewConnections,
+  );
+  const signalsQuery = useSignals({ limit: 5 }, isWorkspaceReady);
   const subscriptionQuery = useSubscription();
   const referralQuery = useReferralDashboard();
 
@@ -48,21 +74,32 @@ export default function DashboardOverview() {
     dispatch(uiActions.setBreadcrumbs([{ label: 'Dashboard', path: '/app/dashboard' }]));
   }, [dispatch]);
 
+  if (workspaceError) {
+    return (
+      <ErrorState
+        title="Unable to load workspaces"
+        description="Dashboard data cannot load until your workspace access is available."
+        onRetry={reloadWorkspaces}
+      />
+    );
+  }
+
   const handleRefreshAll = async () => {
     await Promise.all([
-      overviewQuery.refetch(),
-      positionsQuery.refetch(),
-      ordersQuery.refetch(),
-      exposureQuery.refetch(),
-      alertsQuery.refetch(),
-      connectionsQuery.refetch(),
+      canMonitorTrading ? overviewQuery.refetch() : Promise.resolve(),
+      canMonitorTrading ? positionsQuery.refetch() : Promise.resolve(),
+      canMonitorTrading ? ordersQuery.refetch() : Promise.resolve(),
+      canViewRisk ? exposureQuery.refetch() : Promise.resolve(),
+      canViewRisk ? alertsQuery.refetch() : Promise.resolve(),
+      canViewConnections ? connectionsQuery.refetch() : Promise.resolve(),
       signalsQuery.refetch(),
     ]);
     toast.success('Dashboard refreshed');
   };
 
   const isLoading =
-    overviewQuery.isLoading ||
+    isLoadingWorkspaces ||
+    (canMonitorTrading && overviewQuery.isLoading) ||
     positionsQuery.isLoading ||
     ordersQuery.isLoading ||
     exposureQuery.isLoading;
@@ -89,59 +126,68 @@ export default function DashboardOverview() {
         </IconButton>
       </div>
 
-      <ProfitLossWidget
-        overview={overviewQuery.data}
-        positions={positionsQuery.data ?? []}
-        isLoading={overviewQuery.isLoading || positionsQuery.isLoading}
-        error={overviewQuery.error}
-      />
+      {canMonitorTrading ? (
+        <>
+          <ProfitLossWidget
+            overview={overviewQuery.data}
+            positions={positionsQuery.data ?? []}
+            isLoading={overviewQuery.isLoading || positionsQuery.isLoading}
+            error={overviewQuery.error}
+          />
+          <div className="grid gap-5 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <PortfolioOverview
+                overview={overviewQuery.data}
+                isLoading={overviewQuery.isLoading}
+                error={overviewQuery.error}
+                onRetry={overviewQuery.refetch}
+              />
+            </div>
+            <div>
+              <LiveTradingStatus
+                overview={overviewQuery.data}
+                positions={positionsQuery.data ?? []}
+                orders={ordersQuery.data?.items ?? []}
+                isLoading={overviewQuery.isLoading || positionsQuery.isLoading}
+              />
+            </div>
+          </div>
+        </>
+      ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <PortfolioOverview
+      <div className="grid gap-5 lg:grid-cols-2">
+        {canMonitorTrading ? (
+          <AccountSummary
             overview={overviewQuery.data}
             isLoading={overviewQuery.isLoading}
             error={overviewQuery.error}
-            onRetry={overviewQuery.refetch}
           />
-        </div>
-        <div>
-          <LiveTradingStatus
-            overview={overviewQuery.data}
+        ) : null}
+        {canViewRisk ? (
+          <RiskOverviewWidget
+            exposure={exposureQuery.data}
+            alerts={alertsQuery.data?.items ?? []}
+            isLoading={exposureQuery.isLoading || alertsQuery.isLoading}
+            error={exposureQuery.error}
+          />
+        ) : null}
+      </div>
+
+      {canMonitorTrading ? (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <OpenTradesWidget
             positions={positionsQuery.data ?? []}
             orders={ordersQuery.data?.items ?? []}
-            isLoading={overviewQuery.isLoading || positionsQuery.isLoading}
+            isLoading={positionsQuery.isLoading || ordersQuery.isLoading}
+            error={positionsQuery.error}
+          />
+          <RecentTradesWidget
+            trades={overviewQuery.data?.recentTrades ?? []}
+            isLoading={overviewQuery.isLoading}
+            error={overviewQuery.error}
           />
         </div>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <AccountSummary
-          overview={overviewQuery.data}
-          isLoading={overviewQuery.isLoading}
-          error={overviewQuery.error}
-        />
-        <RiskOverviewWidget
-          exposure={exposureQuery.data}
-          alerts={alertsQuery.data?.items ?? []}
-          isLoading={exposureQuery.isLoading || alertsQuery.isLoading}
-          error={exposureQuery.error}
-        />
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <OpenTradesWidget
-          positions={positionsQuery.data ?? []}
-          orders={ordersQuery.data?.items ?? []}
-          isLoading={positionsQuery.isLoading || ordersQuery.isLoading}
-          error={positionsQuery.error}
-        />
-        <RecentTradesWidget
-          trades={overviewQuery.data?.recentTrades ?? []}
-          isLoading={overviewQuery.isLoading}
-          error={overviewQuery.error}
-        />
-      </div>
+      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <ActiveSignalsWidget
@@ -149,12 +195,26 @@ export default function DashboardOverview() {
           isLoading={signalsQuery.isLoading}
           error={signalsQuery.error}
         />
-        <AccountHealthWidget
-          connections={connectionsQuery.data?.items ?? []}
-          isLoading={connectionsQuery.isLoading}
-          error={connectionsQuery.error}
-        />
+        {canViewConnections ? (
+          <AccountHealthWidget
+            connections={connectionsQuery.data?.items ?? []}
+            isLoading={connectionsQuery.isLoading}
+            error={connectionsQuery.error}
+          />
+        ) : null}
       </div>
+
+      {isWorkspaceReady && (!canMonitorTrading || !canViewRisk || !canViewConnections) ? (
+        <Card>
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Some dashboard sections are hidden because your selected workspace role lacks the
+            required permissions.
+            {!canMonitorTrading ? ' Trading monitor permission is required for portfolio data.' : ''}
+            {!canViewRisk ? ' Risk view permission is required for risk data.' : ''}
+            {!canViewConnections ? ' Connections view permission is required for exchange data.' : ''}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-3">
         <SubscriptionStatusWidget

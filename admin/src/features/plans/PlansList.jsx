@@ -69,9 +69,10 @@ export default function PlansList() {
 
   const plans = plansQuery.data?.items ?? [];
 
-  if (plansQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(plansQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = plansQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [plansQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

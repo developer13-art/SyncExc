@@ -63,9 +63,10 @@ export default function RefundsList() {
 
   const refunds = refundsQuery.data?.items ?? [];
 
-  if (refundsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(refundsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = refundsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [refundsQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

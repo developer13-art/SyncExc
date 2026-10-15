@@ -22,7 +22,7 @@ const HANDLER_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per attempt
 const MAX_ATTEMPTS = 5;
 const DEAD_LETTER_ERROR_LIMIT = 2000;
 
-export function createJobRunner({ db, registry, logger: injectedLogger }) {
+export function createJobRunner({ db, registry, logger: injectedLogger, services }) {
   const logger = injectedLogger || createLogger({ component: 'jobs:runner' });
 
   let running = false;
@@ -289,7 +289,7 @@ export function createJobRunner({ db, registry, logger: injectedLogger }) {
       if (running) return;
       running = true;
       stopRequested = false;
-      loopPromise = runLoop(this.services || {});
+      loopPromise = runLoop(services);
       logger.info(
         { concurrency: CONCURRENCY, pollIntervalMs: POLL_INTERVAL_MS },
         'Job runner started'
@@ -308,14 +308,6 @@ export function createJobRunner({ db, registry, logger: injectedLogger }) {
 
       running = false;
       logger.info({ remaining: activeJobs.size }, 'Job runner stopped');
-    },
-
-    /**
-     * Attach `services` after init. The runner needs access to the full
-     * services bundle for handlers that use it.
-     */
-    setServices(services) {
-      this.services = services;
     },
 
     enqueue,

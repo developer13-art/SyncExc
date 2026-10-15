@@ -4,6 +4,13 @@
 
 export function createSourcesQueries({ db }) {
   return {
+    async listCategories() {
+      const result = await db.query(
+        `SELECT id, category_group, code, label FROM source_categories ORDER BY category_group, label`
+      );
+      return result.rows;
+    },
+
     /* =========================================================================
      * SOURCES
      * ====================================================================== */

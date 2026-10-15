@@ -51,11 +51,14 @@ export function createNotificationService({ db, queries, deliveryService, events
     return notification;
   }
 
-  async function list({ userId, category, unreadOnly, limit, cursor }) {
+  async function list({ userId, category, status, unreadOnly, readOnly, q, limit, offset, cursor }) {
     return queries.listNotificationsForUser(userId, {
       category,
-      unreadOnly,
+      unreadOnly: unreadOnly || status === 'unread',
+      readOnly: readOnly || status === 'read',
+      q,
       limit,
+      offset,
       cursor,
     });
   }

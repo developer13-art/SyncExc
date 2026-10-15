@@ -35,6 +35,12 @@ export function createBillingRoutes({ service, middleware }) {
   /* ---------------------------------------------------------------------------
    * Authenticated billing
    * ------------------------------------------------------------------------ */
+  router.get(
+    '/providers',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.listPaymentProviders)
+  );
+
   router.post(
     '/checkout',
     middleware.requireAuth(),
@@ -46,6 +52,18 @@ export function createBillingRoutes({ service, middleware }) {
     '/subscription',
     middleware.requireAuth(),
     middleware.asyncHandler(controller.getSubscription)
+  );
+
+  router.get(
+    '/entitlements',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.getEntitlements)
+  );
+
+  router.get(
+    '/usage',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.getUsage)
   );
 
   router.post(

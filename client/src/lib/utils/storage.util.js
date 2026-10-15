@@ -72,60 +72,22 @@ export const STORAGE_KEYS = Object.freeze({
   SIDEBAR_COLLAPSED: 'syncexc:sidebar-collapsed',
   DENSITY: 'syncexc:density',
   LAST_ROUTE: 'syncexc:last-route',
-  DEMO_CREDENTIALS: 'syncexc:demo-credentials',
 });
 
-export const DEMO_CREDENTIALS = Object.freeze({
-  email: 'demo@syncexc.com',
-  password: 'DemoPass123!',
-  name: 'Demo User',
-  username: 'demo-user',
-});
-
-export const DEMO_USER = Object.freeze({
-  id: 'demo-user-id',
-  name: DEMO_CREDENTIALS.name,
-  username: DEMO_CREDENTIALS.username,
-  email: DEMO_CREDENTIALS.email,
-  avatarUrl: null,
-  role: 'owner',
-  workspaceId: 'demo-workspace',
-  emailVerifiedAt: new Date().toISOString(),
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
-
-export function ensureDemoCredentials() {
-  const existing = storage.get(STORAGE_KEYS.DEMO_CREDENTIALS, null);
-  if (existing && existing.email && existing.password) {
-    return existing;
+export function clearDevelopmentDemoSession() {
+  const token = storage.get(STORAGE_KEYS.AUTH_TOKEN, null, { parse: false });
+  if (!import.meta.env.DEV || token !== 'demo-access-token-123') {
+    return false;
   }
 
-  const seeded = {
-    email: DEMO_CREDENTIALS.email,
-    password: DEMO_CREDENTIALS.password,
-  };
-
-  storage.set(STORAGE_KEYS.DEMO_CREDENTIALS, seeded);
-  return seeded;
-}
-
-export function seedDemoAuthSession() {
-  if (!import.meta.env.DEV) {
-    return null;
+  storage.remove(STORAGE_KEYS.AUTH_TOKEN);
+  storage.remove(`${STORAGE_KEYS.AUTH_TOKEN}:refresh`);
+  storage.remove(STORAGE_KEYS.AUTH_USER);
+  if (
+    storage.get(STORAGE_KEYS.ACTIVE_WORKSPACE, null, { parse: false }) ===
+    'demo-workspace'
+  ) {
+    storage.remove(STORAGE_KEYS.ACTIVE_WORKSPACE);
   }
-
-  const payload = {
-    user: { ...DEMO_USER },
-    accessToken: 'demo-access-token-123',
-    refreshToken: 'demo-refresh-token-123',
-  };
-
-  storage.set(STORAGE_KEYS.AUTH_TOKEN, payload.accessToken, { stringify: false });
-  storage.set(`${STORAGE_KEYS.AUTH_TOKEN}:refresh`, payload.refreshToken, {
-    stringify: false,
-  });
-  storage.set(STORAGE_KEYS.AUTH_USER, payload.user);
-
-  return payload;
+  return true;
 }

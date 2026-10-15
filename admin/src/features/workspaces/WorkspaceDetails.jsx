@@ -13,47 +13,34 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
 import { Avatar } from '../../components/ui/Avatar.jsx';
 import { WorkspaceActionsPanel } from './WorkspaceActionsPanel.jsx';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
-import { useToast } from '../../hooks/useToast.js';
-import { getErrorMessage } from '../../api/errors.js';
 import { formatDateTime, formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 export default function WorkspaceDetails() {
   const { workspaceId } = useParams();
   const dispatch = useDispatch();
-  const toast = useToast();
-  const queryClient = useQueryClient();
 
   const workspaceQuery = useQuery({
     queryKey: queryKeys.workspaces.detail(workspaceId),
     queryFn: () => adminApi.getWorkspace(workspaceId),
-    enabled: Boolean(workspaceId),
-  });
-
-  const membersQuery = useQuery({
-    queryKey: queryKeys.workspaces.members(workspaceId, {}),
-    queryFn: () => adminApi.getWorkspaceMembers(workspaceId, {}),
-    enabled: Boolean(workspaceId),
-  });
-
-  const suspendMutation = useMutation({
-    mutationFn: (payload) =>
-      adminApi.listWorkspaces?.() && null,
-    onError: () => {},
+    enabled: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      workspaceId ?? '',
+    ),
   });
 
   useEffect(() => {
-    if (workspaceQuery.data) {
-      dispatch(uiActions.setPageTitle(workspaceQuery.data.name ?? 'Workspace'));
+    const workspace = workspaceQuery.data?.workspace;
+    if (workspace) {
+      dispatch(uiActions.setPageTitle(workspace.name ?? 'Workspace'));
       dispatch(
         uiActions.setBreadcrumbs([
           { label: 'Workspaces', path: ROUTES.console.workspaces.overview },
           {
-            label: workspaceQuery.data.name,
+            label: workspace.name,
             path: ROUTES.console.workspaces.details(workspaceId),
           },
         ]),
@@ -75,8 +62,14 @@ export default function WorkspaceDetails() {
     );
   }
 
-  const workspace = workspaceQuery.data;
-  const members = membersQuery.data?.items ?? [];
+  const { workspace, members: rawMembers = [] } = workspaceQuery.data;
+  const members = rawMembers.map((member) => ({
+    ...member,
+    displayName: member.username,
+    email: member.user_email,
+    roleId: member.role,
+    roleName: member.role,
+  }));
 
   const memberColumns = [
     {
@@ -176,7 +169,6 @@ export default function WorkspaceDetails() {
             label="Refresh"
             onClick={() => {
               workspaceQuery.refetch();
-              membersQuery.refetch();
             }}
             className="border border-border"
           >
@@ -224,7 +216,7 @@ export default function WorkspaceDetails() {
                   <DataTable
                     columns={memberColumns}
                     rows={members}
-                    isLoading={membersQuery.isLoading}
+                    isLoading={workspaceQuery.isLoading}
                     emptyTitle="No members"
                     emptyDescription="This workspace has no visible members."
                   />

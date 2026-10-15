@@ -19,16 +19,23 @@ export function createNotificationsController(services) {
   return {
     /* Notifications */
     async list(req, res) {
-      const { rows, nextCursor } = await notificationService.list({
+      const page = Number(req.query.page) || 1;
+      const limit = Number(req.query.pageSize ?? req.query.limit) || 25;
+      const { rows, nextCursor, total } = await notificationService.list({
         userId: req.auth.userId,
         category: req.query.category,
-        unreadOnly: req.query.unread === 'true',
-        limit: Number(req.query.limit) || 50,
+        status: req.query.status,
+        unreadOnly: req.query.status === 'unread' || req.query.unread === true || req.query.unread === 'true',
+        readOnly: req.query.status === 'read',
+        q: req.query.q,
+        limit,
+        offset: (page - 1) * limit,
         cursor: req.query.cursor || null,
       });
       return paginated(res, rows.map(serializeNotification), {
         nextCursor,
-        limit: Number(req.query.limit) || 50,
+        limit,
+        total,
       });
     },
 

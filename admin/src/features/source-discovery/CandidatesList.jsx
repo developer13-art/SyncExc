@@ -62,9 +62,10 @@ export default function CandidatesList() {
 
   const candidates = candidatesQuery.data?.items ?? [];
 
-  if (candidatesQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(candidatesQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = candidatesQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [candidatesQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

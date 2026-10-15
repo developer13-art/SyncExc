@@ -70,9 +70,10 @@ export default function UsersList() {
 
   const users = usersQuery.data?.items ?? [];
 
-  if (usersQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(usersQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = usersQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [usersQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {
@@ -209,6 +210,7 @@ export default function UsersList() {
           <DataTable
             columns={columns}
             rows={users}
+            rowKey={(row) => row.id ?? row.userId ?? row.user_id ?? row.email}
             isLoading={usersQuery.isLoading}
             emptyIcon={Users}
             emptyTitle={query || status !== 'all' ? 'No matching users' : 'No users yet'}
@@ -217,7 +219,14 @@ export default function UsersList() {
                 ? 'Try adjusting your search or filters.'
                 : 'Registered users will appear here.'
             }
-            onRowClick={(row) => navigate(ROUTES.console.users.details(row.id))}
+            onRowClick={(row) => {
+              const userId = row.id ?? row.userId ?? row.user_id;
+              if (!userId) {
+                console.error('Cannot open admin user record without an ID.', row);
+                return;
+              }
+              navigate(ROUTES.console.users.details(userId));
+            }}
           />
 
           {pagination.total > pagination.pageSize ? (

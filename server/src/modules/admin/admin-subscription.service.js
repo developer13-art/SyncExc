@@ -5,7 +5,7 @@
 import { NotFoundError } from '../../lib/errors.js';
 
 export function createAdminSubscriptionService({ db, queries, billing, events, audit, logger }) {
-  async function searchSubscriptions({ status, planId, scopeType, scopeId, limit = 50, cursor = null } = {}) {
+  async function searchSubscriptions({ status, planId, scopeType, scopeId, limit = 50, cursor = null, offset } = {}) {
     const params = [limit + 1];
     const conditions = [];
     if (status) {
@@ -32,19 +32,23 @@ export function createAdminSubscriptionService({ db, queries, billing, events, a
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const result = await db.query(
       `
-      SELECT * FROM subscriptions
+      SELECT *, COUNT(*) OVER () AS total_count FROM subscriptions
       ${where}
       ORDER BY created_at DESC
       LIMIT $1
+      ${offset === undefined ? '' : `OFFSET $${params.push(offset)}`}
       `,
       params
     );
     const hasMore = result.rows.length > limit;
-    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const selectedRows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const total = Number(selectedRows[0]?.total_count ?? 0);
+    const rows = selectedRows.map(({ total_count: _totalCount, ...row }) => row);
     const last = rows[rows.length - 1];
     return {
       rows,
       nextCursor: hasMore && last ? last.created_at.toISOString() : null,
+      total,
     };
   }
 

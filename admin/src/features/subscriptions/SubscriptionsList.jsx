@@ -65,9 +65,10 @@ export default function SubscriptionsList() {
 
   const subscriptions = subscriptionsQuery.data?.items ?? [];
 
-  if (subscriptionsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(subscriptionsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = subscriptionsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [subscriptionsQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {

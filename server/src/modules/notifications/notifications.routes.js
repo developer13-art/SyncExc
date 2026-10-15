@@ -4,7 +4,7 @@
 
 import { Router } from 'express';
 import Joi from 'joi';
-import { UuidSchema, PaginationSchema } from '@syncexc/shared';
+import { UuidSchema } from '@syncexc/shared';
 import { createNotificationsController } from './notifications.controller.js';
 
 const PreferenceSchema = Joi.object({
@@ -34,6 +34,17 @@ const MarkAllReadSchema = Joi.object({
   category: Joi.string().optional(),
 });
 
+const NotificationListQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  pageSize: Joi.number().integer().min(1).max(100).default(25),
+  limit: Joi.number().integer().min(1).max(100).optional(),
+  cursor: Joi.string().isoDate().optional(),
+  status: Joi.string().valid('read', 'unread').optional(),
+  unread: Joi.boolean().optional(),
+  category: Joi.string().max(100).optional(),
+  q: Joi.string().trim().max(200).allow('').optional(),
+});
+
 export function createNotificationRoutes(services) {
   const controller = createNotificationsController(services);
   const { middleware } = services;
@@ -45,7 +56,7 @@ export function createNotificationRoutes(services) {
   router.get(
     '/',
     middleware.requireAuth(),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(NotificationListQuerySchema),
     middleware.asyncHandler(controller.list)
   );
 

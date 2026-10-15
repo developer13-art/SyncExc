@@ -48,9 +48,10 @@ export default function Payouts() {
 
   const payouts = payoutsQuery.data?.items ?? [];
 
-  if (payoutsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(payoutsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = payoutsQuery.data?.meta?.total;
+    if (total !== undefined) pagination.setTotal(total);
+  }, [payoutsQuery.data?.meta?.total, pagination.setTotal]);
 
   return (
     <div className="flex flex-col gap-6">

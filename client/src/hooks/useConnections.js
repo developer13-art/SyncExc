@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { connectionsApi } from '../api/index.js';
 import { queryKeys } from './queryKeys.js';
 
-export function useConnections(params = {}) {
+export function useConnections(params = {}, enabled = true) {
   const queryClient = useQueryClient();
 
   const listQuery = useQuery({
     queryKey: queryKeys.connections.list(params),
     queryFn: () => connectionsApi.list(params),
+    enabled,
     staleTime: 30_000,
   });
 

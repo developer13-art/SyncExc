@@ -13,6 +13,25 @@ import {
 } from '@syncexc/shared';
 import { createSignalsController } from './signals.controller.js';
 
+const CandidateListQuerySchema = PaginationSchema.keys({
+  status: Joi.string()
+    .valid(
+      'received',
+      'deduplicated',
+      'processing',
+      'review_required',
+      'validating',
+      'eligible',
+      'blocked',
+      'expired',
+      'canceled',
+      'rejected',
+      'failed'
+    )
+    .optional(),
+  q: Joi.string().trim().max(120).allow('').optional(),
+});
+
 export function createSignalsRoutes(services) {
   const controller = createSignalsController(services);
   const { middleware } = services;
@@ -50,7 +69,7 @@ export function createSignalsRoutes(services) {
     '/candidates',
     middleware.requireAuth(),
     middleware.requireWorkspace(),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(CandidateListQuerySchema),
     middleware.asyncHandler(controller.listCandidates)
   );
 

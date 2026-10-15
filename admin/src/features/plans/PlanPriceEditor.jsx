@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
@@ -13,8 +14,9 @@ import { getErrorMessage } from '../../lib/errors.js';
 import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
 import { formatDate } from '../../lib/formatters/date.formatter.js';
 
-export function PlanPriceEditor({ planId, prices = [] }) {
+export function PlanPriceEditor({ planId, prices = [], features = {}, limits = {} }) {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     currency: 'USD',
@@ -29,22 +31,42 @@ export function PlanPriceEditor({ planId, prices = [] }) {
       toast.error('Amount must be greater than zero');
       return;
     }
+    const interval = form.billingInterval.trim().toLowerCase();
+    if (!['month', 'monthly', 'year', 'yearly'].includes(interval)) {
+      toast.error('Billing interval must be monthly or yearly');
+      return;
+    }
     setSubmitting(true);
     try {
-      await plansApi.update(planId, {
+      await plansApi.createVersion(planId, {
+        features: Array.isArray(features)
+          ? Object.fromEntries(features.map((feature) => [feature, true]))
+          : features,
+        limits,
         prices: [
-          ...prices,
+          ...prices.map((price) => ({
+            currency: price.currency,
+            amountMinor: Number(price.amountMinor),
+            billingInterval:
+              price.billingInterval === 'monthly' ? 'monthly' : 'yearly',
+          })),
           {
             currency: form.currency,
-            amount: form.amount,
-            billingInterval: form.billingInterval,
-            effectiveFrom: form.effectiveFrom,
+            amountMinor: Math.round(Number(form.amount) * 100),
+            billingInterval: interval.startsWith('month') ? 'monthly' : 'yearly',
           },
         ],
+        effectiveFrom: new Date(form.effectiveFrom).toISOString(),
       });
+      await queryClient.invalidateQueries({ queryKey: ['plan', planId] });
       toast.success('Price entry added');
       setOpen(false);
-      setForm({ currency: 'USD', amount: '', billingInterval: 'month', effectiveFrom: new Date().toISOString().slice(0, 10) });
+      setForm({
+        currency: 'USD',
+        amount: '',
+        billingInterval: 'month',
+        effectiveFrom: new Date().toISOString().slice(0, 10),
+      });
     } catch (err) {
       toast.error('Failed to add price', { description: getErrorMessage(err) });
     } finally {

@@ -30,7 +30,7 @@ export default function Feed() {
   const [tab, setTab] = useState('following');
 
   const profileQuery = useCommunityProfile();
-  const feedQuery = useCommunityFeed({ tab });
+  const feedQuery = useCommunityFeed({ following: tab === 'following' });
   const postsQuery = useCommunityPosts({ limit: 20 });
 
   useEffect(() => {

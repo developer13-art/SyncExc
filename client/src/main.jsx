@@ -10,16 +10,15 @@ import { store } from './app/store.js';
 import { queryClient } from './app/queryClient.js';
 import { AppProviders } from './app/providers.jsx';
 import { ErrorBoundary } from './app/ErrorBoundary.jsx';
-import {
-  ensureDemoCredentials,
-  seedDemoAuthSession,
-} from './lib/utils/storage.util.js';
+import { authActions } from './features/auth/authSlice.js';
+import { workspaceActions } from './features/settings/workspaceSlice.js';
+import { clearDevelopmentDemoSession } from './lib/utils/storage.util.js';
 
 import './index.css';
 
-ensureDemoCredentials();
-if (import.meta.env.DEV) {
-  seedDemoAuthSession();
+if (clearDevelopmentDemoSession()) {
+  store.dispatch(authActions.logoutFulfilled());
+  store.dispatch(workspaceActions.setActiveWorkspace(null));
 }
 
 const rootElement = document.getElementById('root');
