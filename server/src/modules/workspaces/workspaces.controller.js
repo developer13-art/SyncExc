@@ -27,14 +27,28 @@ export function createWorkspacesController({ service }) {
     },
 
     async create(req, res) {
-      const workspace = await service.createOrganizationWorkspace({
+      const input = {
         userId: req.auth.userId,
+        type: req.body.type || 'trader',
         name: req.body.name,
         description: req.body.description,
         timezone: req.body.timezone,
         preferredLanguage: req.body.preferredLanguage,
-      });
+      };
+      const workspace = input.type === 'organization'
+        ? await service.createOrganizationWorkspace(input)
+        : await service.createSpecializedWorkspace(input);
       return created(res, serializeWorkspace(workspace));
+    },
+
+    async updateLifecycle(req, res) {
+      const workspace = await service.updateWorkspaceLifecycle({
+        userId: req.auth.userId,
+        workspaceId: req.params.workspaceId,
+        status: req.body.status,
+        reason: req.body.reason,
+      });
+      return success(res, serializeWorkspace(workspace));
     },
 
     async get(req, res) {

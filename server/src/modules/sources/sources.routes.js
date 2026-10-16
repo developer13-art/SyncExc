@@ -6,7 +6,6 @@ import { Router } from 'express';
 import Joi from 'joi';
 import {
   RegisterSourceRequestSchema,
-  CreateDiscoveryJobRequestSchema,
   SubmitReviewDecisionRequestSchema,
   UuidSchema,
 } from '@syncexc/shared';
@@ -18,6 +17,22 @@ const AuthorizeConnectionSchema = Joi.object({
 
 const SandboxSchema = Joi.object({
   sampleSize: Joi.number().integer().min(1).max(100).default(10),
+});
+
+const MonitoringSchema = Joi.object({
+  enabled: Joi.boolean().required(),
+});
+
+const ExecutionConfigSchema = Joi.object({
+  mode: Joi.string().valid('monitor_only', 'review', 'simulate', 'live').required(),
+  settings: Joi.object({
+    maxLeverage: Joi.number().min(1).max(125).optional(),
+    maxRiskPercent: Joi.number().positive().max(100).optional(),
+    maxNotional: Joi.number().positive().optional(),
+    allowMarketOrders: Joi.boolean().optional(),
+    allowedSymbols: Joi.array().items(Joi.string().trim().uppercase().max(32)).max(100).unique().optional(),
+  }).default({}),
+  destinationAccountIds: Joi.array().items(UuidSchema).max(10).unique().default([]),
 });
 
 export function createSourcesRoutes(services) {
@@ -64,6 +79,13 @@ export function createSourcesRoutes(services) {
     middleware.asyncHandler(controller.update)
   );
 
+  router.get(
+    '/:sourceId/connection',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.getConnection)
+  );
+
   router.post(
     '/:sourceId/activate',
     middleware.requireAuth(),
@@ -83,6 +105,29 @@ export function createSourcesRoutes(services) {
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.asyncHandler(controller.archive)
+  );
+
+  router.put(
+    '/:sourceId/monitoring',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(MonitoringSchema),
+    middleware.asyncHandler(controller.setMonitoring)
+  );
+
+  router.get(
+    '/:sourceId/execution-config',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.getExecutionConfig)
+  );
+
+  router.put(
+    '/:sourceId/execution-config',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(ExecutionConfigSchema),
+    middleware.asyncHandler(controller.updateExecutionConfig)
   );
 
   /* ---------------------------------------------------------------------------
@@ -154,45 +199,6 @@ export function createSourcesRoutes(services) {
     middleware.requireWorkspace(),
     middleware.validateBody(SandboxSchema),
     middleware.asyncHandler(controller.runSandbox)
-  );
-
-  /* ---------------------------------------------------------------------------
-   * Discovery
-   * ------------------------------------------------------------------------ */
-  router.post(
-    '/discovery/jobs',
-    middleware.requireAuth(),
-    middleware.requireWorkspace(),
-    middleware.validateBody(CreateDiscoveryJobRequestSchema),
-    middleware.asyncHandler(controller.createDiscoveryJob)
-  );
-
-  router.get(
-    '/discovery/jobs',
-    middleware.requireAuth(),
-    middleware.requireWorkspace(),
-    middleware.asyncHandler(controller.listDiscoveryJobs)
-  );
-
-  router.get(
-    '/discovery/jobs/:jobId',
-    middleware.requireAuth(),
-    middleware.requireWorkspace(),
-    middleware.asyncHandler(controller.getDiscoveryJob)
-  );
-
-  router.get(
-    '/discovery/candidates',
-    middleware.requireAuth(),
-    middleware.requireWorkspace(),
-    middleware.asyncHandler(controller.listCandidates)
-  );
-
-  router.get(
-    '/discovery/candidates/:candidateId',
-    middleware.requireAuth(),
-    middleware.requireWorkspace(),
-    middleware.asyncHandler(controller.getCandidate)
   );
 
   /* ---------------------------------------------------------------------------

@@ -156,15 +156,23 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
   async function activateSource({ userId, workspaceId, sourceId }) {
     const source = await getSourceForWorkspace({ sourceId, workspaceId });
 
-    if (!['approved', 'pending_validation', 'paused'].includes(source.status)) {
+    if (!['draft', 'approved', 'pending_validation', 'paused'].includes(source.status)) {
       throw new ConflictError(
         `Source cannot be activated from status ${source.status}`,
         'INVALID_STATUS'
       );
     }
+    const connection = await queries.findSourceConnection(sourceId);
+    if (connection?.status !== 'active' || connection.authorization_status !== 'authorized') {
+      throw new ConflictError('Authorize and test the source connection before enabling it', 'CONNECTION_REQUIRED');
+    }
 
     return db.tx(async (tx) => {
       const updated = await queries.updateSourceStatus(sourceId, 'active');
+      await db.query(
+        `UPDATE signal_sources SET monitoring_enabled = false WHERE id = $1`,
+        [sourceId]
+      );
 
       await queries.insertAuditEvent(tx, {
         sourceId,
@@ -242,6 +250,177 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
     });
   }
 
+  async function setMonitoring({ userId, workspaceId, sourceId, enabled }) {
+    const source = await getSourceForWorkspace({ sourceId, workspaceId });
+    if (source.workspace_id !== workspaceId) throw new NotFoundError('Source');
+
+    if (enabled) {
+      if (source.status !== 'active') {
+        throw new ConflictError('Enable the source before starting monitoring', 'SOURCE_NOT_ACTIVE');
+      }
+      const connection = await queries.findSourceConnection(sourceId);
+      if (connection?.status !== 'active' || connection.authorization_status !== 'authorized') {
+        throw new ConflictError('An authorized connection is required for monitoring', 'CONNECTION_REQUIRED');
+      }
+    }
+
+    const result = await db.query(
+      `
+      UPDATE signal_sources
+      SET monitoring_enabled = $2,
+          monitoring_started_at = CASE WHEN $2 THEN COALESCE(monitoring_started_at, now()) ELSE NULL END,
+          updated_at = now()
+      WHERE id = $1 AND workspace_id = $3
+      RETURNING *
+      `,
+      [sourceId, enabled, workspaceId]
+    );
+    const updated = result.rows[0];
+    if (!updated) throw new NotFoundError('Source');
+
+    await queries.insertAuditEvent(db, {
+      sourceId,
+      actorId: userId,
+      action: enabled ? 'source.monitoring_enabled' : 'source.monitoring_disabled',
+      resourceType: 'signal_source',
+      resourceId: sourceId,
+      after: { monitoringEnabled: enabled },
+    });
+    return updated;
+  }
+
+  async function getExecutionConfig({ workspaceId, sourceId }) {
+    const source = await getSourceForWorkspace({ sourceId, workspaceId });
+    if (source.workspace_id !== workspaceId) throw new NotFoundError('Source');
+    const [configResult, destinationResult, availableResult] = await Promise.all([
+      db.query(
+        `SELECT * FROM signal_source_execution_configs WHERE source_id = $1 AND workspace_id = $2 ORDER BY version DESC LIMIT 1`,
+        [sourceId, workspaceId]
+      ),
+      db.query(
+        `
+        SELECT a.id AS account_id, a.account_type, a.status,
+               c.exchange_code, c.environment, c.label
+        FROM exchange_accounts a
+        JOIN exchange_connections c ON c.id = a.connection_id
+        WHERE c.workspace_id = $1 AND c.status = 'active' AND a.status = 'active'
+        ORDER BY c.label, a.account_type
+        `,
+        [workspaceId]
+      ),
+      db.query(
+        `
+        SELECT d.account_id, d.enabled, a.account_type, a.status,
+               c.exchange_code, c.environment, c.status AS connection_status, c.label
+        FROM signal_source_destinations d
+        JOIN exchange_accounts a ON a.id = d.account_id
+        JOIN exchange_connections c ON c.id = a.connection_id
+        WHERE d.source_id = $1 AND d.workspace_id = $2
+        ORDER BY c.label, a.account_type
+        `,
+        [sourceId, workspaceId]
+      ),
+    ]);
+    const row = configResult.rows[0];
+    return {
+      version: row?.version ?? source.execution_config_version ?? 1,
+      mode: row?.mode ?? 'review',
+      settings: row?.settings ?? source.execution_settings ?? {},
+      destinations: destinationResult.rows,
+      availableDestinations: availableResult.rows,
+    };
+  }
+
+  async function updateExecutionConfig({
+    userId,
+    workspaceId,
+    sourceId,
+    mode,
+    settings = {},
+    destinationAccountIds = [],
+  }) {
+    const source = await getSourceForWorkspace({ sourceId, workspaceId });
+    if (source.workspace_id !== workspaceId) throw new NotFoundError('Source');
+    if (!['monitor_only', 'review', 'simulate', 'live'].includes(mode)) {
+      throw new ValidationError('Unsupported execution mode');
+    }
+    if (!Array.isArray(destinationAccountIds) || destinationAccountIds.length > 10) {
+      throw new ValidationError('Choose no more than 10 destination accounts');
+    }
+    const accountIds = [...new Set(destinationAccountIds)];
+    if (accountIds.length !== destinationAccountIds.length) {
+      throw new ValidationError('Destination accounts must be unique');
+    }
+
+    const accountResult = accountIds.length
+      ? await db.query(
+        `
+        SELECT a.id, a.account_type, a.status, c.status AS connection_status, c.environment
+        FROM exchange_accounts a
+        JOIN exchange_connections c ON c.id = a.connection_id
+        WHERE a.id = ANY($1::uuid[]) AND c.workspace_id = $2
+        `,
+        [accountIds, workspaceId]
+      )
+      : { rows: [] };
+    if (accountResult.rows.length !== accountIds.length) {
+      throw new ValidationError('Every destination account must belong to the active workspace');
+    }
+    if (accountResult.rows.some((account) => account.status !== 'active' || account.connection_status !== 'active')) {
+      throw new ConflictError('All destination accounts must be active', 'DESTINATION_INACTIVE');
+    }
+    if (mode === 'live' && accountIds.length === 0) {
+      throw new ValidationError('Live mode requires at least one explicitly selected destination');
+    }
+
+    const latest = await db.query(
+      `SELECT COALESCE(MAX(version), 0)::int AS version FROM signal_source_execution_configs WHERE source_id = $1 AND workspace_id = $2`,
+      [sourceId, workspaceId]
+    );
+    const version = latest.rows[0].version + 1;
+    await db.tx(async (tx) => {
+      await tx.query(
+        `
+        INSERT INTO signal_source_execution_configs
+          (source_id, workspace_id, version, mode, settings, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [sourceId, workspaceId, version, mode, JSON.stringify(settings), userId]
+      );
+      await tx.query(
+        `DELETE FROM signal_source_destinations WHERE source_id = $1 AND workspace_id = $2`,
+        [sourceId, workspaceId]
+      );
+      for (const accountId of accountIds) {
+        await tx.query(
+          `
+          INSERT INTO signal_source_destinations
+            (source_id, workspace_id, account_id, enabled, created_by)
+          VALUES ($1, $2, $3, true, $4)
+          `,
+          [sourceId, workspaceId, accountId, userId]
+        );
+      }
+      await tx.query(
+        `
+        UPDATE signal_sources
+        SET execution_config_version = $3, execution_settings = $4, updated_at = now()
+        WHERE id = $1 AND workspace_id = $2
+        `,
+        [sourceId, workspaceId, version, JSON.stringify(settings)]
+      );
+      await queries.insertAuditEvent(tx, {
+        sourceId,
+        actorId: userId,
+        action: 'source.execution_config_updated',
+        resourceType: 'signal_source',
+        resourceId: sourceId,
+        after: { version, mode, destinationAccountIds: accountIds },
+      });
+    });
+    return getExecutionConfig({ workspaceId, sourceId });
+  }
+
   return {
     registerSource,
     getSource,
@@ -252,6 +431,9 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
     activateSource,
     pauseSource,
     archiveSource,
+    setMonitoring,
+    getExecutionConfig,
+    updateExecutionConfig,
   };
 }
 

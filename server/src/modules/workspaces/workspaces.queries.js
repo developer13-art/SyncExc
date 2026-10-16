@@ -12,9 +12,10 @@ export function createWorkspacesQueries({ db }) {
       const result = await client.query(
         `
         INSERT INTO workspaces (
-          name, type, owner_id, description, timezone, preferred_language, settings
+          name, type, owner_id, description, timezone, preferred_language, settings,
+          slug, visibility
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         `,
         [
@@ -25,6 +26,8 @@ export function createWorkspacesQueries({ db }) {
           data.timezone || 'UTC',
           data.preferredLanguage || 'en',
           JSON.stringify(data.settings || {}),
+          data.slug || null,
+          data.visibility || 'private',
         ]
       );
       return result.rows[0];
@@ -113,6 +116,27 @@ export function createWorkspacesQueries({ db }) {
         [id, status]
       );
       return result.rows[0] || null;
+    },
+
+    async insertWorkspaceLifecycleEvent(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO workspace_lifecycle_events (
+          workspace_id, actor_id, action, previous_status, next_status, reason
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+        `,
+        [
+          data.workspaceId,
+          data.actorId,
+          data.action,
+          data.previousStatus,
+          data.nextStatus,
+          data.reason || null,
+        ]
+      );
+      return result.rows[0];
     },
 
     async setWorkspaceOwner(id, newOwnerId) {

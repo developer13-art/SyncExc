@@ -12,6 +12,9 @@ export const workspacesApi = {
 
   update: (workspaceId, payload) => api.patch(endpoints.workspaces.detail(workspaceId), payload),
 
+  updateLifecycle: (workspaceId, payload) =>
+    api.patch(`${endpoints.workspaces.detail(workspaceId)}/lifecycle`, payload),
+
   listMembers: (workspaceId, params) =>
     api.getPaged(endpoints.workspaces.members(workspaceId), { params }),
 

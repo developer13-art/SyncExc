@@ -35,6 +35,7 @@ export function createWorkspacesModule({ services }) {
     mailer: services.mailer,
     events: services.events,
     audit: services.audit,
+    getBilling: () => services.billing,
     logger,
   });
 

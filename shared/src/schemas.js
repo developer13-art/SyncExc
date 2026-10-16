@@ -172,10 +172,15 @@ export const ProfileUpdateSchema = Joi.object({
 
 export const CreateWorkspaceRequestSchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required(),
-  type: Joi.string().valid('personal', 'organization').required(),
+  type: Joi.string().valid('organization', 'trader', 'developer').default('trader'),
   description: Joi.string().trim().max(500).optional().allow(''),
   timezone: Joi.string().max(64).default('UTC'),
   preferredLanguage: Joi.string().max(8).default('en'),
+});
+
+export const WorkspaceLifecycleRequestSchema = Joi.object({
+  status: Joi.string().valid('active', 'paused', 'archived').required(),
+  reason: Joi.string().trim().max(500).optional().allow(''),
 });
 
 export const UpdateWorkspaceRequestSchema = Joi.object({

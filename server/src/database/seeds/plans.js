@@ -24,6 +24,8 @@ export const DEFAULT_PLANS = [
       limits: {
         'exchangeConnections.max': 1,
         'signalSources.max': 3,
+        'traderWorkspaces.max': 1,
+        'developerWorkspaces.max': 1,
         'workflows.max': 0,
         'simulations.max': 0,
         'workspaceMembers.max': 1,
@@ -53,6 +55,8 @@ export const DEFAULT_PLANS = [
       limits: {
         'exchangeConnections.max': 5,
         'signalSources.max': 25,
+        'traderWorkspaces.max': 5,
+        'developerWorkspaces.max': 5,
         'workflows.max': 10,
         'simulations.max': 50,
         'workspaceMembers.max': 5,
@@ -83,6 +87,8 @@ export const DEFAULT_PLANS = [
       limits: {
         'exchangeConnections.max': 25,
         'signalSources.max': 100,
+        'traderWorkspaces.max': 25,
+        'developerWorkspaces.max': 25,
         'workflows.max': 100,
         'simulations.max': 500,
         'workspaceMembers.max': 25,

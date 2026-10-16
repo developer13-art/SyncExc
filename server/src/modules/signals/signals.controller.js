@@ -11,6 +11,7 @@ export function createSignalsController(services) {
   return {
     async ingestMessage(req, res) {
       const result = await ingestion.ingestMessage({
+        workspaceId: req.workspace.id,
         sourceId: req.body.sourceId,
         providerMessageId: req.body.providerMessageId,
         channelRef: req.body.channelRef,
@@ -33,6 +34,7 @@ export function createSignalsController(services) {
     async listMessages(req, res) {
       const messages = await ingestion.listMessagesForSource({
         sourceId: req.query.sourceId,
+        workspaceId: req.workspace.id,
         limit: Number(req.query.limit) || 50,
       });
       return success(res, messages.map(serializeSignalMessage));

@@ -3,7 +3,7 @@
  */
 
 import { NotFoundError, ConflictError } from '../../lib/errors.js';
-import { encrypt } from '../../lib/crypto.js';
+import { decrypt, encrypt } from '../../lib/crypto.js';
 
 export function createSourceConnectionService({
   db,
@@ -39,6 +39,7 @@ export function createSourceConnectionService({
         const encrypted = encrypt(JSON.stringify(credentials));
         const conn = await queries.findSourceConnection(sourceId);
         if (conn) {
+          await queries.revokeSourceCredentials(tx, conn.id);
           await queries.insertSourceCredential(tx, {
             connectionId: conn.id,
             credentialType: source.type,
@@ -81,9 +82,13 @@ export function createSourceConnectionService({
     const connection = await queries.findSourceConnection(sourceId);
     const adapter = adapterRegistry.get(source.type);
     if (!adapter) throw new NotFoundError(`Adapter for ${source.type}`);
+    const credential = connection
+      ? await queries.findActiveCredentialForConnection(connection.id)
+      : null;
+    const credentials = credential ? JSON.parse(decrypt(credential.encrypted_value)) : null;
 
     try {
-      const result = await adapter.testConnection({ source, connection });
+      const result = await adapter.testConnection({ source, connection, credentials });
       return { ok: true, ...result };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -101,6 +106,11 @@ export function createSourceConnectionService({
       await queries.updateSourceConnection(conn.id, {
         status: 'revoked',
       });
+      await queries.revokeSourceCredentials(tx, conn.id);
+      await tx.query(
+        `UPDATE signal_sources SET monitoring_enabled = false, monitoring_started_at = NULL, updated_at = now() WHERE id = $1`,
+        [sourceId]
+      );
 
       await events.publish(
         tx,
@@ -118,10 +128,28 @@ export function createSourceConnectionService({
     });
   }
 
+  async function getConnection({ workspaceId, sourceId }) {
+    const source = await queries.findSourceById(sourceId);
+    if (!source || source.workspace_id !== workspaceId) throw new NotFoundError('Source');
+    const connection = await queries.findSourceConnection(sourceId);
+    if (!connection) return null;
+    const credential = await queries.findActiveCredentialForConnection(connection.id);
+    return {
+      id: connection.id,
+      method: source.type,
+      status: connection.status,
+      authorizationStatus: connection.authorization_status,
+      lastValidatedAt: connection.last_validated_at,
+      credentialStatus: credential ? 'stored' : 'missing',
+      metadata: connection.metadata || {},
+    };
+  }
+
   return {
     authorize,
     testConnection,
     disconnect,
+    getConnection,
   };
 }
 

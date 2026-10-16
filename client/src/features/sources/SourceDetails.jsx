@@ -18,12 +18,14 @@ import { SourceHealth } from './SourceHealth.jsx';
 import { SourceQuality } from './SourceQuality.jsx';
 import { SourceSandbox } from './SourceSandbox.jsx';
 import { SourceAudit } from './SourceAudit.jsx';
+import SourceExecutionConfig from './SourceExecutionConfig.jsx';
 import { useSource, useSources } from '../../hooks/useSources.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { formatDateTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { sourcesApi } from '../../api/index.js';
 
 export default function SourceDetails() {
   const { sourceId } = useParams();
@@ -34,6 +36,7 @@ export default function SourceDetails() {
   const { enableSource, pauseSource, revalidate } = useSources();
 
   const { source, health, quality, connection, isLoading, error } = sourceQuery;
+  const [monitoringBusy, setMonitoringBusy] = useState(false);
 
   useEffect(() => {
     if (source) {
@@ -88,6 +91,19 @@ export default function SourceDetails() {
       toast.success('Revalidation started');
     } catch (err) {
       toast.error('Revalidation failed', { description: getErrorMessage(err) });
+    }
+  };
+
+  const handleMonitoring = async () => {
+    setMonitoringBusy(true);
+    try {
+      await sourcesApi.setMonitoring(source.id, !source.monitoringEnabled);
+      toast.success(source.monitoringEnabled ? 'Monitoring stopped' : 'Monitoring started');
+      await sourceQuery.refetch();
+    } catch (err) {
+      toast.error('Monitoring update failed', { description: getErrorMessage(err) });
+    } finally {
+      setMonitoringBusy(false);
     }
   };
 
@@ -197,9 +213,31 @@ export default function SourceDetails() {
         </Card>
       </div>
 
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
+          <div>
+            <p className="font-medium text-foreground">
+              Monitoring {source.monitoringEnabled ? 'is on' : 'is off'}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Only this source is monitored after you explicitly start it. Pausing the source or
+              disconnecting its account stops collection.
+            </p>
+          </div>
+          <Button
+            variant={source.monitoringEnabled ? 'outline' : 'default'}
+            disabled={monitoringBusy || (!source.monitoringEnabled && source.status !== 'active')}
+            onClick={handleMonitoring}
+          >
+            {monitoringBusy ? 'Updating…' : source.monitoringEnabled ? 'Stop monitoring' : 'Start monitoring'}
+          </Button>
+        </CardContent>
+      </Card>
+
       <Tabs defaultValue="connection">
         <TabsList>
           <TabsTrigger value="connection">Connection</TabsTrigger>
+          <TabsTrigger value="execution">Execution</TabsTrigger>
           <TabsTrigger value="validation">Validation</TabsTrigger>
           <TabsTrigger value="health">Health</TabsTrigger>
           <TabsTrigger value="quality">Quality</TabsTrigger>
@@ -208,6 +246,9 @@ export default function SourceDetails() {
         </TabsList>
         <TabsContent value="connection">
           <SourceConnection sourceId={sourceId} />
+        </TabsContent>
+        <TabsContent value="execution">
+          <SourceExecutionConfig sourceId={sourceId} />
         </TabsContent>
         <TabsContent value="validation">
           <SourceValidation sourceId={sourceId} />

@@ -76,12 +76,17 @@ export const SECURITY_EVENT_TYPE = Object.freeze({
 export const WORKSPACE_TYPE = Object.freeze({
   PERSONAL: 'personal',
   ORGANIZATION: 'organization',
+  TRADER: 'trader',
+  DEVELOPER: 'developer',
 });
 
 export const WORKSPACE_STATUS = Object.freeze({
   ACTIVE: 'active',
+  PAUSED: 'paused',
   SUSPENDED: 'suspended',
+  RESTRICTED: 'restricted',
   PENDING_CLOSURE: 'pending_closure',
+  ARCHIVED: 'archived',
   CLOSED: 'closed',
 });
 

@@ -33,6 +33,7 @@ import { createEligibilityService } from './eligibility.service.js';
 import { createIntentHandoffService } from './intent-handoff.service.js';
 import { createSignalsRoutes } from './signals.routes.js';
 import { createSignalsListeners } from './listeners.js';
+import { createTelegramPollingService } from './telegram-polling.service.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createSignalsModule({ services }) {
@@ -51,8 +52,20 @@ export function createSignalsModule({ services }) {
     queries,
     deduplication,
     events: services.events,
+    sourceAccess: {
+      getSourceForWorkspace: (params) => services.sources.getSourceForWorkspace(params),
+    },
     logger,
   });
+
+  const telegramPolling = createTelegramPollingService({
+    db: services.db,
+    ingestion,
+    logger,
+  });
+  if (process.env.NODE_ENV !== 'test' && process.env.TELEGRAM_POLLING_ENABLED !== 'false') {
+    telegramPolling.start();
+  }
 
   const parser = createParserService({
     db: services.db,

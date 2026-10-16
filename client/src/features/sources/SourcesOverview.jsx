@@ -104,9 +104,6 @@ export default function SourcesOverview() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link to={ROUTES.app.sources.discovery}>Discover</Link>
-          </Button>
           <Button asChild>
             <Link to={ROUTES.app.sources.create}>
               <Plus className="h-4 w-4" /> Add source
@@ -140,7 +137,7 @@ export default function SourcesOverview() {
           description={
             query || status !== 'all'
               ? 'Try adjusting your search or filters.'
-              : 'Add a supported source manually or discover candidates through the AI-assisted workflow.'
+              : 'Register a specific feed you already have permission to monitor. Only sources you explicitly select can be monitored.'
           }
           action={
             !query && status === 'all' ? (

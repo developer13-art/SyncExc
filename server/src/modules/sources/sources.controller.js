@@ -61,6 +61,14 @@ export function createSourcesController(services) {
       return success(res, serializeSource(source));
     },
 
+    async getConnection(req, res) {
+      const connection = await connectionService.getConnection({
+        workspaceId: req.workspace.id,
+        sourceId: req.params.sourceId,
+      });
+      return success(res, connection);
+    },
+
     async update(req, res) {
       const source = await sourceRegistryService.updateSource({
         userId: req.auth.userId,
@@ -97,6 +105,36 @@ export function createSourcesController(services) {
         sourceId: req.params.sourceId,
       });
       return success(res, serializeSource(source));
+    },
+
+    async setMonitoring(req, res) {
+      const source = await sourceRegistryService.setMonitoring({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        sourceId: req.params.sourceId,
+        enabled: req.body.enabled,
+      });
+      return success(res, serializeSource(source));
+    },
+
+    async getExecutionConfig(req, res) {
+      const config = await sourceRegistryService.getExecutionConfig({
+        workspaceId: req.workspace.id,
+        sourceId: req.params.sourceId,
+      });
+      return success(res, config);
+    },
+
+    async updateExecutionConfig(req, res) {
+      const config = await sourceRegistryService.updateExecutionConfig({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        sourceId: req.params.sourceId,
+        mode: req.body.mode,
+        settings: req.body.settings,
+        destinationAccountIds: req.body.destinationAccountIds,
+      });
+      return success(res, config);
     },
 
     /* Connections */

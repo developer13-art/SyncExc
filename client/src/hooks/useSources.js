@@ -104,6 +104,12 @@ export function useSource(sourceId) {
     isLoading: detailQuery.isLoading,
     revalidate: revalidate.mutateAsync,
     testConnection: testConnection.mutateAsync,
+    refetch: () => Promise.all([
+      detailQuery.refetch(),
+      healthQuery.refetch(),
+      qualityQuery.refetch(),
+      connectionQuery.refetch(),
+    ]),
   };
 }
 

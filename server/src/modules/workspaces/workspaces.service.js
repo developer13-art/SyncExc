@@ -35,7 +35,7 @@ function permissionsForRole(role) {
   return roleDef ? roleDef.permissions : [];
 }
 
-export function createWorkspacesService({ db, queries, rateLimiter, mailer, events, audit, logger }) {
+export function createWorkspacesService({ db, queries, rateLimiter, mailer, events, audit, getBilling, logger }) {
   /* ===========================================================================
    * WORKSPACES
    * ======================================================================== */
@@ -135,6 +135,144 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
       });
 
       return workspace;
+    });
+  }
+
+  async function getWorkspaceLimit(userId, type) {
+    const fallback = type === 'organization' ? 10 : 1;
+    const personal = await queries.findPersonalWorkspaceForUser(userId);
+    const billing = getBilling?.();
+    if (!billing?.listEntitlementsForScope) return fallback;
+
+    const scopes = [
+      ...(personal ? [{ scopeType: 'workspace', scopeId: personal.id }] : []),
+      { scopeType: 'user', scopeId: userId },
+    ];
+    const key = `${type}Workspaces.max`;
+    for (const scope of scopes) {
+      const entitlements = await billing.listEntitlementsForScope(scope);
+      if (Object.prototype.hasOwnProperty.call(entitlements, key)) {
+        const limit = Number(entitlements[key]);
+        if (Number.isFinite(limit) && limit >= 0) return Math.floor(limit);
+        throw new AppError(`Invalid ${key} entitlement`, {
+          code: 'INVALID_WORKSPACE_ENTITLEMENT',
+          status: 500,
+        });
+      }
+    }
+    return fallback;
+  }
+
+  async function createSpecializedWorkspace({
+    userId,
+    type,
+    name,
+    description,
+    timezone,
+    preferredLanguage,
+  }) {
+    if (!['trader', 'developer'].includes(type)) {
+      throw new ValidationError('Workspace type must be trader or developer');
+    }
+
+    await ensurePersonalWorkspace(userId);
+    const limit = await getWorkspaceLimit(userId, type);
+    const count = await db.query(
+      `
+      SELECT count(*)::int AS count
+      FROM workspaces
+      WHERE owner_id = $1 AND type = $2 AND status NOT IN ('closed', 'archived')
+      `,
+      [userId, type]
+    );
+    if (count.rows[0].count >= limit) {
+      throw new AppError(`${type === 'trader' ? 'Trader' : 'Developer'} workspace limit reached`, {
+        code: 'WORKSPACE_LIMIT_REACHED',
+        status: 402,
+        expose: true,
+        details: { type, current: count.rows[0].count, limit, entitlement: `${type}Workspaces.max` },
+      });
+    }
+
+    const suffix = randomUUID().slice(0, 6);
+    const baseSlug = String(name)
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48) || type;
+
+    return db.tx(async (tx) => {
+      const workspace = await queries.insertWorkspace(tx, {
+        name,
+        type,
+        ownerId: userId,
+        description,
+        timezone,
+        preferredLanguage,
+        slug: `${baseSlug}-${suffix}`,
+        visibility: 'private',
+        settings: type === 'trader'
+          ? { profileVisibility: 'private', signalPublishingEnabled: false }
+          : { sandboxEnabled: true, liveAccessEnabled: false },
+      });
+
+      await seedRolesForWorkspace(tx, workspace.id);
+      await queries.insertMembership(tx, {
+        workspaceId: workspace.id,
+        userId,
+        role: 'owner',
+        status: 'active',
+      });
+
+      await events.publish(
+        tx,
+        'workspace.created',
+        { workspaceId: workspace.id, type, ownerId: userId, name },
+        { actorId: userId, workspaceId: workspace.id, resourceType: 'workspace', resourceId: workspace.id }
+      );
+      await queries.insertWorkspaceAuditEvent({
+        workspaceId: workspace.id,
+        actorId: userId,
+        eventType: 'workspace.created',
+        metadata: { type, name, visibility: 'private' },
+      });
+      return workspace;
+    });
+  }
+
+  async function updateWorkspaceLifecycle({ userId, workspaceId, status, reason }) {
+    const workspace = await queries.findWorkspaceById(workspaceId);
+    if (!workspace || workspace.owner_id !== userId || workspace.type === 'personal') {
+      throw new NotFoundError('Workspace');
+    }
+    const allowed = workspace.status === 'active'
+      ? ['paused', 'archived']
+      : workspace.status === 'paused'
+        ? ['active', 'archived']
+        : [];
+    if (!allowed.includes(status)) {
+      throw new ValidationError(`Cannot change workspace status from ${workspace.status} to ${status}`);
+    }
+
+    return db.tx(async (tx) => {
+      const updated = await queries.setWorkspaceStatus(workspaceId, status);
+      await queries.insertWorkspaceLifecycleEvent(tx, {
+        workspaceId,
+        actorId: userId,
+        action: `workspace.${status}`,
+        previousStatus: workspace.status,
+        nextStatus: status,
+        reason,
+      });
+      await queries.insertWorkspaceAuditEvent({
+        workspaceId,
+        actorId: userId,
+        eventType: `workspace.${status}`,
+        metadata: { previousStatus: workspace.status, nextStatus: status, reason: reason || null },
+      });
+      return updated;
     });
   }
 
@@ -939,6 +1077,8 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
     // Workspaces
     ensurePersonalWorkspace,
     createOrganizationWorkspace,
+    createSpecializedWorkspace,
+    updateWorkspaceLifecycle,
     getWorkspaceById,
     listWorkspacesForUser,
     getActiveWorkspaceIdsForUser,

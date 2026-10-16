@@ -23,6 +23,14 @@ const Billing = lazy(() => import('../features/billing/Plans.jsx'));
 const Support = lazy(() => import('../features/support/SupportCenter.jsx'));
 const Notifications = lazy(() => import('../features/notifications/NotificationCenter.jsx'));
 const Settings = lazy(() => import('../features/settings/ProfileSettings.jsx'));
+const WorkspaceManagement = lazy(() => import('../features/settings/WorkspaceManagement.jsx'));
+const WorkspaceSettings = lazy(() => import('../features/settings/WorkspaceSettings.jsx'));
+const WorkspaceMembers = lazy(() => import('../features/settings/WorkspaceMembers.jsx'));
+const WorkspaceInvitations = lazy(() => import('../features/settings/WorkspaceInvitations.jsx'));
+const WorkspaceRoles = lazy(() => import('../features/settings/WorkspaceRoles.jsx'));
+const WorkspaceShares = lazy(() => import('../features/settings/WorkspaceShares.jsx'));
+const WorkspaceOwnership = lazy(() => import('../features/settings/WorkspaceOwnership.jsx'));
+const WorkspaceAudit = lazy(() => import('../features/settings/WorkspaceAudit.jsx'));
 
 function Fallback({ children }) {
   return <Suspense fallback={<LoadingState />}>{children}</Suspense>;
@@ -52,6 +60,15 @@ export function AppRoutes() {
         <Route path="billing/*" element={<Fallback><Billing /></Fallback>} />
         <Route path="support/*" element={<Fallback><Support /></Fallback>} />
         <Route path="notifications/*" element={<Fallback><Notifications /></Fallback>} />
+        <Route path="settings/workspaces" element={<Fallback><WorkspaceManagement /></Fallback>} />
+        <Route path="settings/workspaces/new" element={<Fallback><WorkspaceManagement /></Fallback>} />
+        <Route path="settings/workspaces/:workspaceId/members" element={<Fallback><WorkspaceMembers /></Fallback>} />
+        <Route path="settings/workspaces/:workspaceId/invitations" element={<Fallback><WorkspaceInvitations /></Fallback>} />
+        <Route path="settings/workspaces/:workspaceId/roles" element={<Fallback><WorkspaceRoles /></Fallback>} />
+        <Route path="settings/workspaces/:workspaceId/connection-shares" element={<Fallback><WorkspaceShares /></Fallback>} />
+        <Route path="settings/workspaces/:workspaceId/ownership" element={<Fallback><WorkspaceOwnership /></Fallback>} />
+        <Route path="settings/workspaces/:workspaceId/audit" element={<Fallback><WorkspaceAudit /></Fallback>} />
+        <Route path="settings/workspaces/:workspaceId" element={<Fallback><WorkspaceSettings /></Fallback>} />
         <Route path="settings/*" element={<Fallback><Settings /></Fallback>} />
         <Route path="*" element={<NotFoundRoute />} />
       </Route>

@@ -11,18 +11,21 @@ import { useToast } from '../../hooks/useToast.js';
 import { sourcesApi } from '../../api/index.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { formatDateTime } from '../../lib/formatters/date.formatter.js';
+import { Input } from '../../components/ui/Input.jsx';
+import { Label } from '../../components/ui/Label.jsx';
 
 export function SourceConnection({ sourceId }) {
   const toast = useToast();
   const { source, connection, isLoading, refetch } = useSource(sourceId);
   const [testing, setTesting] = useState(false);
   const [authorizing, setAuthorizing] = useState(false);
+  const [botToken, setBotToken] = useState('');
 
   if (isLoading) {
     return <LoadingState label="Loading connection" />;
   }
 
-  const hasConnection = Boolean(connection?.method);
+  const hasConnection = connection?.status === 'active' && connection?.authorizationStatus === 'authorized';
 
   const handleTest = async () => {
     setTesting(true);
@@ -40,13 +43,17 @@ export function SourceConnection({ sourceId }) {
   const handleAuthorize = async () => {
     setAuthorizing(true);
     try {
+      if (source?.type !== 'telegram' || !botToken.trim()) {
+        throw new Error('Enter a Telegram bot token to connect this source.');
+      }
       const authResult = await sourcesApi.authorizeConnection(sourceId, {
-        method: connection?.method ?? source?.type ?? 'oauth',
+        credentials: { botToken: botToken.trim() },
       });
       if (authResult?.redirectUrl) {
         window.location.href = authResult.redirectUrl;
       } else {
         toast.success('Authorization initiated');
+        setBotToken('');
         await refetch?.();
       }
     } catch (err) {
@@ -60,16 +67,39 @@ export function SourceConnection({ sourceId }) {
     <div className="flex flex-col gap-5">
       {!hasConnection ? (
         <Alert variant="warning" title="No connection configured">
-          <p className="text-xs">
-            Configure an authorized access method for this source before ingestion can begin.
-            Supported methods depend on the source platform.
-          </p>
-          <div className="mt-3">
-            <Button size="sm" onClick={handleAuthorize} disabled={authorizing}>
-              <Plug className="h-3.5 w-3.5" />
-              {authorizing ? 'Authorizing…' : 'Configure connection'}
-            </Button>
-          </div>
+          {source?.type === 'telegram' ? (
+            <>
+              <p className="text-xs">
+                This connection uses a Telegram bot, not a personal Telegram account. Add the bot
+                to the specific channel or group you registered. The app will not enumerate or
+                monitor other chats.
+              </p>
+              <div className="mt-3 grid max-w-md gap-2">
+                <Label htmlFor="telegram-bot-token">Telegram bot token</Label>
+                <Input
+                  id="telegram-bot-token"
+                  type="password"
+                  autoComplete="new-password"
+                  value={botToken}
+                  onChange={(event) => setBotToken(event.target.value)}
+                  placeholder="Enter token from BotFather"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The token is encrypted before storage and never returned by the API.
+                </p>
+                <Button size="sm" className="w-fit" onClick={handleAuthorize}
+                  disabled={authorizing || !botToken.trim()}>
+                  <Plug className="h-3.5 w-3.5" />
+                  {authorizing ? 'Connecting…' : 'Connect Telegram bot'}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs">
+              This source type does not have an authorized connection flow configured here.
+              Monitoring remains off until the provider connection is supported.
+            </p>
+          )}
         </Alert>
       ) : null}
 
@@ -112,7 +142,7 @@ export function SourceConnection({ sourceId }) {
                   </>
                 )}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleAuthorize} disabled={authorizing}>
+              <Button variant="outline" size="sm" onClick={() => setBotToken('')} disabled={authorizing}>
                 <RefreshCw className="h-3.5 w-3.5" /> Reauthorize
               </Button>
             </div>

@@ -109,6 +109,8 @@ export function createSourcesQueries({ db }) {
         UPDATE signal_sources
         SET status = $2,
             archived_at = COALESCE($3, archived_at),
+            monitoring_enabled = CASE WHEN $2 IN ('paused', 'archived') THEN false ELSE monitoring_enabled END,
+            monitoring_started_at = CASE WHEN $2 IN ('paused', 'archived') THEN NULL ELSE monitoring_started_at END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -267,6 +269,13 @@ export function createSourcesQueries({ db }) {
         [connectionId]
       );
       return result.rows[0] || null;
+    },
+
+    async revokeSourceCredentials(client, connectionId) {
+      await client.query(
+        `UPDATE signal_source_credentials SET revoked_at = now() WHERE connection_id = $1 AND revoked_at IS NULL`,
+        [connectionId]
+      );
     },
 
     /* =========================================================================

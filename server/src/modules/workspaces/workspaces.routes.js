@@ -7,6 +7,7 @@ import Joi from 'joi';
 import {
   CreateWorkspaceRequestSchema,
   UpdateWorkspaceRequestSchema,
+  WorkspaceLifecycleRequestSchema,
   InviteMemberRequestSchema,
   UpdateMemberRoleRequestSchema,
   TransferOwnershipRequestSchema,
@@ -54,6 +55,13 @@ export function createWorkspacesRoutes({ service, middleware }) {
     middleware.requirePermission('workspace.update'),
     middleware.validateBody(UpdateWorkspaceRequestSchema),
     middleware.asyncHandler(controller.update)
+  );
+
+  router.patch(
+    '/:workspaceId/lifecycle',
+    middleware.requireAuth(),
+    middleware.validateBody(WorkspaceLifecycleRequestSchema),
+    middleware.asyncHandler(controller.updateLifecycle)
   );
 
   /* ---------------------------------------------------------------------------

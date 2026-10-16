@@ -106,12 +106,7 @@ export default function ReviewQueue() {
         <EmptyState
           icon={ClipboardList}
           title="Review queue is empty"
-          description="No candidates are pending review. Start a discovery job to find new sources."
-          action={
-            <Button asChild>
-              <Link to={ROUTES.app.sources.discovery}>Start discovery</Link>
-            </Button>
-          }
+          description="No signal candidates are waiting for review. New candidates appear only from sources you explicitly connect and monitor."
         />
       ) : (
         <Card>

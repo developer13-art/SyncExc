@@ -12,6 +12,15 @@ export const sourcesApi = {
 
   update: (sourceId, payload) => api.patch(endpoints.sources.detail(sourceId), payload),
 
+  setMonitoring: (sourceId, enabled) =>
+    api.put(`${endpoints.sources.detail(sourceId)}/monitoring`, { enabled }),
+
+  getExecutionConfig: (sourceId) =>
+    api.get(`${endpoints.sources.detail(sourceId)}/execution-config`),
+
+  updateExecutionConfig: (sourceId, payload) =>
+    api.put(`${endpoints.sources.detail(sourceId)}/execution-config`, payload),
+
   enable: (sourceId) => api.post(endpoints.sources.enable(sourceId)),
 
   pause: (sourceId, payload) => api.post(endpoints.sources.pause(sourceId), payload),
