@@ -26,8 +26,8 @@ const MonitoringSchema = Joi.object({
 const ExecutionConfigSchema = Joi.object({
   mode: Joi.string().valid('monitor_only', 'review', 'simulate', 'live').required(),
   settings: Joi.object({
-    maxLeverage: Joi.number().min(1).max(125).optional(),
-    maxRiskPercent: Joi.number().positive().max(100).optional(),
+    maxLeverage: Joi.number().integer().min(1).max(20).optional(),
+    riskPerTradePct: Joi.number().positive().max(5).optional(),
     maxNotional: Joi.number().positive().optional(),
     allowMarketOrders: Joi.boolean().optional(),
     allowedSymbols: Joi.array().items(Joi.string().trim().uppercase().max(32)).max(100).unique().optional(),

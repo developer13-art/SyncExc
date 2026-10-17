@@ -223,8 +223,8 @@ export function createSourcesQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async updateSourceConnection(connectionId, fields) {
-      const result = await db.query(
+    async updateSourceConnection(connectionId, fields, client = db) {
+      const result = await client.query(
         `
         UPDATE signal_source_connections
         SET status = COALESCE($2, status),

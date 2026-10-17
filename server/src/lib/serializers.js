@@ -515,6 +515,7 @@ export function serializeProvider(row) {
     displayName: row.display_name,
     accountType: row.account_type,
     moderationState: row.moderation_state,
+    visibility: row.visibility || 'private',
     biography: row.biography || null,
     supportedMarkets: row.supported_markets || [],
     supportedLanguages: row.supported_languages || [],

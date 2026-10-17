@@ -142,9 +142,33 @@ export function SourceConnection({ sourceId }) {
                   </>
                 )}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setBotToken('')} disabled={authorizing}>
-                <RefreshCw className="h-3.5 w-3.5" /> Reauthorize
-              </Button>
+              {source?.type === 'telegram' ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="grid min-w-56 flex-1 gap-1.5">
+                    <Label htmlFor="telegram-reauthorize-token">New Telegram bot token</Label>
+                    <Input
+                      id="telegram-reauthorize-token"
+                      type="password"
+                      autoComplete="new-password"
+                      value={botToken}
+                      onChange={(event) => setBotToken(event.target.value)}
+                      placeholder="Enter replacement token"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAuthorize}
+                    disabled={authorizing || !botToken.trim()}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" /> Reauthorize
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Reauthorization is unavailable for this source type.
+                </p>
+              )}
             </div>
           </CardContent>
         ) : null}

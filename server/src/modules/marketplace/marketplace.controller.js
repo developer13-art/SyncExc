@@ -37,6 +37,7 @@ export function createMarketplaceController(services) {
     async createProvider(req, res) {
       const provider = await providerService.createProvider({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         handle: req.body.handle,
         displayName: req.body.displayName,
         accountType: req.body.accountType,
@@ -50,12 +51,14 @@ export function createMarketplaceController(services) {
 
     async getProvider(req, res) {
       const provider = await providerService.getProvider(req.params.providerId);
-      if (!provider) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
+      if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
+      }
       return success(res, serializeProvider(provider));
     },
 
     async getMyProvider(req, res) {
-      const provider = await providerService.getProviderForUser(req.auth.userId);
+      const provider = await providerService.getProviderForUser(req.auth.userId, req.workspace.id);
       if (!provider) return success(res, null);
       return success(res, serializeProvider(provider));
     },
@@ -63,6 +66,7 @@ export function createMarketplaceController(services) {
     async updateProvider(req, res) {
       const provider = await providerService.updateProvider({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         providerId: req.params.providerId,
         updates: req.body,
       });
@@ -71,11 +75,17 @@ export function createMarketplaceController(services) {
 
     /* Publications */
     async publishSignal(req, res) {
-      const provider = await providerService.getProviderForUser(req.auth.userId);
+      const provider = await providerService.getProviderForUser(req.auth.userId, req.workspace.id);
       if (!provider) return res.status(404).json({ error: { code: 'NOT_PROVIDER', message: 'Not a provider' } });
+      if (provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
+        return res.status(409).json({
+          error: { code: 'PROFILE_NOT_PUBLISHED', message: 'Publish an approved Trader profile before publishing signals' },
+        });
+      }
 
       const signal = await publicationService.publishSignal({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         providerId: provider.id,
         instrument: req.body.instrument,
         marketType: req.body.marketType,
@@ -93,6 +103,10 @@ export function createMarketplaceController(services) {
     },
 
     async listSignals(req, res) {
+      const provider = await providerService.getProvider(req.params.providerId);
+      if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
+      }
       const { rows, nextCursor } = await publicationService.listSignals({
         providerId: req.params.providerId,
         status: req.query.status,
@@ -105,6 +119,7 @@ export function createMarketplaceController(services) {
     async cancelSignal(req, res) {
       const signal = await publicationService.cancelSignal({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         signalId: req.params.signalId,
         reason: req.body.reason,
       });
@@ -230,6 +245,10 @@ export function createMarketplaceController(services) {
 
     /* Performance */
     async listPerformanceReports(req, res) {
+      const provider = await providerService.getProvider(req.params.providerId);
+      if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
+      }
       const reports = await performanceService.listReports({
         providerId: req.params.providerId,
         limit: Number(req.query.limit) || 20,
@@ -239,6 +258,10 @@ export function createMarketplaceController(services) {
 
     /* Disclosures */
     async listDisclosures(req, res) {
+      const provider = await providerService.getProvider(req.params.providerId);
+      if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
+      }
       const disclosures = await disclosureService.listForProvider({
         providerId: req.params.providerId,
       });

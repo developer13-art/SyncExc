@@ -106,6 +106,7 @@ export const ROUTES = Object.freeze({
 
     marketplace: {
       browse: '/app/marketplace',
+      traderProfile: '/app/marketplace/profile',
       provider: (id = ':providerId') => `/app/marketplace/providers/${id}`,
       providerSignals: (id = ':providerId') => `/app/marketplace/providers/${id}/signals`,
       providerPlans: (id = ':providerId') => `/app/marketplace/providers/${id}/plans`,

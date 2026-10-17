@@ -46,6 +46,7 @@ export function createDeveloperModule({ services }) {
     db: services.db,
     queries,
     events: services.events,
+    getBilling: () => services.billing,
     logger,
   });
 
@@ -86,6 +87,7 @@ export function createDeveloperModule({ services }) {
     db: services.db,
     queries,
     credentialService,
+    getBilling: () => services.billing,
     oauthService,
     usageAnalyticsService,
     logger,

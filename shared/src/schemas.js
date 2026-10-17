@@ -539,10 +539,10 @@ export const SubmitSignalReviewRequestSchema = Joi.object({
 
 export const RequestExecutionIntentRequestSchema = Joi.object({
   signalId: UuidSchema.required(),
-  workspaceId: UuidSchema.required(),
+  workspaceId: UuidSchema.optional(),
   syncGroupId: UuidSchema.optional(),
   executionMode: Joi.string()
-    .valid('monitor_only', 'confirm_before_execution', 'authorized_automation')
+    .valid('monitor_only', 'confirm_before_execution', 'authorized_automation', 'simulation_only')
     .required(),
 });
 

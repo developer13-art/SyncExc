@@ -40,6 +40,9 @@ export function createSignalsModule({ services }) {
   const logger = createLogger({ component: 'signals' });
 
   const queries = createSignalsQueries({ db: services.db });
+  const sourceAccess = {
+    getSourceForWorkspace: (params) => services.sources.getSourceForWorkspace(params),
+  };
 
   const deduplication = createDeduplicationService({
     db: services.db,
@@ -52,9 +55,7 @@ export function createSignalsModule({ services }) {
     queries,
     deduplication,
     events: services.events,
-    sourceAccess: {
-      getSourceForWorkspace: (params) => services.sources.getSourceForWorkspace(params),
-    },
+    sourceAccess,
     logger,
   });
 
@@ -142,6 +143,7 @@ export function createSignalsModule({ services }) {
     validation,
     eligibility,
     intentHandoff,
+    sourceAccess,
     middleware: services.middleware,
   });
 

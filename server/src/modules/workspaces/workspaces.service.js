@@ -257,7 +257,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
     }
 
     return db.tx(async (tx) => {
-      const updated = await queries.setWorkspaceStatus(workspaceId, status);
+      const updated = await queries.setWorkspaceStatus(workspaceId, status, tx);
       await queries.insertWorkspaceLifecycleEvent(tx, {
         workspaceId,
         actorId: userId,
@@ -271,7 +271,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
         actorId: userId,
         eventType: `workspace.${status}`,
         metadata: { previousStatus: workspace.status, nextStatus: status, reason: reason || null },
-      });
+      }, tx);
       return updated;
     });
   }

@@ -19,8 +19,30 @@ export function createApiAuthorizationService({
   credentialService,
   oauthService,
   usageAnalyticsService,
+  getBilling,
   logger,
 }) {
+  async function hasProductionEntitlement(userId, workspaceId) {
+    const billing = getBilling?.();
+    if (!billing?.listEntitlementsForScope) return false;
+    const personalResult = await db.query(
+      `SELECT id FROM workspaces WHERE owner_id = $1 AND type = 'personal' AND status = 'active' LIMIT 1`,
+      [userId]
+    );
+    const scopes = [
+      { scopeType: 'workspace', scopeId: workspaceId },
+      ...(personalResult.rows[0] ? [{ scopeType: 'workspace', scopeId: personalResult.rows[0].id }] : []),
+      { scopeType: 'user', scopeId: userId },
+    ];
+    for (const scope of scopes) {
+      const entitlements = await billing.listEntitlementsForScope(scope);
+      if (Object.prototype.hasOwnProperty.call(entitlements, 'developerApi.enabled')) {
+        return entitlements['developerApi.enabled'] === true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Authenticate an inbound request. Returns a caller context:
    *   { kind, applicationId, workspaceId, userId, scopes, credentialId }
@@ -47,6 +69,18 @@ export function createApiAuthorizationService({
       if (!app) throw new AuthenticationError('Application not found', 'APP_NOT_FOUND');
       if (app.state !== 'active' && app.state !== 'draft') {
         throw new AuthorizationError('Application is not active', 'APP_NOT_ACTIVE');
+      }
+      const workspaceResult = await db.query(
+        `SELECT type, status FROM workspaces WHERE id = $1`,
+        [app.workspace_id]
+      );
+      const workspace = workspaceResult.rows[0];
+      if (workspace?.type !== 'developer' || workspace.status !== 'active') {
+        throw new AuthorizationError('Developer workspace is not active', 'WORKSPACE_NOT_ACTIVE');
+      }
+      if (credential.environment === 'production' &&
+          !(await hasProductionEntitlement(app.owner_id, app.workspace_id))) {
+        throw new AuthorizationError('Production API access is not entitled for this workspace', 'DEVELOPER_API_ENTITLEMENT_REQUIRED');
       }
 
       // Fire-and-forget last-used update

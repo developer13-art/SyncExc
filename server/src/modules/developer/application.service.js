@@ -2,7 +2,7 @@
  * SyncExc Server — Application service
  */
 
-import { NotFoundError, ConflictError, ValidationError } from '../../lib/errors.js';
+import { NotFoundError, ConflictError, ValidationError, AuthorizationError } from '../../lib/errors.js';
 
 export function createApplicationService({ db, queries, events, logger }) {
   async function createApplication({
@@ -18,6 +18,13 @@ export function createApplicationService({ db, queries, events, logger }) {
   }) {
     if (!['personal', 'organization', 'third_party'].includes(type)) {
       throw new ValidationError(`Invalid application type: ${type}`);
+    }
+    const workspaceResult = await db.query(
+      `SELECT type FROM workspaces WHERE id = $1 AND status = 'active'`,
+      [workspaceId]
+    );
+    if (workspaceResult.rows[0]?.type !== 'developer') {
+      throw new AuthorizationError('Developer applications must belong to a Developer workspace', 'DEVELOPER_WORKSPACE_REQUIRED');
     }
 
     return db.tx(async (tx) => {
@@ -93,7 +100,7 @@ export function createApplicationService({ db, queries, events, logger }) {
 
       await queries.insertApplicationVersion(tx, {
         applicationId,
-        version: 2,
+        version: app.current_version + 1,
         snapshot: updated,
       });
 

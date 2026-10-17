@@ -34,7 +34,7 @@ export const signalsApi = {
   getEligibility: (signalId) => api.get(endpoints.signals.eligibility(signalId)),
 
   createIntent: (signalId, payload) =>
-    api.post(endpoints.signals.createIntent, { ...payload, candidateId: signalId }),
+    api.post(endpoints.signals.createIntent, { ...payload, signalId }),
 
   getIntent: (intentId) => api.get(endpoints.signals.intent(intentId)),
 

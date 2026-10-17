@@ -25,16 +25,19 @@ export function createIngestionService({ db, queries, deduplication, events, sou
     if (source.workspace_id !== workspaceId) throw new NotFoundError('Source');
     const connectionResult = await db.query(
       `
-      SELECT status, authorization_status
-      FROM signal_source_connections
-      WHERE source_id = $1
-      ORDER BY created_at DESC
+      SELECT sc.status, sc.authorization_status, w.status AS workspace_status
+      FROM signal_source_connections sc
+      JOIN signal_sources s ON s.id = sc.source_id
+      JOIN workspaces w ON w.id = s.workspace_id
+      WHERE sc.source_id = $1
+      ORDER BY sc.created_at DESC
       LIMIT 1
       `,
       [sourceId]
     );
     const connection = connectionResult.rows[0];
-    if (source.status !== 'active' || !source.monitoring_enabled ||
+    if (connection?.workspace_status !== 'active' ||
+        source.status !== 'active' || !source.monitoring_enabled ||
         connection?.status !== 'active' || connection.authorization_status !== 'authorized') {
       throw new ConflictError('Source monitoring is not active for this workspace', 'SOURCE_MONITORING_DISABLED');
     }

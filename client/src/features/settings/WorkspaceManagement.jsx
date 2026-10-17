@@ -74,6 +74,10 @@ export default function WorkspaceManagement() {
   const handleLifecycle = async (workspace, status) => {
     setBusyWorkspaceId(workspace.id);
     try {
+      if (activeWorkspace?.id === workspace.id) {
+        const personal = workspaces.find((item) => item.type === 'personal' && item.status === 'active');
+        if (personal) await switchWorkspace(personal.id);
+      }
       await workspacesApi.updateLifecycle(workspace.id, {
         status,
         reason: status === 'archived' ? 'Archived by workspace owner' : 'Updated by workspace owner',
@@ -206,32 +210,55 @@ export default function WorkspaceManagement() {
                         <Link to={ROUTES.app.settings.workspace(workspace.id)}>Settings</Link>
                       </Button>
                     ) : null}
-                    {!active && !archived ? (
+                    {!active && workspace.status === 'active' ? (
                       <Button size="sm" variant="outline" onClick={() => switchWorkspace(workspace.id)}>
                         Switch
                       </Button>
                     ) : null}
-                    {workspace.type !== 'personal' && !archived ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busyWorkspaceId === workspace.id}
-                        onClick={() => handleLifecycle(workspace, 'archived')}
-                        aria-label={`Archive ${workspace.name}`}
-                      >
-                        <Archive className="h-4 w-4" />
-                        Archive
-                      </Button>
+                    {workspace.type !== 'personal' && workspace.status === 'active' ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busyWorkspaceId === workspace.id}
+                          onClick={() => handleLifecycle(workspace, 'paused')}
+                        >
+                          Pause
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busyWorkspaceId === workspace.id}
+                          onClick={() => handleLifecycle(workspace, 'archived')}
+                          aria-label={`Archive ${workspace.name}`}
+                        >
+                          <Archive className="h-4 w-4" />
+                          Archive
+                        </Button>
+                      </>
                     ) : workspace.status === 'paused' ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busyWorkspaceId === workspace.id}
-                        onClick={() => handleLifecycle(workspace, 'active')}
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                        Resume
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busyWorkspaceId === workspace.id}
+                          onClick={() => handleLifecycle(workspace, 'active')}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Resume
+                        </Button>
+                        {workspace.type !== 'personal' ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={busyWorkspaceId === workspace.id}
+                            onClick={() => handleLifecycle(workspace, 'archived')}
+                          >
+                            <Archive className="h-4 w-4" />
+                            Archive
+                          </Button>
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 </CardContent>

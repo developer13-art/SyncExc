@@ -31,6 +31,16 @@ const ProviderQuerySchema = PaginationSchema.keys({
   markets: Joi.string().trim().max(200).optional(),
 });
 
+const UpdateProviderSchema = Joi.object({
+  displayName: Joi.string().trim().min(1).max(120).optional(),
+  biography: Joi.string().trim().max(4000).optional().allow(''),
+  methodology: Joi.string().trim().max(4000).optional().allow(''),
+  supportedMarkets: Joi.array().items(Joi.string().trim().max(32)).max(20).optional(),
+  supportedLanguages: Joi.array().items(Joi.string().trim().max(8)).max(20).optional(),
+  avatarUrl: Joi.string().uri({ scheme: ['https'] }).optional().allow(null),
+  visibility: Joi.string().valid('private', 'public').optional(),
+}).min(1);
+
 export function createMarketplaceRoutes(services) {
   const controller = createMarketplaceController(services);
   const { middleware } = services;
@@ -77,12 +87,14 @@ export function createMarketplaceRoutes(services) {
   router.get(
     '/me/provider',
     middleware.requireAuth(),
+    middleware.requireWorkspace(),
     middleware.asyncHandler(controller.getMyProvider)
   );
 
   router.post(
     '/providers',
     middleware.requireAuth(),
+    middleware.requireWorkspace(),
     middleware.validateBody(CreateProviderRequestSchema),
     middleware.asyncHandler(controller.createProvider)
   );
@@ -90,12 +102,15 @@ export function createMarketplaceRoutes(services) {
   router.patch(
     '/providers/:providerId',
     middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(UpdateProviderSchema),
     middleware.asyncHandler(controller.updateProvider)
   );
 
   router.post(
     '/me/signals',
     middleware.requireAuth(),
+    middleware.requireWorkspace(),
     middleware.validateBody(PublishSignalRequestSchema),
     middleware.asyncHandler(controller.publishSignal)
   );
@@ -103,6 +118,7 @@ export function createMarketplaceRoutes(services) {
   router.post(
     '/signals/:signalId/cancel',
     middleware.requireAuth(),
+    middleware.requireWorkspace(),
     middleware.validateBody(CancelSignalSchema),
     middleware.asyncHandler(controller.cancelSignal)
   );

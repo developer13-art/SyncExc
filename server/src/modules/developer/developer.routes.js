@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import Joi from 'joi';
 import { UuidSchema, PaginationSchema } from '@syncexc/shared';
+import { AuthorizationError } from '../../lib/errors.js';
 import { createDeveloperController } from './developer.controller.js';
 
 const CreateApplicationSchema = Joi.object({
@@ -87,7 +88,21 @@ const SimulateWebhookSchema = Joi.object({
 
 export function createDeveloperRoutes(services) {
   const controller = createDeveloperController(services);
-  const { middleware } = services;
+  const baseMiddleware = services.middleware;
+  const middleware = Object.create(baseMiddleware);
+  middleware.requireWorkspace = (options) => {
+    const requireWorkspace = baseMiddleware.requireWorkspace(options);
+    return (req, res, next) => requireWorkspace(req, res, (error) => {
+      if (error) return next(error);
+      if (req.workspace?.workspace?.type !== 'developer') {
+        return next(new AuthorizationError(
+          'Switch to a Developer workspace to manage applications and credentials',
+          'DEVELOPER_WORKSPACE_REQUIRED',
+        ));
+      }
+      return next();
+    });
+  };
   const router = Router();
 
   /* ---------------------------------------------------------------------------

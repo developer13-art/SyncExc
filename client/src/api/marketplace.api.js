@@ -6,6 +6,13 @@ const { endpoints } = apiConfig;
 export const marketplaceApi = {
   listProviders: (params) => api.getPaged(endpoints.marketplace.providers, { params }),
 
+  getMyProvider: () => api.get(endpoints.marketplace.myProvider),
+
+  createProvider: (payload) => api.post(endpoints.marketplace.providers, payload),
+
+  publishProviderProfile: (providerId, payload) =>
+    api.patch(endpoints.marketplace.provider(providerId), payload),
+
   getProvider: (providerId) => api.get(endpoints.marketplace.provider(providerId)),
 
   updateProvider: (providerId, payload) =>

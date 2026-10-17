@@ -123,7 +123,7 @@ export function createMarketplaceModule({ services }) {
   const publicApi = {
     provider: {
       getProvider: (providerId) => providerService.getProvider(providerId),
-      getProviderForUser: (userId) => providerService.getProviderForUser(userId),
+      getProviderForUser: (userId, workspaceId) => providerService.getProviderForUser(userId, workspaceId),
     },
     publication: {
       publishSignal: (params) => publicationService.publishSignal(params),

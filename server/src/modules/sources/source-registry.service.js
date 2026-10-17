@@ -264,27 +264,30 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
       }
     }
 
-    const result = await db.query(
-      `
-      UPDATE signal_sources
-      SET monitoring_enabled = $2,
-          monitoring_started_at = CASE WHEN $2 THEN COALESCE(monitoring_started_at, now()) ELSE NULL END,
-          updated_at = now()
-      WHERE id = $1 AND workspace_id = $3
-      RETURNING *
-      `,
-      [sourceId, enabled, workspaceId]
-    );
-    const updated = result.rows[0];
-    if (!updated) throw new NotFoundError('Source');
+    let updated;
+    await db.tx(async (tx) => {
+      const result = await tx.query(
+        `
+        UPDATE signal_sources
+        SET monitoring_enabled = $2,
+            monitoring_started_at = CASE WHEN $2 THEN COALESCE(monitoring_started_at, now()) ELSE NULL END,
+            updated_at = now()
+        WHERE id = $1 AND workspace_id = $3
+        RETURNING *
+        `,
+        [sourceId, enabled, workspaceId]
+      );
+      updated = result.rows[0];
+      if (!updated) throw new NotFoundError('Source');
 
-    await queries.insertAuditEvent(db, {
-      sourceId,
-      actorId: userId,
-      action: enabled ? 'source.monitoring_enabled' : 'source.monitoring_disabled',
-      resourceType: 'signal_source',
-      resourceId: sourceId,
-      after: { monitoringEnabled: enabled },
+      await queries.insertAuditEvent(tx, {
+        sourceId,
+        actorId: userId,
+        action: enabled ? 'source.monitoring_enabled' : 'source.monitoring_disabled',
+        resourceType: 'signal_source',
+        resourceId: sourceId,
+        after: { monitoringEnabled: enabled },
+      });
     });
     return updated;
   }
@@ -369,16 +372,43 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
     if (accountResult.rows.some((account) => account.status !== 'active' || account.connection_status !== 'active')) {
       throw new ConflictError('All destination accounts must be active', 'DESTINATION_INACTIVE');
     }
+    if (['monitor_only', 'simulate'].includes(mode) && accountIds.length > 0) {
+      throw new ValidationError('Monitoring and simulation modes cannot target exchange accounts');
+    }
+    if (mode === 'live' && accountResult.rows.some((account) => account.environment !== 'live')) {
+      throw new ValidationError('Live mode requires live exchange accounts; testnet accounts are not eligible');
+    }
     if (mode === 'live' && accountIds.length === 0) {
       throw new ValidationError('Live mode requires at least one explicitly selected destination');
     }
+    if (mode === 'live') {
+      const riskPerTradePct = Number(settings.riskPerTradePct);
+      const maxLeverage = Number(settings.maxLeverage);
+      if (!Number.isFinite(riskPerTradePct) || riskPerTradePct <= 0 || riskPerTradePct > 5) {
+        throw new ValidationError('Live mode requires riskPerTradePct between 0 and 5');
+      }
+      if (!Number.isInteger(maxLeverage) || maxLeverage < 1 || maxLeverage > 20) {
+        throw new ValidationError('Live mode requires maxLeverage between 1 and 20');
+      }
+      if (settings.allowedSymbols != null &&
+          (!Array.isArray(settings.allowedSymbols) || settings.allowedSymbols.length > 50 ||
+            settings.allowedSymbols.some((symbol) => typeof symbol !== 'string' ||
+              !/^[A-Z0-9._-]{2,24}$/.test(symbol)))) {
+        throw new ValidationError('Allowed symbols must be a list of up to 50 valid market symbols');
+      }
+    }
 
-    const latest = await db.query(
-      `SELECT COALESCE(MAX(version), 0)::int AS version FROM signal_source_execution_configs WHERE source_id = $1 AND workspace_id = $2`,
-      [sourceId, workspaceId]
-    );
-    const version = latest.rows[0].version + 1;
+    let version;
     await db.tx(async (tx) => {
+      await tx.query(
+        `SELECT id FROM signal_sources WHERE id = $1 AND workspace_id = $2 FOR UPDATE`,
+        [sourceId, workspaceId]
+      );
+      const latest = await tx.query(
+        `SELECT COALESCE(MAX(version), 0)::int AS version FROM signal_source_execution_configs WHERE source_id = $1 AND workspace_id = $2`,
+        [sourceId, workspaceId]
+      );
+      version = latest.rows[0].version + 1;
       await tx.query(
         `
         INSERT INTO signal_source_execution_configs

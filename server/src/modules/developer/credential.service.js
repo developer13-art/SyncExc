@@ -11,7 +11,28 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { NotFoundError, ValidationError, ConflictError } from '../../lib/errors.js';
 
-export function createCredentialService({ db, queries, events, logger }) {
+export function createCredentialService({ db, queries, events, getBilling, logger }) {
+  async function hasProductionEntitlement(userId, workspaceId) {
+    const billing = getBilling?.();
+    if (!billing?.listEntitlementsForScope) return false;
+    const personalResult = await db.query(
+      `SELECT id FROM workspaces WHERE owner_id = $1 AND type = 'personal' AND status = 'active' LIMIT 1`,
+      [userId]
+    );
+    const scopes = [
+      { scopeType: 'workspace', scopeId: workspaceId },
+      ...(personalResult.rows[0] ? [{ scopeType: 'workspace', scopeId: personalResult.rows[0].id }] : []),
+      { scopeType: 'user', scopeId: userId },
+    ];
+    for (const scope of scopes) {
+      const entitlements = await billing.listEntitlementsForScope(scope);
+      if (Object.prototype.hasOwnProperty.call(entitlements, 'developerApi.enabled')) {
+        return entitlements['developerApi.enabled'] === true;
+      }
+    }
+    return false;
+  }
+
   const VALID_SCOPES = [
     'profile:read',
     'workspace:read',
@@ -53,6 +74,12 @@ export function createCredentialService({ db, queries, events, logger }) {
     }
     if (!['sandbox', 'production'].includes(environment)) {
       throw new ValidationError(`Invalid environment: ${environment}`);
+    }
+    if (environment === 'production' && !(await hasProductionEntitlement(userId, workspaceId))) {
+      throw new ConflictError(
+        'Production credentials require the Developer API entitlement. Sandbox credentials remain available.',
+        'DEVELOPER_API_ENTITLEMENT_REQUIRED'
+      );
     }
     if (!Array.isArray(scopes) || scopes.length === 0) {
       throw new ValidationError('At least one scope is required');

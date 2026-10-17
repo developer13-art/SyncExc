@@ -12,14 +12,15 @@ export function createMarketplaceQueries({ db }) {
       const result = await client.query(
         `
         INSERT INTO marketplace_provider_profiles (
-          user_id, handle, display_name, account_type, biography, methodology,
+          user_id, workspace_id, handle, display_name, account_type, biography, methodology,
           supported_markets, supported_languages
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         `,
         [
           data.userId,
+          data.workspaceId,
           data.handle,
           data.displayName,
           data.accountType,
@@ -56,9 +57,17 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findProviderByWorkspaceId(workspaceId) {
+      const result = await db.query(
+        `SELECT * FROM marketplace_provider_profiles WHERE workspace_id = $1`,
+        [workspaceId]
+      );
+      return result.rows[0] || null;
+    },
+
     async listProviders({ moderationState, limit = 50, cursor = null, search = null, markets = null } = {}) {
       const params = [limit + 1];
-      const conditions = ["moderation_state = 'approved'"];
+      const conditions = ["moderation_state = 'approved'", "visibility = 'public'"];
       if (moderationState) {
         conditions[0] = `moderation_state = $${params.length + 1}`;
         params.push(moderationState);
@@ -105,6 +114,8 @@ export function createMarketplaceQueries({ db }) {
             supported_markets = COALESCE($5, supported_markets),
             supported_languages = COALESCE($6, supported_languages),
             avatar_url = COALESCE($7, avatar_url),
+            visibility = COALESCE($8, visibility),
+            current_version = current_version + 1,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -117,6 +128,7 @@ export function createMarketplaceQueries({ db }) {
           fields.supportedMarkets ?? null,
           fields.supportedLanguages ?? null,
           fields.avatarUrl ?? null,
+          fields.visibility ?? null,
         ]
       );
       return result.rows[0] || null;
@@ -220,7 +232,7 @@ export function createMarketplaceQueries({ db }) {
       };
     },
 
-    async updatePublishedSignal(signalId, fields) {
+    async updatePublishedSignal(signalId, fields, bumpVersion = false) {
       const result = await db.query(
         `
         UPDATE marketplace_published_signals
@@ -233,6 +245,7 @@ export function createMarketplaceQueries({ db }) {
             leverage = COALESCE($8, leverage),
             status = COALESCE($9, status),
             valid_until = COALESCE($10, valid_until),
+            current_version = current_version + CASE WHEN $11::boolean THEN 1 ELSE 0 END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -248,6 +261,7 @@ export function createMarketplaceQueries({ db }) {
           fields.leverage ?? null,
           fields.status ?? null,
           fields.validUntil ?? null,
+          bumpVersion,
         ]
       );
       return result.rows[0] || null;

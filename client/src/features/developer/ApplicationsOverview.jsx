@@ -13,6 +13,8 @@ import { ApplicationCard } from './components/ApplicationCard.jsx';
 import { useDeveloperApplications } from '../../hooks/useDeveloper.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
+import { Card, CardContent } from '../../components/ui/Card.jsx';
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'All' },
@@ -23,6 +25,7 @@ const STATUS_FILTERS = [
 
 export default function ApplicationsOverview() {
   const dispatch = useDispatch();
+  const { activeWorkspace } = useWorkspaceContext();
   const [status, setStatus] = useState('all');
   const [query, setQuery] = useState('');
 
@@ -38,9 +41,29 @@ export default function ApplicationsOverview() {
   const applicationsQuery = useDeveloperApplications({
     status: status === 'all' ? undefined : status,
     q: query || undefined,
+    enabled: activeWorkspace?.type === 'developer',
   });
 
   const applications = applicationsQuery.applications ?? [];
+
+  if (activeWorkspace?.type !== 'developer') {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <Card>
+          <CardContent className="flex flex-col gap-3 p-6">
+            <h1 className="text-xl font-semibold text-foreground">Developer workspace required</h1>
+            <p className="text-sm text-muted-foreground">
+              Applications, credentials, webhooks and sandbox resources are isolated to a
+              Developer workspace. Create or switch to one to continue.
+            </p>
+            <Button asChild className="w-fit">
+              <Link to={ROUTES.app.settings.workspaces}>Manage workspaces</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

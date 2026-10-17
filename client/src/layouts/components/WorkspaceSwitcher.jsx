@@ -1,5 +1,13 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ChevronsUpDown, Check, Plus, Building2, User as UserIcon } from 'lucide-react';
+import {
+  ChevronsUpDown,
+  Check,
+  Plus,
+  Building2,
+  User as UserIcon,
+  Store,
+  Code2,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { cn } from '../../lib/utils/cn.util.js';
@@ -9,6 +17,12 @@ import { ROUTES } from '../../config/routes.config.js';
 function WorkspaceIcon({ type }) {
   if (type === 'organization') {
     return <Building2 className="h-4 w-4 text-muted-foreground" />;
+  }
+  if (type === 'trader') {
+    return <Store className="h-4 w-4 text-muted-foreground" />;
+  }
+  if (type === 'developer') {
+    return <Code2 className="h-4 w-4 text-muted-foreground" />;
   }
   return <UserIcon className="h-4 w-4 text-muted-foreground" />;
 }
@@ -56,12 +70,16 @@ export function WorkspaceSwitcher() {
             workspaces.map((workspace) => (
               <DropdownMenu.Item
                 key={workspace.id}
+                disabled={workspace.status !== 'active'}
                 onSelect={() => switchWorkspace(workspace.id)}
-                className="flex cursor-pointer items-center justify-between gap-2 rounded-sm px-3 py-2 text-sm outline-none hover:bg-muted"
+                className="flex cursor-pointer items-center justify-between gap-2 rounded-sm px-3 py-2 text-sm outline-none hover:bg-muted data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
               >
                 <span className="flex items-center gap-2 truncate">
                   <WorkspaceIcon type={workspace.type} />
-                  <span className="truncate">{workspace.name}</span>
+                  <span className="truncate">
+                    {workspace.name}
+                    {workspace.status !== 'active' ? ` · ${workspace.status}` : ''}
+                  </span>
                 </span>
                 {workspace.id === activeWorkspace?.id ? (
                   <Check className="h-4 w-4 text-primary" />

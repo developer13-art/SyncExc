@@ -14,6 +14,7 @@ const Risk = lazy(() => import('../features/risk/RiskOverview.jsx'));
 const Sources = lazy(() => import('../features/sources/SourcesOverview.jsx'));
 const Signals = lazy(() => import('../features/signals/SignalsOverview.jsx'));
 const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.jsx'));
+const TraderProfile = lazy(() => import('../features/marketplace/TraderProfile.jsx'));
 const Automation = lazy(() => import('../features/automation/WorkflowsOverview.jsx'));
 const Simulation = lazy(() => import('../features/simulation/Environments.jsx'));
 const Developer = lazy(() => import('../features/developer/ApplicationsOverview.jsx'));
@@ -51,6 +52,7 @@ export function AppRoutes() {
         <Route path="risk/*" element={<Fallback><Risk /></Fallback>} />
         <Route path="sources/*" element={<Fallback><Sources /></Fallback>} />
         <Route path="signals/*" element={<Fallback><Signals /></Fallback>} />
+        <Route path="marketplace/profile" element={<Fallback><TraderProfile /></Fallback>} />
         <Route path="marketplace/*" element={<Fallback><Marketplace /></Fallback>} />
         <Route path="automation/*" element={<Fallback><Automation /></Fallback>} />
         <Route path="simulation/*" element={<Fallback><Simulation /></Fallback>} />

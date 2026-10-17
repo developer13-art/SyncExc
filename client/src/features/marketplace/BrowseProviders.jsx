@@ -15,6 +15,7 @@ import { ProviderCard } from './components/ProviderCard.jsx';
 import { useMarketplaceProviders } from '../../hooks/useMarketplace.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 
 const SORT_OPTIONS = [
   { value: 'desc', label: 'Recent' },
@@ -28,6 +29,7 @@ const MARKET_OPTIONS = [
 
 export default function BrowseProviders() {
   const dispatch = useDispatch();
+  const { activeWorkspace } = useWorkspaceContext();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('desc');
   const [markets, setMarkets] = useState([]);
@@ -62,6 +64,11 @@ export default function BrowseProviders() {
           </p>
         </div>
         <div className="flex gap-2">
+          {activeWorkspace?.type === 'trader' ? (
+            <Button variant="outline" asChild>
+              <Link to={ROUTES.app.marketplace.traderProfile}>Manage Trader profile</Link>
+            </Button>
+          ) : null}
           <Button variant="outline" asChild>
             <Link to={ROUTES.app.marketplace.following}>Following</Link>
           </Button>

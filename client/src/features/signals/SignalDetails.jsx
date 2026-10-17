@@ -78,7 +78,7 @@ export default function SignalDetails() {
   const handleCreateIntent = async () => {
     setCreatingIntent(true);
     try {
-      await createIntent({});
+      await createIntent({ executionMode: 'confirm_before_execution' });
       toast.success('Execution intent created', {
         description: 'The downstream workflow will evaluate authorization and risk.',
       });

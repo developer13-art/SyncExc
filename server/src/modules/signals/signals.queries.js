@@ -618,6 +618,21 @@ export function createSignalsQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async listExecutionDestinationResults(intentId) {
+      const result = await db.query(
+        `
+        SELECT r.*, a.account_type, c.exchange_code, c.environment, c.label AS account_label
+        FROM trading_execution_destination_results r
+        JOIN exchange_accounts a ON a.id = r.account_id
+        JOIN exchange_connections c ON c.id = a.connection_id
+        WHERE r.intent_id = $1
+        ORDER BY r.created_at
+        `,
+        [intentId]
+      );
+      return result.rows;
+    },
+
     async updateExecutionIntentStatus(intentId, status, completedAt = null) {
       const result = await db.query(
         `

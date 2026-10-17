@@ -67,6 +67,7 @@ export function createDeveloperQueries({ db }) {
             website = COALESCE($5, website),
             privacy_policy_url = COALESCE($6, privacy_policy_url),
             support_contact = COALESCE($7, support_contact),
+            current_version = current_version + 1,
             updated_at = now()
         WHERE id = $1
         RETURNING *

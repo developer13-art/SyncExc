@@ -5,10 +5,12 @@ import { queryKeys } from './queryKeys.js';
 
 export function useDeveloperApplications(params = {}) {
   const queryClient = useQueryClient();
+  const { enabled = true, ...queryParams } = params;
 
   const listQuery = useQuery({
-    queryKey: queryKeys.developer.applications(params),
-    queryFn: () => developerApi.listApplications(params),
+    queryKey: queryKeys.developer.applications(queryParams),
+    queryFn: () => developerApi.listApplications(queryParams),
+    enabled,
     staleTime: 30_000,
   });
 
@@ -21,6 +23,8 @@ export function useDeveloperApplications(params = {}) {
     applications: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
+    isError: listQuery.isError,
+    refetch: listQuery.refetch,
     createApplication: create.mutateAsync,
   };
 }

@@ -15,7 +15,7 @@ import { useToast } from '../../hooks/useToast.js';
 const MODES = [
   { value: 'monitor_only', label: 'Monitor only', detail: 'Collect and parse messages; do not prepare orders.' },
   { value: 'review', label: 'Review before execution', detail: 'Require a human review before an execution intent.' },
-  { value: 'simulate', label: 'Simulation', detail: 'Use a simulation environment only; never send live orders.' },
+  { value: 'simulate', label: 'Simulation only', detail: 'Exchange handoff is disabled; start simulations from the Simulation area.' },
   { value: 'live', label: 'Live execution', detail: 'Allows live intent creation after risk and permission checks.' },
 ];
 
@@ -31,7 +31,7 @@ export default function SourceExecutionConfig({ sourceId }) {
   const [mode, setMode] = useState('review');
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [maxLeverage, setMaxLeverage] = useState('');
-  const [maxRiskPercent, setMaxRiskPercent] = useState('');
+  const [riskPerTradePct, setRiskPerTradePct] = useState('');
   const [allowedSymbols, setAllowedSymbols] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -40,7 +40,7 @@ export default function SourceExecutionConfig({ sourceId }) {
     setMode(data.mode ?? 'review');
     setSelectedAccounts((data.destinations ?? []).filter((item) => item.enabled).map((item) => item.account_id));
     setMaxLeverage(data.settings?.maxLeverage ?? '');
-    setMaxRiskPercent(data.settings?.maxRiskPercent ?? '');
+    setRiskPerTradePct(data.settings?.riskPerTradePct ?? data.settings?.maxRiskPercent ?? '');
     setAllowedSymbols((data.settings?.allowedSymbols ?? []).join(', '));
   }, [data]);
 
@@ -56,7 +56,7 @@ export default function SourceExecutionConfig({ sourceId }) {
     try {
       const settings = {
         ...(maxLeverage !== '' ? { maxLeverage: Number(maxLeverage) } : {}),
-        ...(maxRiskPercent !== '' ? { maxRiskPercent: Number(maxRiskPercent) } : {}),
+        ...(riskPerTradePct !== '' ? { riskPerTradePct: Number(riskPerTradePct) } : {}),
         ...(allowedSymbols.trim()
           ? { allowedSymbols: [...new Set(allowedSymbols.split(',').map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))] }
           : {}),
@@ -92,7 +92,7 @@ export default function SourceExecutionConfig({ sourceId }) {
         <p className="text-xs">
           Saving this configuration never places an order. Live intents still require source
           authorization, signal validation, user review, risk checks and an active destination.
-          Simulation is isolated from live exchange connections.
+          Simulation never uses live exchange connections; saving this setting does not start a simulation.
         </p>
       </Alert>
 
@@ -113,7 +113,10 @@ export default function SourceExecutionConfig({ sourceId }) {
                 name="execution-mode"
                 value={option.value}
                 checked={mode === option.value}
-                onChange={() => setMode(option.value)}
+                onChange={() => {
+                  setMode(option.value);
+                  if (['monitor_only', 'simulate'].includes(option.value)) setSelectedAccounts([]);
+                }}
                 className="mt-1"
               />
               <span>
@@ -166,9 +169,9 @@ export default function SourceExecutionConfig({ sourceId }) {
               value={maxLeverage} onChange={(event) => setMaxLeverage(event.target.value)} />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="source-max-risk">Maximum risk (%)</Label>
-            <Input id="source-max-risk" type="number" min="0.01" max="100" step="0.01"
-              value={maxRiskPercent} onChange={(event) => setMaxRiskPercent(event.target.value)} />
+            <Label htmlFor="source-max-risk">Risk per trade (%)</Label>
+            <Input id="source-max-risk" type="number" min="0.01" max="5" step="0.01"
+              value={riskPerTradePct} onChange={(event) => setRiskPerTradePct(event.target.value)} />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="source-symbols">Allowed symbols</Label>

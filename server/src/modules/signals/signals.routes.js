@@ -118,6 +118,14 @@ export function createSignalsRoutes(services) {
     middleware.asyncHandler(controller.createIntent)
   );
 
+  router.get(
+    '/execution-intents/:intentId',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ intentId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.getIntent)
+  );
+
   router.post(
     '/execution-intents/:intentId/cancel',
     middleware.requireAuth(),

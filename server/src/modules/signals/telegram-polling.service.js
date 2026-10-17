@@ -30,6 +30,7 @@ export function createTelegramPollingService({ db, ingestion, logger }) {
              i.value AS identifier, c.id AS connection_id,
              cr.encrypted_value
       FROM signal_sources s
+      JOIN workspaces w ON w.id = s.workspace_id AND w.status = 'active'
       JOIN signal_source_identifiers i
         ON i.source_id = s.id AND i.canonical = true
       JOIN LATERAL (

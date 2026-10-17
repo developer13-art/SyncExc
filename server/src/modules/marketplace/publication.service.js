@@ -8,6 +8,7 @@ import { fnv1aHash } from '@syncexc/shared';
 export function createPublicationService({ db, queries, events, disclosureService, logger }) {
   async function publishSignal({
     userId,
+    workspaceId,
     providerId,
     instrument,
     marketType,
@@ -23,7 +24,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
   }) {
     const provider = await queries.findProviderById(providerId);
     if (!provider) throw new NotFoundError('Provider');
-    if (provider.user_id !== userId) throw new NotFoundError('Provider');
+    if (provider.user_id !== userId || provider.workspace_id !== workspaceId) throw new NotFoundError('Provider');
     if (provider.moderation_state !== 'approved') {
       throw new ConflictError('Provider is not approved to publish', 'PROVIDER_NOT_APPROVED');
     }
@@ -93,6 +94,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
 
   async function updateSignal({
     userId,
+    workspaceId,
     signalId,
     updates,
     changeReason,
@@ -100,17 +102,17 @@ export function createPublicationService({ db, queries, events, disclosureServic
     const signal = await queries.findPublishedSignalById(signalId);
     if (!signal) throw new NotFoundError('Signal');
     const provider = await queries.findProviderById(signal.provider_id);
-    if (!provider || provider.user_id !== userId) throw new NotFoundError('Signal');
+    if (!provider || provider.user_id !== userId || provider.workspace_id !== workspaceId) throw new NotFoundError('Signal');
     if (signal.status === 'cancelled' || signal.status === 'closed') {
       throw new ConflictError('Signal cannot be updated in its current state', 'INVALID_STATE');
     }
 
     return db.tx(async (tx) => {
-      const updated = await queries.updatePublishedSignal(signalId, updates);
+      const updated = await queries.updatePublishedSignal(signalId, updates, true);
 
       await queries.insertPublishedSignalVersion(tx, {
         signalId,
-        version: updated.current_version + 1,
+        version: signal.current_version + 1,
         snapshot: updated,
         changeReason: changeReason || 'update',
       });
@@ -134,18 +136,18 @@ export function createPublicationService({ db, queries, events, disclosureServic
     });
   }
 
-  async function cancelSignal({ userId, signalId, reason }) {
+  async function cancelSignal({ userId, workspaceId, signalId, reason }) {
     const signal = await queries.findPublishedSignalById(signalId);
     if (!signal) throw new NotFoundError('Signal');
     const provider = await queries.findProviderById(signal.provider_id);
-    if (!provider || provider.user_id !== userId) throw new NotFoundError('Signal');
+    if (!provider || provider.user_id !== userId || provider.workspace_id !== workspaceId) throw new NotFoundError('Signal');
 
     return db.tx(async (tx) => {
-      const updated = await queries.updatePublishedSignal(signalId, { status: 'cancelled' });
+      const updated = await queries.updatePublishedSignal(signalId, { status: 'cancelled' }, true);
 
       await queries.insertPublishedSignalVersion(tx, {
         signalId,
-        version: updated.current_version + 1,
+        version: signal.current_version + 1,
         snapshot: updated,
         changeReason: `cancelled: ${reason}`,
       });

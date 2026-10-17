@@ -68,8 +68,11 @@ export function requireWorkspace({ required = true } = {}) {
       }
 
       const workspace = await workspaces.getWorkspaceById(workspaceId);
-      if (!workspace || workspace.status === 'closed') {
+      if (!workspace || ['closed', 'archived'].includes(workspace.status)) {
         throw new NotFoundError('Workspace');
+      }
+      if (workspace.status !== 'active') {
+        throw new AuthorizationError('This workspace is paused or restricted', 'WORKSPACE_NOT_ACTIVE');
       }
 
       const effectivePermissions = await workspaces.getEffectivePermissions({
@@ -79,6 +82,8 @@ export function requireWorkspace({ required = true } = {}) {
 
       req.workspace = {
         id: workspace.id,
+        status: workspace.status,
+        type: workspace.type,
         role: membership.role,
         permissions: effectivePermissions,
         member: membership,

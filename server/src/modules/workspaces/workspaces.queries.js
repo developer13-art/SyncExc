@@ -106,8 +106,8 @@ export function createWorkspacesQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async setWorkspaceStatus(id, status) {
-      const result = await db.query(
+    async setWorkspaceStatus(id, status, client = db) {
+      const result = await client.query(
         `
         UPDATE workspaces SET status = $2, updated_at = now()
         WHERE id = $1
@@ -523,8 +523,8 @@ export function createWorkspacesQueries({ db }) {
      * WORKSPACE AUDIT EVENTS
      * ====================================================================== */
 
-    async insertWorkspaceAuditEvent(data) {
-      const result = await db.query(
+    async insertWorkspaceAuditEvent(data, client = db) {
+      const result = await client.query(
         `
         INSERT INTO workspace_audit_events (
           workspace_id, actor_id, event_type, target_user_id,
