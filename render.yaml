@@ -1,9 +1,9 @@
 services:
-  # 1. Backend API (Web Service)
+  # 1. Backend API (Node.js Web Service)
   - type: web
     name: syncexc-server
     runtime: node
-    plan: free # Change to 'starter' later to avoid sleep
+    plan: free
     rootDir: .
     buildCommand: npm install && npm run build --workspace=shared && npm run build --workspace=server
     startCommand: npm run start --workspace=server
@@ -12,11 +12,11 @@ services:
         value: 22.11.0
       - key: NODE_ENV
         value: production
-      # Add all your .env variables here manually in the Render Dashboard
-      # (Do NOT commit secrets to render.yaml)
+      # Add your secrets (DATABASE_URL, JWT_SECRET, etc.) in the Render Dashboard
 
-  # 2. Client (Static Site)
-  - type: static
+  # 2. Client (Static Site - Corrected)
+  - type: web              # Must be 'web' for static sites
+    runtime: static        # Must be 'static'
     name: syncexc-client
     rootDir: .
     buildCommand: npm install && npm run build --workspace=shared && npm run build --workspace=client
@@ -25,8 +25,9 @@ services:
       - key: VITE_API_URL
         value: https://syncexc-server.onrender.com/api/v1 # Update after server deploys
 
-  # 3. Admin (Static Site)
-  - type: static
+  # 3. Admin (Static Site - Corrected)
+  - type: web              # Must be 'web' for static sites
+    runtime: static        # Must be 'static'
     name: syncexc-admin
     rootDir: .
     buildCommand: npm install && npm run build --workspace=shared && npm run build --workspace=admin
