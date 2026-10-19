@@ -35,6 +35,17 @@ function mapTelegramSendCodeError(error) {
       retryAfterSeconds,
     );
   }
+  if (code === 'FLOOD') {
+    return new RateLimitError(
+      'Telegram is limiting login-code requests. Wait before trying again.',
+    );
+  }
+  if (code.includes('API_ID_PUBLISHED_FLOOD')) {
+    return new ConflictError(
+      'Telegram disabled this API ID because it was publicly exposed. Create a new Telegram app at my.telegram.org and update TELEGRAM_API_ID and TELEGRAM_API_HASH on the server.',
+      'TELEGRAM_API_ID_REVOKED',
+    );
+  }
   if (code.includes('PHONE_NUMBER_INVALID')) {
     return new ValidationError(
       'Telegram rejected this phone number. Check that it is correct and includes the country code.',
@@ -54,6 +65,18 @@ function mapTelegramSendCodeError(error) {
   if (code.includes('PHONE_NUMBER_FLOOD') || code.includes('PHONE_CODE_FLOOD')) {
     return new RateLimitError(
       'Telegram is limiting login requests for this phone number. Wait before trying again.',
+    );
+  }
+  if (code.includes('SEND_CODE_UNAVAILABLE')) {
+    return new ConflictError(
+      'Telegram has no available delivery method for a login code to this number. Try again later or sign in using the official Telegram app.',
+      'TELEGRAM_CODE_UNAVAILABLE',
+    );
+  }
+  if (code.includes('PHONE_NUMBER_APP_SIGNUP_FORBIDDEN')) {
+    return new ConflictError(
+      'Telegram does not allow this account to sign in from third-party apps. Try the official Telegram app.',
+      'TELEGRAM_APP_SIGNUP_FORBIDDEN',
     );
   }
   if (code.includes('API_ID_INVALID') || code.includes('API_HASH_INVALID')) {

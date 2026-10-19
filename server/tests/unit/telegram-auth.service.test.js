@@ -250,6 +250,62 @@ test('reports Telegram connection failures as retryable upstream errors', async 
   );
 });
 
+test('explains when Telegram has revoked a publicly exposed API ID', async () => {
+  const database = {
+    async query(sql) {
+      if (
+        sql.includes('DELETE FROM telegram_auth_sessions') ||
+        sql.includes('UPDATE telegram_auth_sessions SET status')
+      ) {
+        return { rows: [] };
+      }
+      if (sql.includes('SELECT id FROM users WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 'user-id' }] };
+      }
+      if (sql.includes('SELECT count(*)::integer')) {
+        return { rows: [{ count: 0, last_sent_at: null, oldest_at: null }] };
+      }
+      if (sql.includes('INSERT INTO telegram_auth_sessions')) {
+        return { rows: [{ id: 'login-id' }] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    tx(callback) {
+      return callback({ query: this.query.bind(this) });
+    },
+  };
+  const service = createTelegramAuthService({
+    db: database,
+    config: { telegram: { apiId: 123, apiHash: 'app-hash' } },
+    sourceRegistryService: {},
+    connectionService: {},
+    logger: { warn() {} },
+    clientFactory: () => ({
+      async connect() {},
+      async disconnect() {},
+      async sendCode() {
+        const error = new Error('Telegram rejected the request');
+        error.errorMessage = 'API_ID_PUBLISHED_FLOOD';
+        throw error;
+      },
+    }),
+  });
+
+  await assert.rejects(
+    service.sendCode({
+      userId: 'user-id',
+      workspaceId: 'workspace-id',
+      phoneNumber: '+12345678900',
+    }),
+    (error) => {
+      assert.equal(error.code, 'TELEGRAM_API_ID_REVOKED');
+      assert.equal(error.status, 409);
+      assert.match(error.message, /Create a new Telegram app/);
+      return true;
+    },
+  );
+});
+
 test('returns Telegram flood-wait errors as a retryable rate limit', async () => {
   const database = {
     async query(sql) {
