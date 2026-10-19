@@ -9,14 +9,22 @@ import { NotFoundRoute } from './NotFoundRoute.jsx';
 const Dashboard = lazy(() => import('../features/dashboard/DashboardOverview.jsx'));
 const Terminal = lazy(() => import('../features/terminal/TerminalOverview.jsx'));
 const Connections = lazy(() => import('../features/connections/ConnectionsOverview.jsx'));
+const ConnectExchange = lazy(() => import('../features/connections/ConnectExchange.jsx'));
 const Sync = lazy(() => import('../features/synchronization/SyncOverview.jsx'));
+const CreateSyncGroup = lazy(() => import('../features/synchronization/CreateSyncGroup.jsx'));
 const Risk = lazy(() => import('../features/risk/RiskOverview.jsx'));
 const Sources = lazy(() => import('../features/sources/SourcesOverview.jsx'));
+const AddSource = lazy(() => import('../features/sources/AddSource.jsx'));
 const Signals = lazy(() => import('../features/signals/SignalsOverview.jsx'));
 const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.jsx'));
 const TraderProfile = lazy(() => import('../features/marketplace/TraderProfile.jsx'));
 const Automation = lazy(() => import('../features/automation/WorkflowsOverview.jsx'));
+const WorkflowTemplates = lazy(() => import('../features/automation/Templates.jsx'));
+const CreateWorkflow = lazy(() => import('../features/automation/CreateWorkflow.jsx'));
+const WorkflowDetails = lazy(() => import('../features/automation/WorkflowDetails.jsx'));
+const WorkflowBuilder = lazy(() => import('../features/automation/WorkflowBuilder.jsx'));
 const Simulation = lazy(() => import('../features/simulation/Environments.jsx'));
+const CreateEnvironment = lazy(() => import('../features/simulation/CreateEnvironment.jsx'));
 const Developer = lazy(() => import('../features/developer/ApplicationsOverview.jsx'));
 const Community = lazy(() => import('../features/community/Feed.jsx'));
 const Referral = lazy(() => import('../features/referral/ReferralDashboard.jsx'));
@@ -47,14 +55,22 @@ export function AppRoutes() {
           element={<Fallback><Dashboard /></Fallback>}
         />
         <Route path="terminal/*" element={<Fallback><Terminal /></Fallback>} />
+        <Route path="connections/new" element={<Fallback><ConnectExchange /></Fallback>} />
         <Route path="connections/*" element={<Fallback><Connections /></Fallback>} />
+        <Route path="synchronization/new" element={<Fallback><CreateSyncGroup /></Fallback>} />
         <Route path="synchronization/*" element={<Fallback><Sync /></Fallback>} />
         <Route path="risk/*" element={<Fallback><Risk /></Fallback>} />
+        <Route path="sources/new" element={<Fallback><AddSource /></Fallback>} />
         <Route path="sources/*" element={<Fallback><Sources /></Fallback>} />
         <Route path="signals/*" element={<Fallback><Signals /></Fallback>} />
         <Route path="marketplace/profile" element={<Fallback><TraderProfile /></Fallback>} />
         <Route path="marketplace/*" element={<Fallback><Marketplace /></Fallback>} />
+        <Route path="automation/templates" element={<Fallback><WorkflowTemplates /></Fallback>} />
+        <Route path="automation/new" element={<Fallback><CreateWorkflow /></Fallback>} />
+        <Route path="automation/:workflowId/edit" element={<Fallback><WorkflowBuilder /></Fallback>} />
+        <Route path="automation/:workflowId" element={<Fallback><WorkflowDetails /></Fallback>} />
         <Route path="automation/*" element={<Fallback><Automation /></Fallback>} />
+        <Route path="simulation/environments/new" element={<Fallback><CreateEnvironment /></Fallback>} />
         <Route path="simulation/*" element={<Fallback><Simulation /></Fallback>} />
         <Route path="developer/*" element={<Fallback><Developer /></Fallback>} />
         <Route path="community/*" element={<Fallback><Community /></Fallback>} />
