@@ -1,3 +1,4 @@
+
 /**
  * SyncExc Server — Configuration
  *
@@ -29,6 +30,7 @@ const envSchema = Joi.object({
   APP_DEFAULT_LOCALE: Joi.string().default('en'),
 
   // Server
+  PORT: Joi.number().integer().min(1).max(65535).optional(),
   SERVER_PORT: Joi.number().integer().min(1).max(65535).default(4000),
   SERVER_HOST: Joi.string().default('0.0.0.0'),
   SERVER_BASE_URL: Joi.string().uri().default('http://localhost:4000'),
@@ -212,7 +214,6 @@ const parseDuration = (str) => {
   const match = String(str).match(/^(\d+)(ms|s|m|h|d)$/);
   if (!match) throw new Error(`Invalid duration: ${str}`);
   const [, num, unit] = match;
-  const n = Number(num);
   const multipliers = { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000 };
   return n * multipliers[unit];
 };
@@ -232,7 +233,7 @@ const config = {
   },
 
   server: {
-    port: env.SERVER_PORT,
+    port: env.PORT || env.SERVER_PORT,
     host: env.SERVER_HOST,
     baseUrl: env.SERVER_BASE_URL,
     apiPrefix: env.SERVER_API_PREFIX,
