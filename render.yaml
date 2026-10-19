@@ -8,7 +8,7 @@ services:
     plan: free
     rootDir: .
     buildCommand: npm install && npm run build --workspace=server
-    startCommand: npm run start --workspace=server
+    startCommand: npm run migrate --workspace=server && npm run start --workspace=server
     envVars:
       - key: NODE_VERSION
         value: 22.11.0
