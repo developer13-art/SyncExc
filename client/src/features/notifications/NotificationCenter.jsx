@@ -43,11 +43,14 @@ export default function NotificationCenter() {
     );
   }, [dispatch]);
 
-  const notifications = notificationsQuery.notifications ?? [];
+  useEffect(() => {
+    const total = notificationsQuery.meta?.total;
+    if (total !== undefined) {
+      pagination.setTotal(total);
+    }
+  }, [notificationsQuery.meta?.total, pagination.setTotal]);
 
-  if (notificationsQuery.meta?.total !== undefined) {
-    pagination.setTotal(notificationsQuery.meta.total);
-  }
+  const notifications = notificationsQuery.notifications ?? [];
 
   const handleMarkAllRead = async () => {
     try {

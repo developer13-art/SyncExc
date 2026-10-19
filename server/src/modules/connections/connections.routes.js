@@ -86,6 +86,15 @@ export function createConnectionsRoutes({ service, middleware }) {
   );
 
   router.post(
+    '/:connectionId/sync',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('connections.update'),
+    middleware.validateParams(Joi.object({ connectionId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.syncConnection)
+  );
+
+  router.post(
     '/:connectionId/rotate-credentials',
     middleware.requireAuth(),
     middleware.requireWorkspace(),

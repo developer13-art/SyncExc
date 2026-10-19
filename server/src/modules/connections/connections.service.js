@@ -398,6 +398,39 @@ export function createConnectionsService({
     });
   }
 
+  async function syncConnection({ userId, workspaceId, connectionId }) {
+    const connection = await requireConnectionAccess({
+      connectionId,
+      workspaceId,
+      allowShared: false,
+    });
+    const credentials = await loadCredentials(connectionId);
+    const adapter = await getAdapter(connection.exchange_code);
+
+    try {
+      await discoverAccountsAndSync(connection, credentials, adapter);
+    } catch (err) {
+      logger.warn(
+        { errorName: err?.name || 'Error', connectionId, userId },
+        'Exchange connection sync failed'
+      );
+      await queries.updateConnection(connectionId, { status: 'degraded' });
+      await queries.upsertHealth({
+        connectionId,
+        state: 'degraded',
+        lastError: 'Account synchronization failed. Check the connection and try again.',
+        dataFreshness: 'stale',
+      });
+      throw err;
+    }
+
+    const updatedConnection = await queries.updateConnection(connectionId, {
+      status: 'active',
+      lastValidatedAt: new Date(),
+    });
+    return { ok: true, connection: updatedConnection || connection };
+  }
+
   async function testConnection({ userId, workspaceId, connectionId }) {
     const connection = await requireConnectionAccess({
       connectionId,
@@ -669,6 +702,7 @@ export function createConnectionsService({
     checkAccountAccess,
 
     createConnection,
+    syncConnection,
     testConnection,
     rotateCredentials,
     suspendConnection,

@@ -51,6 +51,7 @@ export function useNotifications(params = {}) {
     notifications: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
+    refetch: listQuery.refetch,
     markRead: markRead.mutate,
     markAllRead: markAllRead.mutateAsync,
     archive: archive.mutate,

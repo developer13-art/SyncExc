@@ -125,6 +125,15 @@ export function createConnectionsController({ service }) {
       return success(res, result);
     },
 
+    async syncConnection(req, res) {
+      const result = await service.syncConnection({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        connectionId: req.params.connectionId,
+      });
+      return success(res, result);
+    },
+
     async rotateCredentials(req, res) {
       await service.rotateCredentials({
         userId: req.auth.userId,

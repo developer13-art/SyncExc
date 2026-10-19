@@ -231,3 +231,83 @@ test('creates connection permissions within the same transaction as the connecti
   assert.ok(permissionTransactions.every((tx) => tx === transaction));
   assert.equal(result.status, 'degraded');
 });
+
+test('syncs an existing connection using its stored credentials', async () => {
+  const connection = {
+    id: 'connection-id',
+    exchange_code: 'bybit',
+    workspace_id: 'workspace-id',
+    environment: 'demo',
+    status: 'degraded',
+  };
+  const observed = {
+    discovered: false,
+    balances: false,
+    instruments: false,
+    active: false,
+  };
+  const service = createConnectionsService({
+    db: {
+      tx: async (callback) => callback({}),
+    },
+    queries: {
+      findConnectionById: async () => connection,
+      findActiveCredentialForConnection: async () => ({ id: 'credential-id' }),
+      insertAccount: async (_tx, account) => ({
+        id: 'account-id',
+        ...account,
+      }),
+      insertBalanceSnapshot: async () => ({ id: 'snapshot-id' }),
+      insertBalanceItem: async () => {},
+      upsertInstrument: async () => {
+        observed.instruments = true;
+      },
+      upsertHealth: async (health) => {
+        if (health.state === 'healthy') observed.healthy = true;
+      },
+      updateConnection: async (_id, fields) => {
+        if (fields.status === 'active') observed.active = true;
+        return { ...connection, ...fields };
+      },
+    },
+    rateLimiter: {},
+    credentialVault: {
+      decryptCredentials: () => ({ apiKey: 'decrypted-key', apiSecret: 'decrypted-secret' }),
+    },
+    adapterRegistry: {
+      get: () => ({
+        discoverAccounts: async (credentials) => {
+          assert.equal(credentials.apiKey, 'decrypted-key');
+          observed.discovered = true;
+          return [{ exchangeAccountId: 'main', accountType: 'spot' }];
+        },
+        fetchBalances: async (credentials) => {
+          assert.equal(credentials.environment, 'demo');
+          observed.balances = true;
+          return [{ asset: 'USDT', free: '10', used: '0', total: '10' }];
+        },
+        fetchInstruments: async () => [{ symbol: 'BTCUSDT' }],
+      }),
+    },
+    rateLimitCoordinator: {},
+    events: {},
+    audit: {},
+    logger: { warn() {} },
+  });
+
+  const result = await service.syncConnection({
+    userId: 'user-id',
+    workspaceId: 'workspace-id',
+    connectionId: 'connection-id',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.connection.status, 'active');
+  assert.deepEqual(observed, {
+    discovered: true,
+    balances: true,
+    instruments: true,
+    active: true,
+    healthy: true,
+  });
+});
