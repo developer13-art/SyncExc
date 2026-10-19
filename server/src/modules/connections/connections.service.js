@@ -340,14 +340,19 @@ export function createConnectionsService({
 
         // Sync balances
         try {
-          const balances = await adapter.fetchBalances({
+          const balanceParams = {
             ...credentials,
             accountType: acc.accountType,
             environment: connection.environment,
-          });
+          };
+          const accountState = adapter.fetchAccountState
+            ? await adapter.fetchAccountState(balanceParams)
+            : { balances: await adapter.fetchBalances(balanceParams) };
+          const balances = accountState.balances;
+          const observedAt = new Date();
           const snapshot = await queries.insertBalanceSnapshot(tx, {
             accountId: account.id,
-            observedAt: new Date(),
+            observedAt,
           });
           for (const b of balances) {
             await queries.insertBalanceItem(tx, {
@@ -356,6 +361,18 @@ export function createConnectionsService({
               free: b.free,
               used: b.used,
               total: b.total,
+            });
+          }
+          if (
+            accountState.equity !== null &&
+            accountState.equity !== undefined &&
+            accountState.equity !== '' &&
+            Number.isFinite(Number(accountState.equity))
+          ) {
+            await queries.insertAccountSnapshot(tx, {
+              accountId: account.id,
+              equity: accountState.equity,
+              observedAt,
             });
           }
         } catch (err) {

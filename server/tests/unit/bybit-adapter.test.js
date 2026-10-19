@@ -141,6 +141,45 @@ test('signs Bybit GET requests using the exact URL query string', async () => {
   }
 });
 
+test('returns Bybit wallet equity with the account balances', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({
+      retCode: 0,
+      result: {
+        list: [{
+          totalEquity: '50123.45',
+          coin: [{
+            coin: 'USDT',
+            availableToWithdraw: '123.45',
+            locked: '0',
+            walletBalance: '123.45',
+          }],
+        }],
+      },
+    }),
+  });
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    const state = await adapter.fetchAccountState({
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'demo',
+    });
+    assert.equal(state.equity, '50123.45');
+    assert.deepEqual(state.balances, [{
+      asset: 'USDT',
+      free: '123.45',
+      used: '0',
+      total: '123.45',
+    }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function expectedSignature({ apiKey, apiSecret, timestamp, query, recvWindow = '5000' }) {
   return crypto
     .createHmac('sha256', apiSecret)

@@ -243,6 +243,7 @@ test('syncs an existing connection using its stored credentials', async () => {
   const observed = {
     discovered: false,
     balances: false,
+    equitySnapshot: false,
     instruments: false,
     active: false,
   };
@@ -259,6 +260,11 @@ test('syncs an existing connection using its stored credentials', async () => {
       }),
       insertBalanceSnapshot: async () => ({ id: 'snapshot-id' }),
       insertBalanceItem: async () => {},
+      insertAccountSnapshot: async (_tx, snapshot) => {
+        assert.equal(snapshot.accountId, 'account-id');
+        assert.equal(snapshot.equity, '50123.45');
+        observed.equitySnapshot = true;
+      },
       upsertInstrument: async (tx) => {
         assert.ok(tx);
         observed.instruments = true;
@@ -282,10 +288,13 @@ test('syncs an existing connection using its stored credentials', async () => {
           observed.discovered = true;
           return [{ exchangeAccountId: 'main', accountType: 'spot' }];
         },
-        fetchBalances: async (credentials) => {
+        fetchAccountState: async (credentials) => {
           assert.equal(credentials.environment, 'demo');
           observed.balances = true;
-          return [{ asset: 'USDT', free: '10', used: '0', total: '10' }];
+          return {
+            balances: [{ asset: 'USDT', free: '10', used: '0', total: '10' }],
+            equity: '50123.45',
+          };
         },
         fetchInstruments: async () => [{ symbol: 'BTCUSDT' }],
       }),
@@ -307,6 +316,7 @@ test('syncs an existing connection using its stored credentials', async () => {
   assert.deepEqual(observed, {
     discovered: true,
     balances: true,
+    equitySnapshot: true,
     instruments: true,
     active: true,
     healthy: true,

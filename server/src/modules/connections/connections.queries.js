@@ -324,6 +324,27 @@ export function createConnectionsQueries({ db }) {
       return result.rows[0];
     },
 
+    async insertAccountSnapshot(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO exchange_account_snapshots (
+          account_id, equity, available_margin, used_margin, unrealized_pnl, observed_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+        `,
+        [
+          data.accountId,
+          data.equity ?? null,
+          data.availableMargin ?? null,
+          data.usedMargin ?? null,
+          data.unrealizedPnl ?? null,
+          data.observedAt || new Date(),
+        ]
+      );
+      return result.rows[0];
+    },
+
     async getLatestBalanceSnapshot(accountId) {
       const result = await db.query(
         `

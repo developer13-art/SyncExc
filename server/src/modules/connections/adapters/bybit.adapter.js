@@ -84,7 +84,7 @@ export function createBybitAdapter({ config, logger }) {
       ];
     },
 
-    async fetchBalances({ apiKey, apiSecret, accountType = 'unified', environment }) {
+    async fetchAccountState({ apiKey, apiSecret, accountType = 'unified', environment }) {
       const path = '/v5/account/wallet-balance';
       const params = { accountType: accountType === 'unified' ? 'UNIFIED' : 'SPOT' };
       const query = new URLSearchParams(params).toString();
@@ -97,13 +97,22 @@ export function createBybitAdapter({ config, logger }) {
 
       if (data.retCode !== 0) throw new Error(`Bybit balance error: ${data.retMsg}`);
 
-      const coins = data.result?.list?.[0]?.coin || [];
-      return coins.map((c) => ({
-        asset: c.coin,
-        free: c.availableToWithdraw || c.walletBalance,
-        used: c.locked || '0',
-        total: c.walletBalance,
-      }));
+      const account = data.result?.list?.[0];
+      const coins = account?.coin || [];
+      return {
+        balances: coins.map((c) => ({
+          asset: c.coin,
+          free: c.availableToWithdraw || c.walletBalance,
+          used: c.locked || '0',
+          total: c.walletBalance,
+        })),
+        equity: account?.totalEquity ?? null,
+      };
+    },
+
+    async fetchBalances(params) {
+      const state = await this.fetchAccountState(params);
+      return state.balances;
     },
 
     async fetchInstruments({ marketType = 'spot' }) {
