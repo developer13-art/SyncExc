@@ -93,14 +93,23 @@ export function AccountSummary({ overview, isLoading, error }) {
                 {account.exchangeName} · {account.type ?? 'spot'}
               </p>
               {account.balances?.length ? (
-                <p className="mt-1 truncate text-2xs text-muted-foreground">
-                  {account.balances
-                    .slice(0, 3)
-                    .map((balance) => `${balance.asset} ${formatQuantity(balance.total, 8)}`)
-                    .join(' · ')}
-                  {account.balances.length > 3 ? ` · +${account.balances.length - 3} more` : ''}
+                <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {account.balances.map((balance) => (
+                    <li
+                      key={balance.asset}
+                      className="text-2xs text-muted-foreground"
+                    >
+                      <span className="font-medium text-foreground">{balance.asset}</span>
+                      {' '}
+                      {formatQuantity(balance.total, 8)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-2xs text-muted-foreground">
+                  No balance snapshot available yet.
                 </p>
-              ) : null}
+              )}
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-foreground">

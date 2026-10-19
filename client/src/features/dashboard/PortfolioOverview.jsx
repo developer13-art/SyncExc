@@ -49,6 +49,12 @@ export function PortfolioOverview({ overview, isLoading, error, onRetry }) {
                 </span>
               ) : null}
             </div>
+            {overview?.portfolioValue == null ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Asset quantities are listed by account below; a total value is not available because
+                no USD equity valuation has been provided.
+              </p>
+            ) : null}
           </div>
           <SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} />
         </div>
