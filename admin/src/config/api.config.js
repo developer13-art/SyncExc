@@ -2,8 +2,7 @@ const env = import.meta.env;
 
 function requireInProduction(value, name, fallback) {
   if (env.PROD && !value) {
-    console.error(`[admin config] Missing required environment variable: ${name}`);
-    return fallback ?? '';
+    throw new Error(`[admin config] Missing required environment variable: ${name}`);
   }
   return value ?? fallback ?? '';
 }

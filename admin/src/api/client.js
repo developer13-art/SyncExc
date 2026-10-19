@@ -6,8 +6,9 @@ import {
   adminResponseInterceptor,
   adminResponseErrorInterceptor,
 } from './interceptors.js';
+import { apiConfig } from '../config/api.config.js';
 
-const baseURL = import.meta.env.VITE_ADMIN_API_URL ?? 'http://localhost:4000/api/v1/admin';
+const baseURL = `${apiConfig.baseURL.replace(/\/+$/, '')}/admin`;
 
 export const adminAxios = axios.create({
   baseURL,

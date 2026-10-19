@@ -24,7 +24,7 @@ services:
         value: https://admin.syncexc.com
       - key: API_URL
         value: https://syncexc-server.onrender.com
-      - key: CORS_ORIGINS
+      - key: SERVER_CORS_ORIGINS
         value: https://app.syncexc.com,https://admin.syncexc.com
 
       # Database (Neon)
