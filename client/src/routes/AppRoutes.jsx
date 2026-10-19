@@ -10,6 +10,8 @@ const Dashboard = lazy(() => import('../features/dashboard/DashboardOverview.jsx
 const Terminal = lazy(() => import('../features/terminal/TerminalOverview.jsx'));
 const Connections = lazy(() => import('../features/connections/ConnectionsOverview.jsx'));
 const ConnectExchange = lazy(() => import('../features/connections/ConnectExchange.jsx'));
+const ConnectionDetails = lazy(() => import('../features/connections/ConnectionDetails.jsx'));
+const CredentialRotation = lazy(() => import('../features/connections/CredentialRotation.jsx'));
 const Sync = lazy(() => import('../features/synchronization/SyncOverview.jsx'));
 const CreateSyncGroup = lazy(() => import('../features/synchronization/CreateSyncGroup.jsx'));
 const Risk = lazy(() => import('../features/risk/RiskOverview.jsx'));
@@ -56,6 +58,14 @@ export function AppRoutes() {
         />
         <Route path="terminal/*" element={<Fallback><Terminal /></Fallback>} />
         <Route path="connections/new" element={<Fallback><ConnectExchange /></Fallback>} />
+        <Route
+          path="connections/:connectionId/rotate"
+          element={<Fallback><CredentialRotation /></Fallback>}
+        />
+        <Route
+          path="connections/:connectionId"
+          element={<Fallback><ConnectionDetails /></Fallback>}
+        />
         <Route path="connections/*" element={<Fallback><Connections /></Fallback>} />
         <Route path="synchronization/new" element={<Fallback><CreateSyncGroup /></Fallback>} />
         <Route path="synchronization/*" element={<Fallback><Sync /></Fallback>} />

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Building2, CheckCircle2 } from 'lucide-react';
 
@@ -18,6 +19,7 @@ import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { queryKeys } from '../../hooks/queryKeys.js';
 import { cn } from '../../lib/utils/cn.util.js';
 
 const STEPS = [
@@ -29,6 +31,7 @@ const STEPS = [
 
 export default function ConnectExchange() {
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -150,6 +153,7 @@ export default function ConnectExchange() {
         credentials,
       });
 
+      await queryClient.invalidateQueries({ queryKey: queryKeys.connections.all });
       setConnection(created);
       setPermissions(created.permissions ?? {});
       setStep('verify');
@@ -195,6 +199,7 @@ export default function ConnectExchange() {
               ]),
             ),
           );
+          await queryClient.invalidateQueries({ queryKey: queryKeys.connections.all });
           setConnectionNotice(
             'This connection was already saved. The credentials entered now were not applied; the saved connection is being resumed.',
           );
@@ -250,6 +255,10 @@ export default function ConnectExchange() {
       if (!testResult.ok) {
         throw new Error(testResult.error || 'Exchange connection test failed.');
       }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.connections.all });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.connections.detail(connection.id),
+      });
       setStep('complete');
       toast.success('Connection activated');
     } catch (error) {

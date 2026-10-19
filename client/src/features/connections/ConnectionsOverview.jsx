@@ -51,7 +51,7 @@ export default function ConnectionsOverview() {
   const connectionsQuery = useConnections(params);
   const { suspendConnection, disconnect } = useConnections();
 
-  const connections = connectionsQuery.data?.items ?? [];
+  const connections = connectionsQuery.connections;
 
   const handleSuspend = async () => {
     if (!suspendTarget) {

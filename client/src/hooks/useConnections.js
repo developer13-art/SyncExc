@@ -68,9 +68,11 @@ export function useConnections(params = {}, enabled = true) {
 
   return {
     connections: listQuery.data?.items ?? [],
+    data: listQuery.data,
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
     error: listQuery.error,
+    refetch: listQuery.refetch,
     exchangeRegistry: exchangeRegistryQuery.data ?? [],
     exchangeRegistryIsLoading: exchangeRegistryQuery.isLoading,
     exchangeRegistryError: exchangeRegistryQuery.error,
@@ -158,5 +160,6 @@ export function useConnection(connectionId, accountId = null) {
     permissions: permissionsQuery.data ?? null,
     isLoading: detailQuery.isLoading,
     error: detailQuery.error,
+    refetch: detailQuery.refetch,
   };
 }
