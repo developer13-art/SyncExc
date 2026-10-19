@@ -37,12 +37,14 @@ test('persists login state encrypted and never returns Telegram session or code 
       }
       if (sql.includes('SELECT id, encrypted_state, status, attempts')) {
         return {
-          rows: [{
-            id: loginId,
-            encrypted_state: state.encryptedState,
-            status: state.status,
-            attempts: state.attempts,
-          }],
+          rows: [
+            {
+              id: loginId,
+              encrypted_state: state.encryptedState,
+              status: state.status,
+              attempts: state.attempts,
+            },
+          ],
         };
       }
       if (sql.includes('SET attempts = attempts + 1')) {
@@ -94,7 +96,6 @@ test('persists login state encrypted and never returns Telegram session or code 
   assert.deepEqual(sent, {
     loginId,
     delivery: 'telegram_app',
-    emailPattern: undefined,
     expiresInSeconds: 900,
   });
   assert.equal(JSON.stringify(sent).includes('telegram-session-secret'), false);

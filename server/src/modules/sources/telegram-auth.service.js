@@ -111,13 +111,13 @@ export function createTelegramAuthService({
           'TELEGRAM_CODE_SEND_FAILED',
         );
       }
-      if (result.emailRequired || !result.phoneCodeHash) {
+      if (result.emailRequired || result.emailCodeSent || !result.phoneCodeHash) {
         await db.query(
           `UPDATE telegram_auth_sessions SET status = 'request_failed', updated_at = now() WHERE id = $1`,
           [loginId],
         );
         throw new ConflictError(
-          'Telegram requires an additional email setup step that is not supported yet. Complete Telegram account setup in the official app, then try again.',
+          'Telegram requires an email verification/setup step that is not supported yet. Complete account setup in the official app, then try again.',
           'TELEGRAM_EMAIL_SETUP_REQUIRED',
         );
       }
@@ -132,8 +132,7 @@ export function createTelegramAuthService({
       );
       return {
         loginId,
-        delivery: result.emailCodeSent ? 'email' : result.isCodeViaApp ? 'telegram_app' : 'sms',
-        emailPattern: result.emailOptions?.emailPattern,
+        delivery: result.isCodeViaApp ? 'telegram_app' : 'sms',
         expiresInSeconds: LOGIN_TTL_MS / 1000,
       };
     } finally {

@@ -17,7 +17,6 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
   const [password, setPassword] = useState('');
   const [requiresPassword, setRequiresPassword] = useState(false);
   const [delivery, setDelivery] = useState(null);
-  const [emailPattern, setEmailPattern] = useState(null);
   const [channels, setChannels] = useState([]);
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [error, setError] = useState(null);
@@ -31,7 +30,6 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
       const result = await sourcesApi.telegramSendCode(phoneNumber);
       setLoginId(result.loginId);
       setDelivery(result.delivery);
-      setEmailPattern(result.emailPattern);
       setStep('code');
     } catch (requestError) {
       setError(getErrorMessage(requestError));
@@ -201,9 +199,7 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
           <InfoCallout>
             {delivery === 'telegram_app'
               ? 'Telegram sent a login code to your Telegram app. Check the verified service chat.'
-              : delivery === 'email'
-                ? `Telegram sent a login code to your account email${emailPattern ? ` (${emailPattern})` : ''}.`
-                : 'Telegram sent a login code by SMS.'}
+              : 'Telegram sent a login code by SMS.'}
           </InfoCallout>
           {!requiresPassword ? (
             <div className="flex flex-col gap-1.5">
@@ -257,7 +253,10 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
             after you connect them.
           </InfoCallout>
           {busy && channels.length === 0 ? (
-            <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground" role="status">
+            <p
+              className="rounded-lg border border-border p-4 text-sm text-muted-foreground"
+              role="status"
+            >
               Loading your Telegram chats…
             </p>
           ) : channels.length ? (

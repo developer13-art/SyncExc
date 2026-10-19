@@ -32,7 +32,11 @@ const TelegramLoginSchema = Joi.object({
 const TelegramCreateSourcesSchema = Joi.object({
   loginId: UuidSchema.required(),
   channelIds: Joi.array()
-    .items(Joi.string().max(64).pattern(/^(channel|chat):\d+$/))
+    .items(
+      Joi.string()
+        .max(64)
+        .pattern(/^(channel|chat):\d+$/),
+    )
     .min(1)
     .max(50)
     .unique()
