@@ -209,14 +209,28 @@ const isProduction = env.NODE_ENV === 'production';
 const isDevelopment = env.NODE_ENV === 'development';
 const isTest = env.NODE_ENV === 'test';
 
-const parseDuration = (str) => {
-  if (typeof str === 'number') return str;
-  const match = String(str).match(/^(\d+)(ms|s|m|h|d)$/);
-  if (!match) throw new Error(`Invalid duration: ${str}`);
+
+function parseDuration(value) {
+  if (typeof value === 'number') return value;
+
+  const match = String(value).match(/^(\d+)(ms|s|m|h|d)$/);
+  if (!match) {
+    throw new Error(`Invalid duration: ${value}`);
+  }
+
   const [, num, unit] = match;
-  const multipliers = { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000 };
+  const n = Number(num);
+  const multipliers = {
+    ms: 1,
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+  };
+
   return n * multipliers[unit];
-};
+}
+
 
 const config = {
   env: env.NODE_ENV,
