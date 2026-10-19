@@ -80,6 +80,13 @@ export function createHealthService({ db, queries, adapterRegistry, events, logg
     return { state, lastEventAt };
   }
 
+  async function checkAllSources() {
+    const sources = await queries.listSourcesForHealthCheck();
+    for (const source of sources) {
+      await checkSource({ sourceId: source.id });
+    }
+  }
+
   async function getHealth({ sourceId, workspaceId }) {
     const source = await queries.findSourceById(sourceId);
     if (!source || source.workspace_id !== workspaceId) throw new NotFoundError('Source');
@@ -90,6 +97,7 @@ export function createHealthService({ db, queries, adapterRegistry, events, logg
 
   return {
     checkSource,
+    checkAllSources,
     getHealth,
   };
 }

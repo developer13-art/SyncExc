@@ -157,7 +157,11 @@ export async function registerAllHandlers({ registry, services }) {
   });
 
   register('source_health', async ({ payload, services: s }) => {
-    await s.sources.health.checkSource(payload.sourceId);
+    if (payload?.sweep) {
+      await s.sources.health.checkAllSources();
+      return;
+    }
+    await s.sources.health.checkSource({ sourceId: payload?.sourceId });
   });
 
   register('source_quality', async ({ payload, services: s }) => {

@@ -75,4 +75,44 @@ describe('job handlers', () => {
       })
     );
   });
+
+  it('checks all sources for a scheduled source-health sweep', async () => {
+    let checkedAll = 0;
+    const registry = await createHandlers({});
+
+    await registry.require('source_health')({
+      payload: { sweep: true },
+      services: {
+        sources: {
+          health: {
+            async checkAllSources() {
+              checkedAll += 1;
+            },
+          },
+        },
+      },
+    });
+
+    assert.equal(checkedAll, 1);
+  });
+
+  it('passes an object to the source-health service for an individual check', async () => {
+    let checkedSource;
+    const registry = await createHandlers({});
+
+    await registry.require('source_health')({
+      payload: { sourceId: 'source-a' },
+      services: {
+        sources: {
+          health: {
+            async checkSource(options) {
+              checkedSource = options;
+            },
+          },
+        },
+      },
+    });
+
+    assert.deepEqual(checkedSource, { sourceId: 'source-a' });
+  });
 });

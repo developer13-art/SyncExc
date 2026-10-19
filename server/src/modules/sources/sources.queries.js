@@ -78,6 +78,17 @@ export function createSourcesQueries({ db }) {
       return result.rows;
     },
 
+    async listSourcesForHealthCheck() {
+      const result = await db.query(
+        `
+        SELECT * FROM signal_sources
+        WHERE status = 'active'
+        ORDER BY created_at
+        `
+      );
+      return result.rows;
+    },
+
     async updateSource(sourceId, fields) {
       const result = await db.query(
         `
