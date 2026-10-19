@@ -154,6 +154,7 @@ export default function ConnectExchange() {
       });
 
       await queryClient.invalidateQueries({ queryKey: queryKeys.connections.all });
+      await queryClient.invalidateQueries({ queryKey: ['terminal', 'markets'] });
       setConnection(created);
       setPermissions(created.permissions ?? {});
       setStep('verify');
@@ -252,6 +253,7 @@ export default function ConnectExchange() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.connections.detail(connection.id),
       });
+      await queryClient.invalidateQueries({ queryKey: ['terminal', 'markets'] });
       setStep('complete');
       toast.success('Connection activated');
     } catch (error) {

@@ -289,6 +289,9 @@ export default function TerminalOverview() {
           instruments={instruments}
           value={selectedInstrument?.id ?? selectedInstrument?.symbol}
           onChange={setSelectedInstrument}
+          isLoading={marketsQuery.isLoading}
+          isError={marketsQuery.isError}
+          onRetry={marketsQuery.refetch}
           className="w-full max-w-xs"
         />
       </div>

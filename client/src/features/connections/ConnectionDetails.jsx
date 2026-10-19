@@ -47,6 +47,7 @@ export default function ConnectionDetails() {
         queryClient.invalidateQueries({ queryKey: queryKeys.connections.balances(connectionId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.connections.health(connectionId) }),
         queryClient.invalidateQueries({ queryKey: ['terminal', 'overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['terminal', 'markets'] }),
       ]);
       toast.success('Account balances synced');
     } catch (syncError) {

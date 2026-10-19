@@ -7,7 +7,15 @@ import { SearchInput } from '../../../components/forms/SearchInput.jsx';
 import { EmptyState } from '../../../components/ui/EmptyState.jsx';
 import { cn } from '../../../lib/utils/cn.util.js';
 
-export function InstrumentSelector({ instruments = [], value, onChange, className }) {
+export function InstrumentSelector({
+  instruments = [],
+  value,
+  onChange,
+  isLoading = false,
+  isError = false,
+  onRetry,
+  className,
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -60,7 +68,35 @@ export function InstrumentSelector({ instruments = [], value, onChange, classNam
           <SearchInput value={query} onChange={setQuery} placeholder="Search instruments…" delayMs={150} />
         </div>
         <div className="max-h-72 overflow-y-auto scrollbar-thin p-1">
-          {filtered.length === 0 ? (
+          {isLoading ? (
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+              Loading instruments…
+            </p>
+          ) : isError ? (
+            <EmptyState
+              title="Unable to load instruments"
+              description="The exchange instrument list could not be loaded."
+              action={
+                <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+                  Retry
+                </Button>
+              }
+              size="sm"
+              className="border-0 bg-transparent py-6"
+            />
+          ) : instruments.length === 0 ? (
+            <EmptyState
+              title="No instruments available"
+              description="Refresh the exchange instrument list and try again."
+              action={
+                <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+                  Refresh list
+                </Button>
+              }
+              size="sm"
+              className="border-0 bg-transparent py-6"
+            />
+          ) : filtered.length === 0 ? (
             <EmptyState
               title="No matches"
               description="Try a different symbol."
