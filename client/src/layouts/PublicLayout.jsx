@@ -14,7 +14,7 @@ export function PublicLayout() {
   return (
     <div className="client-public-shell flex min-h-screen flex-col bg-background text-foreground">
       <header className="client-public-header sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-6">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link to={ROUTES.public.home} className="flex items-center gap-2">
             <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Icons.LogoIcon className="h-5 w-5" />
@@ -98,7 +98,7 @@ export function PublicLayout() {
       </main>
 
       <footer className="client-public-footer border-t border-border bg-card/70">
-        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-10 md:flex-row md:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 md:flex-row md:justify-between md:py-10">
           <div className="max-w-sm">
             <Link to={ROUTES.public.home} className="flex items-center gap-2">
               <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -111,7 +111,7 @@ export function PublicLayout() {
               and automation.
             </p>
           </div>
-          <div className="flex gap-12">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-6 sm:flex sm:gap-12">
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground">
                 Product

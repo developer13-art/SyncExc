@@ -1,13 +1,17 @@
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { Menu } from 'lucide-react';
 
 import { cn } from '../../lib/utils/cn.util.js';
 import { Breadcrumbs } from './Breadcrumbs.jsx';
 import { UserMenu } from './UserMenu.jsx';
 import { NotificationsMenu } from './NotificationsMenu.jsx';
 import { selectWsConnected } from '../../features/notifications/notificationsSlice.js';
+import { selectMobileNavOpen, uiActions } from '../../app/slices/uiSlice.js';
 
 export function Topbar({ className }) {
+  const dispatch = useDispatch();
   const wsConnected = useSelector(selectWsConnected);
+  const mobileNavOpen = useSelector(selectMobileNavOpen);
 
   return (
     <header
@@ -17,6 +21,16 @@ export function Topbar({ className }) {
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={() => dispatch(uiActions.openMobileNav())}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-card text-foreground md:hidden"
+          aria-label="Open navigation menu"
+          aria-controls="app-sidebar"
+          aria-expanded={mobileNavOpen}
+        >
+          <Menu className="h-4 w-4" />
+        </button>
         <Breadcrumbs className="min-w-0" />
       </div>
 

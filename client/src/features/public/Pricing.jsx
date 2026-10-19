@@ -51,7 +51,7 @@ export default function Pricing() {
   });
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-16">
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 md:py-16">
       <div className="mx-auto max-w-2xl text-center">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
           Choose the plan that fits your operations
@@ -75,7 +75,7 @@ export default function Pricing() {
           />
         </div>
       ) : (
-        <div className="mt-16 grid gap-6 lg:grid-cols-3">
+        <div className="mt-10 grid gap-4 md:mt-16 md:gap-6 lg:grid-cols-3">
           {(plansQuery.data ?? []).map((plan) => (
             <Card
               key={plan.id}
@@ -90,17 +90,19 @@ export default function Pricing() {
                 </div>
               ) : null}
 
-              <div className="flex-1 p-6">
+              <div className="flex-1 p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-foreground">{plan.name}</h3>
                 {plan.description ? (
                   <p className="mt-1.5 text-xs text-muted-foreground">{plan.description}</p>
                 ) : null}
 
                 <div className="mt-6 flex items-baseline gap-1">
-                  <span className="text-4xl font-semibold text-foreground">
+                  <span className="text-3xl font-semibold text-foreground sm:text-4xl">
                     {formatCurrency(plan.price, plan.currency, { showSymbol: true })}
                   </span>
-                  <span className="text-sm text-muted-foreground">/month</span>
+                  <span className="text-sm text-muted-foreground">
+                    /{plan.billingInterval ?? 'month'}
+                  </span>
                 </div>
 
                 {plan.trialDays ? (

@@ -163,7 +163,7 @@ export default function Home() {
         </div>
         <div className="mx-auto max-w-7xl px-6 py-20 md:py-28">
           <div className="mx-auto max-w-4xl text-center">
-            <h1 className="mt-8 text-4xl font-semibold tracking-[-0.06em] text-foreground md:text-7xl">
+            <h1 className="mt-8 text-4xl font-semibold tracking-[-0.06em] text-foreground sm:text-5xl md:text-7xl">
               One workspace for every exchange you trade on
             </h1>
 

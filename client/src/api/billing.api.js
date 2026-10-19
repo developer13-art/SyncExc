@@ -1,14 +1,17 @@
 import api from './client.js';
 import { apiConfig } from '../config/api.config.js';
+import { normalizePlan, normalizePlans } from '../lib/billing/plan.utils.js';
 
 const { endpoints } = apiConfig;
 
 export const billingApi = {
-  listPlans: (params) => api.get(endpoints.billing.plans, { params }),
+  listPlans: async (params) =>
+    normalizePlans(await api.get(endpoints.billing.plans, { params })),
 
   listPaymentProviders: () => api.get(endpoints.billing.paymentProviders),
 
-  getPlan: (planId) => api.get(endpoints.billing.plan(planId)),
+  getPlan: async (planId) =>
+    normalizePlan(await api.get(endpoints.billing.plan(planId))),
 
   getSubscription: () => api.get(endpoints.billing.subscription),
 
