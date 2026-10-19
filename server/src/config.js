@@ -1,4 +1,3 @@
-
 /**
  * SyncExc Server — Configuration
  *
@@ -22,7 +21,9 @@ dotenv.config({ path: path.resolve(configDirectory, '../../.env') });
 
 const envSchema = Joi.object({
   // Application
-  NODE_ENV: Joi.string().valid('development', 'staging', 'production', 'test').default('development'),
+  NODE_ENV: Joi.string()
+    .valid('development', 'staging', 'production', 'test')
+    .default('development'),
   APP_NAME: Joi.string().default('SyncExc'),
   APP_URL: Joi.string().uri().default('http://localhost:5173'),
   APP_DOMAIN: Joi.string().default('syncexc.com'),
@@ -80,6 +81,10 @@ const envSchema = Joi.object({
   IMAP_PASSWORD: Joi.string().allow('').optional(),
   IMAP_POLL_INTERVAL_MS: Joi.number().integer().default(30000),
 
+  // Telegram user sessions
+  TELEGRAM_API_ID: Joi.number().integer().positive().optional(),
+  TELEGRAM_API_HASH: Joi.string().allow('').optional(),
+
   // Push
   VAPID_PUBLIC_KEY: Joi.string().allow('').optional(),
   VAPID_PRIVATE_KEY: Joi.string().allow('').optional(),
@@ -133,7 +138,7 @@ const envSchema = Joi.object({
   S3_FORCE_PATH_STYLE: Joi.boolean().truthy('true').falsy('false').default(false),
   UPLOAD_MAX_FILE_SIZE_MB: Joi.number().integer().default(25),
   UPLOAD_ALLOWED_MIME_TYPES: Joi.string().default(
-    'image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv,application/json'
+    'image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv,application/json',
   ),
 
   // Rate limiting
@@ -209,7 +214,6 @@ const isProduction = env.NODE_ENV === 'production';
 const isDevelopment = env.NODE_ENV === 'development';
 const isTest = env.NODE_ENV === 'test';
 
-
 function parseDuration(value) {
   if (typeof value === 'number') return value;
 
@@ -231,7 +235,6 @@ function parseDuration(value) {
   return n * multipliers[unit];
 }
 
-
 const config = {
   env: env.NODE_ENV,
   isProduction,
@@ -251,7 +254,9 @@ const config = {
     host: env.SERVER_HOST,
     baseUrl: env.SERVER_BASE_URL,
     apiPrefix: env.SERVER_API_PREFIX,
-    corsOrigins: env.SERVER_CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
+    corsOrigins: env.SERVER_CORS_ORIGINS.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
     trustProxy: env.TRUST_PROXY,
   },
 
@@ -310,6 +315,12 @@ const config = {
     password: env.IMAP_PASSWORD || undefined,
     pollIntervalMs: env.IMAP_POLL_INTERVAL_MS,
     enabled: Boolean(env.IMAP_HOST && env.IMAP_USER),
+  },
+
+  telegram: {
+    apiId: env.TELEGRAM_API_ID || undefined,
+    apiHash: env.TELEGRAM_API_HASH || undefined,
+    enabled: Boolean(env.TELEGRAM_API_ID && env.TELEGRAM_API_HASH),
   },
 
   push: {

@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { decrypt } from '../../lib/crypto.js';
+import { createTelegramClient, toTelegramInputPeer } from '../sources/telegram-client.js';
 
 const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_SECONDS = 5;
 
 function channelMatches(identifier, chat) {
-  const selected = String(identifier || '').trim().toLowerCase();
+  const selected = String(identifier || '')
+    .trim()
+    .toLowerCase();
   if (!selected) return false;
   const id = String(chat?.id ?? '').toLowerCase();
   const username = chat?.username ? `@${String(chat.username).toLowerCase()}` : '';
@@ -13,11 +16,15 @@ function channelMatches(identifier, chat) {
     .replace(/^https?:\/\/(www\.)?t\.me\//i, '')
     .replace(/\/+$/, '')
     .toLowerCase();
-  return selected === id || normalized === id ||
-    normalized === username || `@${normalized.replace(/^@/, '')}` === username;
+  return (
+    selected === id ||
+    normalized === id ||
+    normalized === username ||
+    `@${normalized.replace(/^@/, '')}` === username
+  );
 }
 
-export function createTelegramPollingService({ db, ingestion, logger }) {
+export function createTelegramPollingService({ db, ingestion, logger, config }) {
   const workerId = randomUUID();
   let timer = null;
   let stopped = false;
@@ -60,7 +67,7 @@ export function createTelegramPollingService({ db, ingestion, logger }) {
     return db.tx(async (tx) => {
       await tx.query(
         `INSERT INTO telegram_bot_update_cursors (bot_fingerprint) VALUES ($1) ON CONFLICT DO NOTHING`,
-        [fingerprint]
+        [fingerprint],
       );
       const result = await tx.query(
         `
@@ -70,7 +77,7 @@ export function createTelegramPollingService({ db, ingestion, logger }) {
           AND (lease_until IS NULL OR lease_until < now() OR lease_owner = $2)
         RETURNING update_offset
         `,
-        [fingerprint, workerId]
+        [fingerprint, workerId],
       );
       return result.rows[0] ? Number(result.rows[0].update_offset) : null;
     });
@@ -86,7 +93,7 @@ export function createTelegramPollingService({ db, ingestion, logger }) {
           updated_at = now()
       WHERE bot_fingerprint = $1 AND lease_owner = $2
       `,
-      [fingerprint, workerId, updateOffset]
+      [fingerprint, workerId, updateOffset],
     );
   }
 
@@ -95,7 +102,7 @@ export function createTelegramPollingService({ db, ingestion, logger }) {
     if (!sourceIds.length) return;
     await db.query(
       `UPDATE signal_sources SET last_monitor_error = $2, health_state = 'degraded', updated_at = now() WHERE id = ANY($1::uuid[])`,
-      [sourceIds, message]
+      [sourceIds, message],
     );
   }
 
@@ -140,14 +147,98 @@ export function createTelegramPollingService({ db, ingestion, logger }) {
       }
       await db.query(
         `UPDATE signal_sources SET last_monitor_error = NULL, health_state = 'healthy', updated_at = now() WHERE id = ANY($1::uuid[])`,
-        [feeds.map((feed) => feed.source_id)]
+        [feeds.map((feed) => feed.source_id)],
       );
     } catch (error) {
       // Do not log the Telegram URL or provider token.
-      logger.warn({ provider: 'telegram', feedCount: feeds.length, errorName: error?.name }, 'Telegram polling failed');
+      logger.warn(
+        { provider: 'telegram', feedCount: feeds.length, errorName: error?.name },
+        'Telegram polling failed',
+      );
       await markFeedsError(feeds, 'Telegram polling failed. Check the bot connection and retry.');
     } finally {
       await releaseLease(fingerprint, nextOffset).catch(() => {});
+    }
+  }
+
+  async function pollUserSession(sessionString, feeds) {
+    const client = createTelegramClient(sessionString, config);
+    try {
+      await client.connect();
+      if (!(await client.checkAuthorization())) {
+        await markFeedsError(feeds, 'Telegram authorization expired. Reconnect this source.');
+        return;
+      }
+
+      for (const feed of feeds) {
+        try {
+          const cursorResult = await db.query(
+            'SELECT last_message_id FROM telegram_user_message_cursors WHERE source_id = $1',
+            [feed.source_id],
+          );
+          let lastMessageId = Number(cursorResult.rows[0]?.last_message_id || 0);
+          const messages = await client.getMessages(toTelegramInputPeer(feed.selected_peer), {
+            limit: 100,
+            minId: lastMessageId,
+          });
+          messages.sort((a, b) => Number(a.id) - Number(b.id));
+
+          for (const message of messages) {
+            const messageId = Number(message.id);
+            if (!Number.isSafeInteger(messageId) || messageId <= lastMessageId) continue;
+            const body = message.message || message.text || message.caption;
+            if (body) {
+              const messageDate =
+                message.date instanceof Date ? message.date : new Date(Number(message.date) * 1000);
+              await ingestion.ingestMessage({
+                workspaceId: feed.workspace_id,
+                sourceId: feed.source_id,
+                providerMessageId: String(messageId),
+                channelRef: feed.identifier,
+                providerTimestamp: Number.isNaN(messageDate.getTime()) ? new Date() : messageDate,
+                contentType: 'text',
+                content: body,
+                attachments: [],
+              });
+            }
+            await db.query(
+              `
+              INSERT INTO telegram_user_message_cursors (source_id, last_message_id)
+              VALUES ($1, $2)
+              ON CONFLICT (source_id) DO UPDATE
+              SET last_message_id = GREATEST(telegram_user_message_cursors.last_message_id, EXCLUDED.last_message_id),
+                  updated_at = now()
+              `,
+              [feed.source_id, messageId],
+            );
+            lastMessageId = messageId;
+          }
+          await db.query(
+            `UPDATE signal_sources SET last_monitor_error = NULL, health_state = 'healthy', updated_at = now() WHERE id = $1`,
+            [feed.source_id],
+          );
+        } catch (error) {
+          logger.warn(
+            { provider: 'telegram', sourceId: feed.source_id, errorName: error?.name },
+            'Telegram user-channel polling failed',
+          );
+          await markFeedsError(
+            [feed],
+            'Telegram polling failed. Check the Telegram connection and retry.',
+          );
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        { provider: 'telegram', feedCount: feeds.length, errorName: error?.name },
+        'Telegram user-session polling failed',
+      );
+      await markFeedsError(
+        feeds,
+        'Telegram polling failed. Check the Telegram connection and retry.',
+      );
+    } finally {
+      await client.disconnect().catch(() => {});
     }
   }
 
@@ -156,22 +247,48 @@ export function createTelegramPollingService({ db, ingestion, logger }) {
     running = true;
     try {
       const feeds = await loadSelectedFeeds();
-      const groups = new Map();
+      const botGroups = new Map();
+      const userGroups = new Map();
       for (const feed of feeds) {
         try {
           const credentials = JSON.parse(decrypt(feed.encrypted_value));
-          const token = String(credentials.botToken || '');
-          if (!token) continue;
-          const fingerprint = createHash('sha256').update(token).digest('hex');
-          const group = groups.get(fingerprint) ?? { token, feeds: [] };
-          group.feeds.push(feed);
-          groups.set(fingerprint, group);
+          if (credentials.sessionString && credentials.selectedPeer) {
+            const fingerprint = createHash('sha256')
+              .update(credentials.sessionString)
+              .digest('hex');
+            const group = userGroups.get(fingerprint) ?? {
+              sessionString: credentials.sessionString,
+              feeds: [],
+            };
+            group.feeds.push({ ...feed, selected_peer: credentials.selectedPeer });
+            userGroups.set(fingerprint, group);
+          } else {
+            const token = String(credentials.botToken || '');
+            if (!token) continue;
+            const fingerprint = createHash('sha256').update(token).digest('hex');
+            const group = botGroups.get(fingerprint) ?? { token, feeds: [] };
+            group.feeds.push(feed);
+            botGroups.set(fingerprint, group);
+          }
         } catch (error) {
-          logger.warn({ provider: 'telegram', sourceId: feed.source_id, errorName: error?.name }, 'Could not decrypt Telegram credentials');
-          await markFeedsError([feed], 'Telegram credentials could not be decrypted. Reconnect this source.');
+          logger.warn(
+            { provider: 'telegram', sourceId: feed.source_id, errorName: error?.name },
+            'Could not decrypt Telegram credentials',
+          );
+          await markFeedsError(
+            [feed],
+            'Telegram credentials could not be decrypted. Reconnect this source.',
+          );
         }
       }
-      await Promise.all([...groups.values()].map(({ token, feeds: groupFeeds }) => pollBot(token, groupFeeds)));
+      await Promise.all([
+        ...[...botGroups.values()].map(({ token, feeds: groupFeeds }) =>
+          pollBot(token, groupFeeds),
+        ),
+        ...[...userGroups.values()].map(({ sessionString, feeds: groupFeeds }) =>
+          pollUserSession(sessionString, groupFeeds),
+        ),
+      ]);
     } catch (error) {
       logger.warn({ errorName: error?.name }, 'Signal source poll failed');
     } finally {

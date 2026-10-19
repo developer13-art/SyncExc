@@ -25,6 +25,7 @@ import { createHealthService } from './health.service.js';
 import { createQualityService } from './quality.service.js';
 import { createSandboxService } from './sandbox.service.js';
 import { createSourceConnectionService } from './source-connection.service.js';
+import { createTelegramAuthService } from './telegram-auth.service.js';
 import { createDuplicateDetectionService } from './duplicate-detection.service.js';
 import { createSourcesRoutes } from './sources.routes.js';
 import { createSourceAdapterRegistry } from './adapters/index.js';
@@ -110,6 +111,14 @@ export function createSourcesModule({ services }) {
     logger,
   });
 
+  const telegramAuthService = createTelegramAuthService({
+    db: services.db,
+    config: services.config,
+    sourceRegistryService,
+    connectionService,
+    logger,
+  });
+
   const routes = createSourcesRoutes({
     sourceRegistryService,
     discoveryService,
@@ -119,6 +128,7 @@ export function createSourcesModule({ services }) {
     qualityService,
     sandboxService,
     connectionService,
+    telegramAuthService,
     duplicateDetectionService,
     queries,
     middleware: services.middleware,

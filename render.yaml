@@ -80,6 +80,7 @@ services:
         sync: false
 
       # Signal Sources
+      # Telegram user login requires app credentials from https://my.telegram.org.
       - key: TELEGRAM_API_ID
         sync: false
       - key: TELEGRAM_API_HASH

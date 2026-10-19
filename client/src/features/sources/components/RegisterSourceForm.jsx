@@ -19,11 +19,19 @@ const SOURCE_TYPES = [
   { value: 'discord', label: 'Discord server or channel' },
   { value: 'whatsapp', label: 'WhatsApp (where supported)' },
   { value: 'webhook', label: 'Webhook' },
-  { value: 'api', label: 'External API' },
+  { value: 'rest_api', label: 'External API' },
   { value: 'website', label: 'Website or public feed' },
 ];
 
-export function RegisterSourceForm({ onSubmit, onCancel, isSubmitting, formError, className }) {
+export function RegisterSourceForm({
+  onSubmit,
+  onCancel,
+  isSubmitting,
+  formError,
+  className,
+  initialType = 'telegram',
+  showTypeField = true,
+}) {
   const {
     register,
     control,
@@ -32,7 +40,7 @@ export function RegisterSourceForm({ onSubmit, onCancel, isSubmitting, formError
   } = useForm({
     defaultValues: {
       name: '',
-      type: 'telegram',
+      type: initialType,
       identifier: '',
       url: '',
       language: '',
@@ -62,31 +70,33 @@ export function RegisterSourceForm({ onSubmit, onCancel, isSubmitting, formError
           />
         </FormField>
 
-        <FormField
-          label="Source type"
-          htmlFor="source-type"
-          required
-          error={errors.type?.message}
-        >
-          <Controller
-            control={control}
-            name="type"
-            render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger id="source-type" className="mt-1.5">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SOURCE_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-        </FormField>
+        {showTypeField ? (
+          <FormField
+            label="Source type"
+            htmlFor="source-type"
+            required
+            error={errors.type?.message}
+          >
+            <Controller
+              control={control}
+              name="type"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="source-type" className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SOURCE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </FormField>
+        ) : null}
 
         <FormField
           label="Source identifier"
@@ -120,18 +130,10 @@ export function RegisterSourceForm({ onSubmit, onCancel, isSubmitting, formError
 
         <div className="grid gap-4 md:grid-cols-2">
           <FormField label="Primary language" htmlFor="source-language">
-            <Input
-              id="source-language"
-              placeholder="English"
-              {...register('language')}
-            />
+            <Input id="source-language" placeholder="English" {...register('language')} />
           </FormField>
 
-          <FormField
-            label="Categories"
-            htmlFor="source-categories"
-            hint="Comma-separated tags"
-          >
+          <FormField label="Categories" htmlFor="source-categories" hint="Comma-separated tags">
             <Input
               id="source-categories"
               placeholder="intraday, futures"
@@ -150,8 +152,8 @@ export function RegisterSourceForm({ onSubmit, onCancel, isSubmitting, formError
         </FormField>
 
         <InfoCallout>
-          Registration does not automatically authorize ingestion. The source must pass review
-          and validation before content is collected.
+          Registration does not automatically authorize ingestion. The source must pass review and
+          validation before content is collected.
         </InfoCallout>
 
         {formError ? (

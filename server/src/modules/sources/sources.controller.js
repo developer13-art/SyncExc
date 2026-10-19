@@ -15,6 +15,7 @@ export function createSourcesController(services) {
     qualityService,
     sandboxService,
     connectionService,
+    telegramAuthService,
     duplicateDetectionService,
     queries,
   } = services;
@@ -22,6 +23,54 @@ export function createSourcesController(services) {
   return {
     async listCategories(_req, res) {
       return success(res, await queries.listCategories());
+    },
+
+    async telegramSendCode(req, res) {
+      const result = await telegramAuthService.sendCode({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        phoneNumber: req.body.phoneNumber,
+      });
+      return success(res, result);
+    },
+
+    async telegramVerifyCode(req, res) {
+      const result = await telegramAuthService.verifyCode({
+        loginId: req.body.loginId,
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        code: req.body.code,
+        password: req.body.password,
+      });
+      return success(res, result);
+    },
+
+    async telegramListChannels(req, res) {
+      const result = await telegramAuthService.listChannels({
+        loginId: req.body.loginId,
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, result);
+    },
+
+    async telegramCreateSources(req, res) {
+      const result = await telegramAuthService.createSources({
+        loginId: req.body.loginId,
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        channelIds: req.body.channelIds,
+      });
+      return created(res, result.map(serializeSource));
+    },
+
+    async telegramCancelLogin(req, res) {
+      const result = await telegramAuthService.cancel({
+        loginId: req.body.loginId,
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, result);
     },
 
     /* Sources */

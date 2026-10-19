@@ -4,7 +4,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/Select.jsx';
+import { Label } from '../../components/ui/Label.jsx';
 import { RegisterSourceForm } from './components/RegisterSourceForm.jsx';
+import { TelegramSourceWizard } from './components/TelegramSourceWizard.jsx';
 import { sourcesApi } from '../../api/index.js';
 import { useSources } from '../../hooks/useSources.js';
 import { useToast } from '../../hooks/useToast.js';
@@ -20,6 +29,7 @@ export default function AddSource() {
 
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sourceType, setSourceType] = useState('telegram');
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Add Signal Source'));
@@ -42,7 +52,10 @@ export default function AddSource() {
         url: values.url?.trim() || undefined,
         language: values.language?.trim() || undefined,
         categories: values.categories
-          ? values.categories.split(',').map((s) => s.trim()).filter(Boolean)
+          ? values.categories
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
           : [],
         notes: values.notes?.trim() || undefined,
       });
@@ -56,6 +69,21 @@ export default function AddSource() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleTelegramComplete = async (createdSources) => {
+    if (!createdSources?.length) {
+      setError('No Telegram sources were created.');
+      return;
+    }
+    toast.success(
+      createdSources.length === 1 ? 'Telegram source connected' : 'Telegram sources connected',
+      {
+        description:
+          'Each source still needs review and monitoring activation before messages are collected.',
+      },
+    );
+    navigate(ROUTES.app.sources.details(createdSources[0].id), { replace: true });
   };
 
   return (
@@ -74,17 +102,49 @@ export default function AddSource() {
             Add a signal source
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Register a source manually if you already know its identifier. Approval and
-            validation are separate steps after registration.
+            Connect Telegram with your account, or register another source manually.
           </p>
         </div>
 
-        <RegisterSourceForm
-          onSubmit={handleSubmit}
-          onCancel={() => navigate(ROUTES.app.sources.overview)}
-          isSubmitting={submitting}
-          formError={error}
-        />
+        <div className="mb-5 flex flex-col gap-1.5">
+          <Label htmlFor="source-platform">Source platform</Label>
+          <Select
+            value={sourceType}
+            onValueChange={(value) => {
+              setSourceType(value);
+              setError(null);
+            }}
+          >
+            <SelectTrigger id="source-platform">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="telegram">Telegram</SelectItem>
+              <SelectItem value="discord">Discord</SelectItem>
+              <SelectItem value="whatsapp">WhatsApp</SelectItem>
+              <SelectItem value="webhook">Webhook</SelectItem>
+              <SelectItem value="rest_api">External API</SelectItem>
+              <SelectItem value="website">Website or public feed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {sourceType === 'telegram' ? (
+          <TelegramSourceWizard
+            onComplete={handleTelegramComplete}
+            onCancel={() => navigate(ROUTES.app.sources.overview)}
+          />
+        ) : (
+          <RegisterSourceForm
+            key={sourceType}
+            initialType={sourceType}
+            showTypeField={false}
+            onSubmit={handleSubmit}
+            onCancel={() => navigate(ROUTES.app.sources.overview)}
+            isSubmitting={submitting}
+            formError={error}
+          />
+        )}
       </div>
     </div>
   );

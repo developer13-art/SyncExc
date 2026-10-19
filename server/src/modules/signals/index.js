@@ -63,6 +63,7 @@ export function createSignalsModule({ services }) {
     db: services.db,
     ingestion,
     logger,
+    config: services.config,
   });
   if (process.env.NODE_ENV !== 'test' && process.env.TELEGRAM_POLLING_ENABLED !== 'false') {
     telegramPolling.start();
@@ -157,8 +158,7 @@ export function createSignalsModule({ services }) {
   const publicApi = {
     ingestMessage: (params) => ingestion.ingestMessage(params),
     getCandidate: (candidateId) => extraction.getCandidate(candidateId),
-    listCandidatesForWorkspace: (workspaceId) =>
-      extraction.listCandidatesForWorkspace(workspaceId),
+    listCandidatesForWorkspace: (workspaceId) => extraction.listCandidatesForWorkspace(workspaceId),
   };
 
   return {

@@ -8,6 +8,16 @@ export const sourcesApi = {
 
   create: (payload) => api.post(endpoints.sources.create, payload),
 
+  telegramSendCode: (phoneNumber) => api.post('/sources/telegram/login/code', { phoneNumber }),
+
+  telegramVerifyCode: (payload) => api.post('/sources/telegram/login/verify', payload),
+
+  telegramListChannels: (loginId) => api.post('/sources/telegram/login/channels', { loginId }),
+
+  telegramCreateSources: (payload) => api.post('/sources/telegram/login/sources', payload),
+
+  telegramCancelLogin: (loginId) => api.delete('/sources/telegram/login', { data: { loginId } }),
+
   getById: (sourceId) => api.get(endpoints.sources.detail(sourceId)),
 
   update: (sourceId, payload) => api.patch(endpoints.sources.detail(sourceId), payload),
@@ -33,8 +43,7 @@ export const sourcesApi = {
 
   remove: (sourceId, payload) => api.delete(endpoints.sources.remove(sourceId), { data: payload }),
 
-  listDiscoveryJobs: (params) =>
-    api.getPaged(endpoints.sources.discoveryJobs, { params }),
+  listDiscoveryJobs: (params) => api.getPaged(endpoints.sources.discoveryJobs, { params }),
 
   createDiscoveryJob: (payload) => api.post(endpoints.sources.discoveryJobs, payload),
 
@@ -49,14 +58,12 @@ export const sourcesApi = {
   registerCandidate: (candidateId, payload) =>
     api.post(endpoints.sources.registerCandidate(candidateId), payload),
 
-  submitForReview: (sourceId, payload) =>
-    api.post(endpoints.sources.reviews(sourceId), payload),
+  submitForReview: (sourceId, payload) => api.post(endpoints.sources.reviews(sourceId), payload),
 
   approveReview: (reviewId, payload) =>
     api.post(endpoints.sources.approveReview(reviewId), payload),
 
-  rejectReview: (reviewId, payload) =>
-    api.post(endpoints.sources.rejectReview(reviewId), payload),
+  rejectReview: (reviewId, payload) => api.post(endpoints.sources.rejectReview(reviewId), payload),
 
   requestReviewInfo: (reviewId, payload) =>
     api.post(endpoints.sources.requestInfoReview(reviewId), payload),
@@ -71,8 +78,7 @@ export const sourcesApi = {
   reauthorizeConnection: (sourceId, payload) =>
     api.post(endpoints.sources.reauthorizeConnection(sourceId), payload),
 
-  disconnectConnection: (sourceId) =>
-    api.delete(endpoints.sources.disconnectConnection(sourceId)),
+  disconnectConnection: (sourceId) => api.delete(endpoints.sources.disconnectConnection(sourceId)),
 
   listValidations: (sourceId, params) =>
     api.getPaged(endpoints.sources.validations(sourceId), { params }),
@@ -87,19 +93,15 @@ export const sourcesApi = {
   createSandboxTest: (sourceId, payload) =>
     api.post(endpoints.sources.sandboxTests(sourceId), payload),
 
-  getSandboxTest: (sourceId, testId) =>
-    api.get(endpoints.sources.sandboxTest(sourceId, testId)),
+  getSandboxTest: (sourceId, testId) => api.get(endpoints.sources.sandboxTest(sourceId, testId)),
 
   listShares: (sourceId) => api.get(endpoints.sources.shares(sourceId)),
 
-  createShare: (sourceId, payload) =>
-    api.post(endpoints.sources.shares(sourceId), payload),
+  createShare: (sourceId, payload) => api.post(endpoints.sources.shares(sourceId), payload),
 
-  revokeShare: (sourceId, shareId) =>
-    api.delete(endpoints.sources.share(sourceId, shareId)),
+  revokeShare: (sourceId, shareId) => api.delete(endpoints.sources.share(sourceId, shareId)),
 
-  getAudit: (sourceId, params) =>
-    api.getPaged(endpoints.sources.audit(sourceId), { params }),
+  getAudit: (sourceId, params) => api.getPaged(endpoints.sources.audit(sourceId), { params }),
 
   listCategories: () => api.get(endpoints.sources.categories),
 };

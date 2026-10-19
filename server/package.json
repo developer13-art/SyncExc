@@ -24,6 +24,7 @@
     "@syncexc/shared": "*",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
+    "big-integer": "^1.6.52",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -40,6 +41,7 @@
     "pino-http": "^9.0.0",
     "prom-client": "^15.1.1",
     "speakeasy": "^2.0.0",
+    "teleproto": "^1.230.1",
     "uuid": "^9.0.1",
     "web-push": "^3.6.7",
     "ws": "^8.16.0"
