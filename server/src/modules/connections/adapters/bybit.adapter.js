@@ -6,6 +6,11 @@ import crypto from 'node:crypto';
 import { createBaseAdapter } from './base.adapter.js';
 
 const BASE_URL = 'https://api.bybit.com';
+const TESTNET_BASE_URL = 'https://api-testnet.bybit.com';
+
+function getBaseUrl(environment) {
+  return environment === 'testnet' ? TESTNET_BASE_URL : BASE_URL;
+}
 
 export function createBybitAdapter({ config, logger }) {
   const base = createBaseAdapter({
@@ -46,11 +51,11 @@ export function createBybitAdapter({ config, logger }) {
       supportedTimeInForce: ['GTC', 'IOC', 'FOK', 'PostOnly'],
     },
 
-    async validateCredentials({ apiKey, apiSecret }) {
+    async validateCredentials({ apiKey, apiSecret, environment }) {
       const path = '/v5/user/query-api';
       const headers = signedHeaders({ apiKey, apiSecret, params: {} });
       const data = await this.fetchSigned({
-        url: `${BASE_URL}${path}`,
+        url: `${getBaseUrl(environment)}${path}`,
         method: 'GET',
         headers,
       });
@@ -72,13 +77,13 @@ export function createBybitAdapter({ config, logger }) {
       ];
     },
 
-    async fetchBalances({ apiKey, apiSecret, accountType = 'unified' }) {
+    async fetchBalances({ apiKey, apiSecret, accountType = 'unified', environment }) {
       const path = '/v5/account/wallet-balance';
       const params = { accountType: accountType === 'unified' ? 'UNIFIED' : 'SPOT' };
       const headers = signedHeaders({ apiKey, apiSecret, params });
       const query = new URLSearchParams(params).toString();
       const data = await this.fetchSigned({
-        url: `${BASE_URL}${path}?${query}`,
+        url: `${getBaseUrl(environment)}${path}?${query}`,
         method: 'GET',
         headers,
       });
@@ -116,7 +121,7 @@ export function createBybitAdapter({ config, logger }) {
       }));
     },
 
-    async placeOrder({ apiKey, apiSecret, accountType = 'unified', order }) {
+    async placeOrder({ apiKey, apiSecret, accountType = 'unified', environment, order }) {
       const path = '/v5/order/create';
       const body = {
         category: order.marketType === 'spot' ? 'spot' : 'linear',
@@ -132,7 +137,7 @@ export function createBybitAdapter({ config, logger }) {
 
       const headers = signedHeaders({ apiKey, apiSecret, params: body });
       const data = await this.fetchSigned({
-        url: `${BASE_URL}${path}`,
+        url: `${getBaseUrl(environment)}${path}`,
         method: 'POST',
         headers,
         body,
@@ -147,7 +152,14 @@ export function createBybitAdapter({ config, logger }) {
       };
     },
 
-    async cancelOrder({ apiKey, apiSecret, accountType = 'unified', instrument, exchangeOrderId }) {
+    async cancelOrder({
+      apiKey,
+      apiSecret,
+      accountType = 'unified',
+      environment,
+      instrument,
+      exchangeOrderId,
+    }) {
       const body = {
         category: 'linear',
         symbol: instrument,
@@ -155,7 +167,7 @@ export function createBybitAdapter({ config, logger }) {
       };
       const headers = signedHeaders({ apiKey, apiSecret, params: body });
       const data = await this.fetchSigned({
-        url: `${BASE_URL}/v5/order/cancel`,
+        url: `${getBaseUrl(environment)}/v5/order/cancel`,
         method: 'POST',
         headers,
         body,
@@ -164,7 +176,14 @@ export function createBybitAdapter({ config, logger }) {
       return { status: 'canceled' };
     },
 
-    async fetchOrder({ apiKey, apiSecret, accountType = 'unified', instrument, exchangeOrderId }) {
+    async fetchOrder({
+      apiKey,
+      apiSecret,
+      accountType = 'unified',
+      environment,
+      instrument,
+      exchangeOrderId,
+    }) {
       const query = new URLSearchParams({
         category: 'linear',
         symbol: instrument,
@@ -172,7 +191,7 @@ export function createBybitAdapter({ config, logger }) {
       }).toString();
       const headers = signedHeaders({ apiKey, apiSecret, params: {} });
       const data = await this.fetchSigned({
-        url: `${BASE_URL}/v5/order/realtime?${query}`,
+        url: `${getBaseUrl(environment)}/v5/order/realtime?${query}`,
         method: 'GET',
         headers,
       });
@@ -188,13 +207,13 @@ export function createBybitAdapter({ config, logger }) {
       };
     },
 
-    async fetchOpenOrders({ apiKey, apiSecret, accountType = 'unified', instrument }) {
+    async fetchOpenOrders({ apiKey, apiSecret, accountType = 'unified', environment, instrument }) {
       const params = { category: 'linear', openOnly: '0' };
       if (instrument) params.symbol = instrument;
       const query = new URLSearchParams(params).toString();
       const headers = signedHeaders({ apiKey, apiSecret, params });
       const data = await this.fetchSigned({
-        url: `${BASE_URL}/v5/order/realtime?${query}`,
+        url: `${getBaseUrl(environment)}/v5/order/realtime?${query}`,
         method: 'GET',
         headers,
       });
@@ -212,12 +231,12 @@ export function createBybitAdapter({ config, logger }) {
       }));
     },
 
-    async fetchPositions({ apiKey, apiSecret }) {
+    async fetchPositions({ apiKey, apiSecret, environment }) {
       const params = { category: 'linear', settleCoin: 'USDT' };
       const query = new URLSearchParams(params).toString();
       const headers = signedHeaders({ apiKey, apiSecret, params });
       const data = await this.fetchSigned({
-        url: `${BASE_URL}/v5/position/list?${query}`,
+        url: `${getBaseUrl(environment)}/v5/position/list?${query}`,
         method: 'GET',
         headers,
       });

@@ -290,6 +290,7 @@ export function createOrderSubmissionService({
       adapterResponse = await adapter.placeOrder({
         ...credentials,
         accountType: tradingAccount.account_type,
+        environment: connection.environment,
         order: {
           instrument: instrumentId,
           marketType,

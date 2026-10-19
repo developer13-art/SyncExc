@@ -160,7 +160,7 @@ export function createConnectionsService({
     // Validate credentials before persisting
     let validationResult;
     try {
-      validationResult = await adapter.validateCredentials(credentials);
+      validationResult = await adapter.validateCredentials({ ...credentials, environment });
     } catch (err) {
       logger.warn({ err, exchange }, 'Credential validation failed');
       throw new ValidationError('Exchange credentials are invalid or lack required permissions');
@@ -275,6 +275,7 @@ export function createConnectionsService({
           const balances = await adapter.fetchBalances({
             ...credentials,
             accountType: acc.accountType,
+            environment: connection.environment,
           });
           const snapshot = await queries.insertBalanceSnapshot(tx, {
             accountId: account.id,
@@ -341,7 +342,10 @@ export function createConnectionsService({
     if (!adapter) throw new NotFoundError('Adapter');
 
     try {
-      const result = await adapter.validateCredentials(credentials);
+      const result = await adapter.validateCredentials({
+        ...credentials,
+        environment: connection.environment,
+      });
       await queries.upsertHealth({
         connectionId,
         state: 'healthy',
@@ -374,7 +378,10 @@ export function createConnectionsService({
     });
 
     const adapter = adapterRegistry.get(connection.exchange_code);
-    const validation = await adapter.validateCredentials(credentials);
+    const validation = await adapter.validateCredentials({
+      ...credentials,
+      environment: connection.environment,
+    });
     if (!validation.canRead) {
       throw new ValidationError('New credentials lack read permission');
     }
