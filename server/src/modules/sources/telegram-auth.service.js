@@ -1,6 +1,7 @@
 import { Api } from 'teleproto';
 import {
   ConflictError,
+  ExternalProviderError,
   NotFoundError,
   RateLimitError,
   ValidationError,
@@ -45,6 +46,11 @@ function mapTelegramSendCodeError(error) {
       'TELEGRAM_PHONE_NUMBER_BANNED',
     );
   }
+  if (code.includes('PHONE_NUMBER_UNOCCUPIED')) {
+    return new ValidationError(
+      'This phone number is not registered to a Telegram account. Create the account in the official Telegram app first.',
+    );
+  }
   if (code.includes('PHONE_NUMBER_FLOOD') || code.includes('PHONE_CODE_FLOOD')) {
     return new RateLimitError(
       'Telegram is limiting login requests for this phone number. Wait before trying again.',
@@ -56,10 +62,28 @@ function mapTelegramSendCodeError(error) {
       'TELEGRAM_CONFIGURATION_ERROR',
     );
   }
-  return new ConflictError(
-    'Telegram could not send a login code. Check the phone number and try again.',
-    'TELEGRAM_CODE_SEND_FAILED',
+  const transportCode = String(error?.code || '').toUpperCase();
+  if (
+    ['ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH', 'ECONNREFUSED', 'EAI_AGAIN'].includes(
+      transportCode,
+    ) ||
+    error?.name === 'TimeoutError'
+  ) {
+    return new ExternalProviderError(
+      'The server could not reach Telegram to request a login code. Please try again later.',
+      { provider: 'telegram', retryable: true, status: 502 },
+    );
+  }
+  return new ExternalProviderError(
+    'Telegram could not process the login-code request. Check the phone number and try again later.',
+    { provider: 'telegram', retryable: true, status: 502 },
   );
+}
+
+function safeProviderErrorCode(error) {
+  const raw = String(error?.errorMessage || error?.code || '').toUpperCase();
+  const code = raw.match(/\b[A-Z][A-Z0-9_]{1,63}\b/)?.[0];
+  return code ?? 'UNKNOWN';
 }
 
 function normalizePhoneNumber(value) {
@@ -168,7 +192,11 @@ export function createTelegramAuthService({
           [loginId],
         );
         logger.warn(
-          { provider: 'telegram', errorName: error?.name },
+          {
+            provider: 'telegram',
+            errorName: error?.name,
+            providerErrorCode: safeProviderErrorCode(error),
+          },
           'Telegram login code request failed',
         );
         throw mapTelegramSendCodeError(error);

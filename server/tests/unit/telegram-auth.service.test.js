@@ -178,18 +178,75 @@ test('does not rate-limit another code request after Telegram failed to send the
   };
 
   await assert.rejects(service.sendCode(request), {
-    code: 'TELEGRAM_CODE_SEND_FAILED',
-    status: 409,
+    code: 'EXTERNAL_PROVIDER_ERROR',
+    status: 502,
   });
   await assert.rejects(service.sendCode(request), {
-    code: 'TELEGRAM_CODE_SEND_FAILED',
-    status: 409,
+    code: 'EXTERNAL_PROVIDER_ERROR',
+    status: 502,
   });
 
   assert.equal(sendAttempts, 2);
   assert.deepEqual(
     sessions.map(({ status }) => status),
     ['request_failed', 'request_failed'],
+  );
+});
+
+test('reports Telegram connection failures as retryable upstream errors', async () => {
+  const database = {
+    async query(sql) {
+      if (
+        sql.includes('DELETE FROM telegram_auth_sessions') ||
+        sql.includes('UPDATE telegram_auth_sessions SET status')
+      ) {
+        return { rows: [] };
+      }
+      if (sql.includes('SELECT id FROM users WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 'user-id' }] };
+      }
+      if (sql.includes('SELECT count(*)::integer')) {
+        return { rows: [{ count: 0, last_sent_at: null, oldest_at: null }] };
+      }
+      if (sql.includes('INSERT INTO telegram_auth_sessions')) {
+        return { rows: [{ id: 'login-id' }] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    tx(callback) {
+      return callback({ query: this.query.bind(this) });
+    },
+  };
+  const service = createTelegramAuthService({
+    db: database,
+    config: { telegram: { apiId: 123, apiHash: 'app-hash' } },
+    sourceRegistryService: {},
+    connectionService: {},
+    logger: { warn() {} },
+    clientFactory: () => ({
+      async connect() {},
+      async disconnect() {},
+      async sendCode() {
+        const error = new Error('connection timed out');
+        error.code = 'ETIMEDOUT';
+        throw error;
+      },
+    }),
+  });
+
+  await assert.rejects(
+    service.sendCode({
+      userId: 'user-id',
+      workspaceId: 'workspace-id',
+      phoneNumber: '+12345678900',
+    }),
+    (error) => {
+      assert.equal(error.code, 'EXTERNAL_PROVIDER_ERROR');
+      assert.equal(error.status, 502);
+      assert.deepEqual(error.details, { provider: 'telegram', retryable: true });
+      assert.match(error.message, /could not reach Telegram/);
+      return true;
+    },
   );
 });
 
