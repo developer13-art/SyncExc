@@ -114,3 +114,137 @@ test('persists login state encrypted and never returns Telegram session or code 
   assert.equal(storedState.sessionString, 'telegram-session-secret');
   assert.equal(storedState.phoneCodeHash, 'telegram-code-hash-secret');
 });
+
+test('does not rate-limit another code request after Telegram failed to send the previous code', async () => {
+  const sessions = [];
+  let nextId = 0;
+  let sendAttempts = 0;
+  const database = {
+    async query(sql, params = []) {
+      if (sql.includes('DELETE FROM telegram_auth_sessions')) return { rows: [] };
+      if (sql.includes('SELECT id FROM users WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: params[0] }] };
+      }
+      if (sql.includes('SELECT count(*)::integer')) {
+        assert.match(sql, /status IN \('request_pending', 'code_sent', 'password_required', 'verified'\)/);
+        const counted = sessions.filter((session) =>
+          ['request_pending', 'code_sent', 'password_required', 'verified'].includes(
+            session.status,
+          ),
+        );
+        return {
+          rows: [{
+            count: counted.length,
+            last_sent_at: counted.at(-1)?.createdAt ?? null,
+            oldest_at: counted[0]?.createdAt ?? null,
+          }],
+        };
+      }
+      if (sql.includes('INSERT INTO telegram_auth_sessions')) {
+        const id = `login-${++nextId}`;
+        sessions.push({ id, status: 'request_pending', createdAt: new Date() });
+        return { rows: [{ id }] };
+      }
+      if (sql.includes("status = 'request_failed'")) {
+        const session = sessions.find((item) => item.id === params[0]);
+        session.status = 'request_failed';
+        return { rows: [] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    tx(callback) {
+      return callback({ query: this.query.bind(this) });
+    },
+  };
+  const service = createTelegramAuthService({
+    db: database,
+    config: { telegram: { apiId: 123, apiHash: 'app-hash' } },
+    sourceRegistryService: {},
+    connectionService: {},
+    logger: { warn() {} },
+    clientFactory: () => ({
+      async connect() {},
+      async disconnect() {},
+      async sendCode() {
+        sendAttempts += 1;
+        throw new Error('TEMPORARY_NETWORK_ERROR');
+      },
+    }),
+  });
+  const request = {
+    userId: 'user-id',
+    workspaceId: 'workspace-id',
+    phoneNumber: '+12345678900',
+  };
+
+  await assert.rejects(service.sendCode(request), {
+    code: 'TELEGRAM_CODE_SEND_FAILED',
+    status: 409,
+  });
+  await assert.rejects(service.sendCode(request), {
+    code: 'TELEGRAM_CODE_SEND_FAILED',
+    status: 409,
+  });
+
+  assert.equal(sendAttempts, 2);
+  assert.deepEqual(
+    sessions.map(({ status }) => status),
+    ['request_failed', 'request_failed'],
+  );
+});
+
+test('returns Telegram flood-wait errors as a retryable rate limit', async () => {
+  const database = {
+    async query(sql) {
+      if (
+        sql.includes('DELETE FROM telegram_auth_sessions') ||
+        sql.includes('UPDATE telegram_auth_sessions SET status')
+      ) {
+        return { rows: [] };
+      }
+      if (sql.includes('SELECT id FROM users WHERE id = $1 FOR UPDATE')) {
+        return { rows: [{ id: 'user-id' }] };
+      }
+      if (sql.includes('SELECT count(*)::integer')) {
+        return { rows: [{ count: 0, last_sent_at: null, oldest_at: null }] };
+      }
+      if (sql.includes('INSERT INTO telegram_auth_sessions')) {
+        return { rows: [{ id: 'login-id' }] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    tx(callback) {
+      return callback({ query: this.query.bind(this) });
+    },
+  };
+  const service = createTelegramAuthService({
+    db: database,
+    config: { telegram: { apiId: 123, apiHash: 'app-hash' } },
+    sourceRegistryService: {},
+    connectionService: {},
+    logger: { warn() {} },
+    clientFactory: () => ({
+      async connect() {},
+      async disconnect() {},
+      async sendCode() {
+        const error = new Error('Telegram flood wait');
+        error.errorMessage = 'FLOOD_WAIT_60';
+        throw error;
+      },
+    }),
+  });
+
+  await assert.rejects(
+    service.sendCode({
+      userId: 'user-id',
+      workspaceId: 'workspace-id',
+      phoneNumber: '+12345678900',
+    }),
+    (error) => {
+      assert.equal(error.code, 'RATE_LIMITED');
+      assert.equal(error.status, 429);
+      assert.deepEqual(error.details, { retryAfterSeconds: 60 });
+      return true;
+    },
+  );
+});

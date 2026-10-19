@@ -1,5 +1,10 @@
 import { Api } from 'teleproto';
-import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors.js';
+import {
+  ConflictError,
+  NotFoundError,
+  RateLimitError,
+  ValidationError,
+} from '../../lib/errors.js';
 import { decrypt, encrypt } from '../../lib/crypto.js';
 import {
   createTelegramClient,
@@ -17,6 +22,44 @@ const MAX_VERIFY_ATTEMPTS = 5;
 
 function providerErrorCode(error) {
   return String(error?.errorMessage || error?.message || '').toUpperCase();
+}
+
+function mapTelegramSendCodeError(error) {
+  const code = providerErrorCode(error);
+  const floodWait = code.match(/FLOOD_WAIT_(\d+)/);
+  if (floodWait) {
+    const retryAfterSeconds = Number(floodWait[1]);
+    return new RateLimitError(
+      `Telegram is limiting login requests. Try again in ${retryAfterSeconds} seconds.`,
+      retryAfterSeconds,
+    );
+  }
+  if (code.includes('PHONE_NUMBER_INVALID')) {
+    return new ValidationError(
+      'Telegram rejected this phone number. Check that it is correct and includes the country code.',
+    );
+  }
+  if (code.includes('PHONE_NUMBER_BANNED')) {
+    return new ConflictError(
+      'Telegram does not allow this phone number to sign in. Contact Telegram support.',
+      'TELEGRAM_PHONE_NUMBER_BANNED',
+    );
+  }
+  if (code.includes('PHONE_NUMBER_FLOOD') || code.includes('PHONE_CODE_FLOOD')) {
+    return new RateLimitError(
+      'Telegram is limiting login requests for this phone number. Wait before trying again.',
+    );
+  }
+  if (code.includes('API_ID_INVALID') || code.includes('API_HASH_INVALID')) {
+    return new ConflictError(
+      'Telegram login is not configured correctly. Please contact support.',
+      'TELEGRAM_CONFIGURATION_ERROR',
+    );
+  }
+  return new ConflictError(
+    'Telegram could not send a login code. Check the phone number and try again.',
+    'TELEGRAM_CODE_SEND_FAILED',
+  );
 }
 
 function normalizePhoneNumber(value) {
@@ -50,28 +93,50 @@ export function createTelegramAuthService({
       const result = await tx.query(
         `
         SELECT count(*)::integer AS count,
-               max(created_at) AS last_sent_at
+               max(created_at) AS last_sent_at,
+               min(created_at) AS oldest_at
         FROM telegram_auth_sessions
         WHERE user_id = $1
           AND created_at >= now() - ($2::text || ' minutes')::interval
+          AND status IN ('request_pending', 'code_sent', 'password_required', 'verified')
         `,
         [userId, SEND_WINDOW_MINUTES],
       );
-      const { count, last_sent_at: lastSentAt } = result.rows[0];
+      const {
+        count,
+        last_sent_at: lastSentAt,
+        oldest_at: oldestAt,
+      } = result.rows[0];
       if (Number(count) >= MAX_SENDS_PER_WINDOW) {
-        throw new ConflictError(
-          'Too many Telegram login codes were requested. Try again later.',
-          'TELEGRAM_RATE_LIMITED',
+        const retryAfterSeconds = oldestAt
+          ? Math.max(
+              1,
+              Math.ceil(
+                (new Date(oldestAt).getTime() +
+                  SEND_WINDOW_MINUTES * 60_000 -
+                  Date.now()) /
+                  1000,
+              ),
+            )
+          : SEND_WINDOW_MINUTES * 60;
+        throw new RateLimitError(
+          `Too many Telegram login codes were requested. Try again in ${Math.ceil(retryAfterSeconds / 60)} minutes.`,
+          retryAfterSeconds,
         );
       }
-      if (
-        lastSentAt &&
-        Date.now() - new Date(lastSentAt).getTime() < SEND_COOLDOWN_SECONDS * 1000
-      ) {
-        throw new ConflictError(
-          'Wait before requesting another Telegram login code.',
-          'TELEGRAM_RATE_LIMITED',
+      if (lastSentAt) {
+        const retryAfterSeconds = Math.ceil(
+          (new Date(lastSentAt).getTime() +
+            SEND_COOLDOWN_SECONDS * 1000 -
+            Date.now()) /
+            1000,
         );
+        if (retryAfterSeconds > 0) {
+          throw new RateLimitError(
+            `Wait ${retryAfterSeconds} seconds before requesting another Telegram login code.`,
+            retryAfterSeconds,
+          );
+        }
       }
       const saved = await tx.query(
         `
@@ -106,10 +171,7 @@ export function createTelegramAuthService({
           { provider: 'telegram', errorName: error?.name },
           'Telegram login code request failed',
         );
-        throw new ConflictError(
-          'Telegram could not send a login code. Check the phone number and try again.',
-          'TELEGRAM_CODE_SEND_FAILED',
-        );
+        throw mapTelegramSendCodeError(error);
       }
       if (result.emailRequired || result.emailCodeSent || !result.phoneCodeHash) {
         await db.query(
