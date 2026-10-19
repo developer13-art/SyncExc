@@ -269,13 +269,13 @@ export function createConnectionsService({
         keyVersion: encrypted.keyVersion,
       });
 
-      await queries.upsertConnectionPermission({
+      await queries.upsertConnectionPermission(tx, {
         connectionId: connection.id,
         permissionKey: 'account.read',
         verification: validationResult.canRead ? 'verified' : 'missing_permission',
       });
 
-      await queries.upsertConnectionPermission({
+      await queries.upsertConnectionPermission(tx, {
         connectionId: connection.id,
         permissionKey: 'trading',
         verification: validationResult.canTrade ? 'verified' : 'missing_permission',
@@ -473,12 +473,12 @@ export function createConnectionsService({
         keyVersion: encrypted.keyVersion,
       });
 
-      await queries.upsertConnectionPermission({
+      await queries.upsertConnectionPermission(tx, {
         connectionId,
         permissionKey: 'account.read',
         verification: validation.canRead ? 'verified' : 'missing_permission',
       });
-      await queries.upsertConnectionPermission({
+      await queries.upsertConnectionPermission(tx, {
         connectionId,
         permissionKey: 'trading',
         verification: validation.canTrade ? 'verified' : 'missing_permission',

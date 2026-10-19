@@ -161,3 +161,73 @@ test('reports provider CloudFront country blocks separately from invalid credent
       error.message.includes('blocking API requests from the server'),
   );
 });
+
+test('creates connection permissions within the same transaction as the connection', async () => {
+  const permissionTransactions = [];
+  const transaction = { name: 'connection transaction' };
+  const connection = {
+    id: 'connection-id',
+    exchange_code: 'bybit',
+    workspace_id: 'workspace-id',
+    environment: 'demo',
+  };
+  const service = createConnectionsService({
+    db: {
+      tx: async (callback) => callback(transaction),
+    },
+    queries: {
+      findExchangeByCode: async () => ({
+        exchange_code: 'bybit',
+        integration_status: 'available',
+      }),
+      insertConnection: async (tx) => {
+        assert.equal(tx, transaction);
+        return connection;
+      },
+      insertCredential: async (tx) => assert.equal(tx, transaction),
+      upsertConnectionPermission: async (tx, permission) => {
+        permissionTransactions.push(tx);
+        assert.ok(permission.connectionId);
+      },
+      updateConnection: async (_id, update) => ({ ...connection, ...update }),
+      upsertHealth: async () => {},
+    },
+    rateLimiter: {},
+    credentialVault: {
+      encryptCredentials: () => ({
+        apiKeyEncrypted: 'encrypted-key',
+        apiSecretEncrypted: 'encrypted-secret',
+        passphraseEncrypted: null,
+        keyVersion: '1',
+      }),
+    },
+    adapterRegistry: {
+      get: () => ({
+        capabilities: {},
+        validateCredentials: async () => ({
+          canRead: true,
+          canTrade: true,
+          canWithdraw: false,
+        }),
+        discoverAccounts: async () => [],
+      }),
+    },
+    rateLimitCoordinator: {},
+    events: { publish: async (tx) => assert.equal(tx, transaction) },
+    audit: {},
+    logger: { warn() {} },
+  });
+
+  const result = await service.createConnection({
+    userId: 'user-id',
+    workspaceId: 'workspace-id',
+    exchange: 'bybit',
+    environment: 'demo',
+    label: 'Bybit Demo',
+    credentials: { apiKey: 'api-key', apiSecret: 'api-secret' },
+  });
+
+  assert.equal(permissionTransactions.length, 2);
+  assert.ok(permissionTransactions.every((tx) => tx === transaction));
+  assert.equal(result.status, 'degraded');
+});

@@ -218,8 +218,8 @@ export function createConnectionsQueries({ db }) {
      * PERMISSIONS
      * ====================================================================== */
 
-    async upsertConnectionPermission(permission) {
-      const result = await db.query(
+    async upsertConnectionPermission(client, permission) {
+      const result = await client.query(
         `
         INSERT INTO exchange_connection_permissions (
           connection_id, permission_key, verification, last_checked_at

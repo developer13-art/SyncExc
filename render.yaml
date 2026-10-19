@@ -19,7 +19,7 @@ services:
       
       # URLs & CORS
       - key: APP_URL
-        value: https://app.syncexc.com
+        value: http://app.syncsexc.com
       - key: ADMIN_URL
         value: https://admin.syncexc.com
       - key: API_URL
