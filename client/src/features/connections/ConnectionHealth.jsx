@@ -98,6 +98,17 @@ export function ConnectionHealth({ connectionId }) {
         </CardContent>
       </Card>
 
+      {health.lastError ? (
+        <Card className="border-warning/30 bg-warning/5">
+          <CardHeader>
+            <CardTitle>Latest issue</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            {health.lastError}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {timelineEvents.length > 0 ? (
         <Card>
           <CardHeader>

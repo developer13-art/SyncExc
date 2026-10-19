@@ -309,7 +309,7 @@ export function createConnectionsService({
         await queries.upsertHealth({
           connectionId: connection.id,
           state: 'degraded',
-          lastError: 'Initial account synchronization failed. Test or reconnect this exchange.',
+          lastError: getSyncFailureMessage(err),
           dataFreshness: 'stale',
         });
         return { ...connection, status: 'degraded' };
@@ -398,6 +398,40 @@ export function createConnectionsService({
     });
   }
 
+  function getSyncFailureMessage(error) {
+    const rawProviderMessage =
+      typeof error?.exchangeResponse?.raw === 'string'
+        ? error.exchangeResponse.raw
+        : '';
+    if (
+      error?.statusCode === 403 &&
+      /CloudFront distribution is configured to block access from your country/i.test(
+        rawProviderMessage
+      )
+    ) {
+      return 'The exchange is blocking API requests from the server region. Use a permitted server region or contact the exchange.';
+    }
+    if (error?.statusCode === 451 || error?.exchangeResponse?.code === 451) {
+      return 'The exchange restricts API access from the server region. Contact the exchange or use a supported exchange for your jurisdiction.';
+    }
+
+    const providerMessage = error?.exchangeResponse?.retMsg;
+    if (
+      typeof providerMessage === 'string' &&
+      providerMessage.length > 0 &&
+      !/api.?key|secret|signature|credential/i.test(providerMessage)
+    ) {
+      return `Exchange rejected an account-data request: ${providerMessage.slice(0, 180)}. Check the key's account/wallet read permissions and selected account mode.`;
+    }
+    if (Number.isInteger(error?.statusCode)) {
+      return `Exchange account-data request failed (HTTP ${error.statusCode}). Check account/wallet read permissions and the selected account mode.`;
+    }
+    if (/timeout|network|fetch failed/i.test(error?.message || '')) {
+      return 'The exchange could not be reached during account sync. Check provider availability and retry.';
+    }
+    return 'Account synchronization failed. Check server logs for the provider error, confirm account/wallet read permissions, and retry.';
+  }
+
   async function syncConnection({ userId, workspaceId, connectionId }) {
     const connection = await requireConnectionAccess({
       connectionId,
@@ -418,7 +452,7 @@ export function createConnectionsService({
       await queries.upsertHealth({
         connectionId,
         state: 'degraded',
-        lastError: 'Account synchronization failed. Check the connection and try again.',
+        lastError: getSyncFailureMessage(err),
         dataFreshness: 'stale',
       });
       throw err;
@@ -442,6 +476,7 @@ export function createConnectionsService({
     const adapter = adapterRegistry.get(connection.exchange_code);
     if (!adapter) throw new NotFoundError('Adapter');
 
+    const previousHealth = await queries.getHealth(connectionId);
     try {
       const result = await adapter.validateCredentials({
         ...credentials,
@@ -449,9 +484,13 @@ export function createConnectionsService({
       });
       await queries.upsertHealth({
         connectionId,
-        state: 'healthy',
+        state: connection.status === 'degraded' ? 'degraded' : 'healthy',
         lastSuccessfulRequest: new Date(),
-        dataFreshness: 'current',
+        lastError: connection.status === 'degraded' ? previousHealth?.last_error : null,
+        dataFreshness:
+          connection.status === 'degraded'
+            ? previousHealth?.data_freshness || 'stale'
+            : 'current',
       });
       return { ok: true, ...result };
     } catch (err) {

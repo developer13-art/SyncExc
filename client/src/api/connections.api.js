@@ -15,6 +15,8 @@ export const connectionsApi = {
 
   test: (connectionId) => api.post(endpoints.connections.test(connectionId)),
 
+  sync: (connectionId) => api.post(endpoints.connections.sync(connectionId)),
+
   validate: async (connectionId) => {
     const result = await api.post(endpoints.connections.validate(connectionId));
     return {

@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Settings2 } from 'lucide-react';
 
@@ -16,6 +17,10 @@ import { ConnectionAccounts } from './ConnectionAccounts.jsx';
 import { ConnectionHealth } from './ConnectionHealth.jsx';
 import { ConnectionInstruments } from './ConnectionInstruments.jsx';
 import { ConnectionBalances } from './ConnectionBalances.jsx';
+import { connectionsApi } from '../../api/index.js';
+import { useToast } from '../../hooks/useToast.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { queryKeys } from '../../hooks/queryKeys.js';
 import { useConnection } from '../../hooks/useConnections.js';
 import { formatDateTime } from '../../lib/formatters/date.formatter.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
@@ -24,9 +29,35 @@ import { ROUTES } from '../../config/routes.config.js';
 export default function ConnectionDetails() {
   const { connectionId } = useParams();
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const connectionQuery = useConnection(connectionId);
   const { connection, health, permissions, isLoading, error } = connectionQuery;
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      await connectionsApi.sync(connectionId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.connections.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.connections.detail(connectionId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.connections.accounts(connectionId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.connections.balances(connectionId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.connections.health(connectionId) }),
+        queryClient.invalidateQueries({ queryKey: ['terminal', 'overview'] }),
+      ]);
+      toast.success('Account balances synced');
+    } catch (syncError) {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.connections.health(connectionId),
+      });
+      toast.error('Sync failed', { description: getErrorMessage(syncError) });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   useEffect(() => {
     if (connection) {
@@ -92,6 +123,10 @@ export default function ConnectionDetails() {
           >
             <RefreshCw className="h-4 w-4" />
           </IconButton>
+          <Button variant="outline" onClick={handleSync} disabled={isSyncing}>
+            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing…' : 'Sync now'}
+          </Button>
           <Button variant="outline" asChild>
             <Link to={ROUTES.app.connections.rotate(connection.id)}>
               <Settings2 className="h-4 w-4" /> Rotate credentials
@@ -99,6 +134,20 @@ export default function ConnectionDetails() {
           </Button>
         </div>
       </div>
+
+      {health?.lastError ? (
+        <div
+          className="rounded-md border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning"
+          role="status"
+        >
+          <p className="font-medium">Latest sync issue</p>
+          <p className="mt-1 text-muted-foreground">{health.lastError}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Check that the exchange API key is enabled for account/wallet read access, then choose
+            Sync now. SyncExc does not need withdrawal permission.
+          </p>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>

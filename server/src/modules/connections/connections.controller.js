@@ -200,7 +200,20 @@ export function createConnectionsController({ service }) {
         connectionId: req.params.connectionId,
         workspaceId: req.workspace.id,
       });
-      return success(res, health);
+      return success(res, health
+        ? {
+            status: health.state,
+            lastSuccessfulRequestAt: health.last_successful_request,
+            lastSuccessfulSyncAt: health.last_successful_sync,
+            lastError: health.last_error,
+            latencyMs: health.latency_ms,
+            dataFreshness: health.data_freshness,
+            reconnectAttempts: health.reconnect_attempts,
+            rateLimitPressure: health.rate_limit_pressure,
+            environment: health.environment,
+            adapterVersion: health.adapter_version,
+          }
+        : null);
     },
 
     async listPermissions(req, res) {

@@ -311,3 +311,56 @@ test('syncs an existing connection using its stored credentials', async () => {
     healthy: true,
   });
 });
+
+test('credential checks do not clear a degraded sync state or its diagnostic', async () => {
+  let healthUpdate;
+  const service = createConnectionsService({
+    db: {},
+    queries: {
+      findConnectionById: async () => ({
+        id: 'connection-id',
+        workspace_id: 'workspace-id',
+        exchange_code: 'bybit',
+        environment: 'demo',
+        status: 'degraded',
+      }),
+      findActiveCredentialForConnection: async () => ({ id: 'credential-id' }),
+      getHealth: async () => ({
+        state: 'degraded',
+        last_error: 'Wallet permission denied',
+        data_freshness: 'stale',
+      }),
+      upsertHealth: async (health) => {
+        healthUpdate = health;
+      },
+    },
+    rateLimiter: {},
+    credentialVault: {
+      decryptCredentials: () => ({ apiKey: 'key', apiSecret: 'secret' }),
+    },
+    adapterRegistry: {
+      get: () => ({
+        validateCredentials: async () => ({
+          canRead: true,
+          canTrade: false,
+          canWithdraw: false,
+        }),
+      }),
+    },
+    rateLimitCoordinator: {},
+    events: {},
+    audit: {},
+    logger: { warn() {} },
+  });
+
+  const result = await service.testConnection({
+    userId: 'user-id',
+    workspaceId: 'workspace-id',
+    connectionId: 'connection-id',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(healthUpdate.state, 'degraded');
+  assert.equal(healthUpdate.lastError, 'Wallet permission denied');
+  assert.equal(healthUpdate.dataFreshness, 'stale');
+});

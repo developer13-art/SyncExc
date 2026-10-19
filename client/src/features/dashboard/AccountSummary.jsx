@@ -105,7 +105,9 @@ export function AccountSummary({ overview, isLoading, error }) {
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-foreground">
                 {account.equity == null
-                  ? '—'
+                  ? account.balances?.length
+                    ? `${account.balances.length} assets`
+                    : 'No balance data'
                   : formatCurrency(account.equity, account.currency ?? 'USD')}
               </span>
               <ConnectionHealthBadge status={account.healthStatus} />
