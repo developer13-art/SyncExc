@@ -15,6 +15,17 @@ import cors from 'cors';
 import compression from 'compression';
 import config from '../config.js';
 
+export function getAllowedOrigins(serverConfig) {
+  const origins = new Set(serverConfig.server.corsOrigins);
+  if (!serverConfig.isProduction) return origins;
+
+  const domain = serverConfig.app.domain.toLowerCase().replace(/\.$/, '');
+  for (const hostname of [domain, `www.${domain}`, `app.${domain}`, `admin.${domain}`]) {
+    origins.add(`https://${hostname}`);
+  }
+  return origins;
+}
+
 export function applySecurityMiddleware(app) {
   /* -------------------------------------------------------------------------
    * Compression
@@ -33,7 +44,7 @@ export function applySecurityMiddleware(app) {
   /* -------------------------------------------------------------------------
    * CORS
    * ----------------------------------------------------------------------- */
-  const allowedOrigins = new Set(config.server.corsOrigins);
+  const allowedOrigins = getAllowedOrigins(config);
 
   app.use(
     cors({
