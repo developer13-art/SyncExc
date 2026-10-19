@@ -24,7 +24,12 @@ const STATE_CONFIG = {
 };
 
 export function PermissionChecklist({ permissions = {}, className }) {
-  const entries = Object.entries(permissions);
+  const entries = Array.isArray(permissions)
+    ? permissions.map((permission, index) => [
+        permission.key ?? permission.permissionKey ?? String(index),
+        permission.verification ?? permission.status ?? 'unknown',
+      ])
+    : Object.entries(permissions);
 
   if (entries.length === 0) {
     return (

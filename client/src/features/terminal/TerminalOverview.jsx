@@ -66,9 +66,15 @@ export default function TerminalOverview() {
       connections.flatMap((c) =>
         (c.accounts ?? []).map((a) => ({
           ...a,
+          label: [c.label, c.environment, a.accountType ?? a.type]
+            .filter(Boolean)
+            .join(' · '),
+          type: a.type ?? a.accountType,
           connectionId: c.id,
           exchangeName: c.exchangeName,
-          healthStatus: c.health?.status,
+          environment: c.environment,
+          healthStatus:
+            c.status === 'degraded' ? 'degraded' : c.health?.status ?? c.status,
         })),
       ),
     [connections],

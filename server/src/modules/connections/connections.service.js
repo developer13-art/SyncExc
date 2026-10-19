@@ -375,12 +375,14 @@ export function createConnectionsService({
     // Sync instruments
     try {
       const instruments = await adapter.fetchInstruments({ marketType: 'spot' });
-      for (const inst of instruments) {
-        await queries.upsertInstrument(null, {
-          exchangeCode: connection.exchange_code,
-          ...inst,
-        });
-      }
+      await db.tx(async (tx) => {
+        for (const inst of instruments) {
+          await queries.upsertInstrument(tx, {
+            exchangeCode: connection.exchange_code,
+            ...inst,
+          });
+        }
+      });
     } catch (err) {
       logger.warn(
         { errorName: err?.name || 'Error', connectionId: connection.id },

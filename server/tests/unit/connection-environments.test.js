@@ -259,7 +259,8 @@ test('syncs an existing connection using its stored credentials', async () => {
       }),
       insertBalanceSnapshot: async () => ({ id: 'snapshot-id' }),
       insertBalanceItem: async () => {},
-      upsertInstrument: async () => {
+      upsertInstrument: async (tx) => {
+        assert.ok(tx);
         observed.instruments = true;
       },
       upsertHealth: async (health) => {
