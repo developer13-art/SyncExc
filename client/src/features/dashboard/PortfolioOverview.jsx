@@ -33,7 +33,7 @@ export function PortfolioOverview({ overview, isLoading, error, onRetry }) {
             <CardTitle>Portfolio Value</CardTitle>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-semibold text-foreground">
-                {formatCurrency(totalValue, currency)}
+                {overview?.portfolioValue == null ? '—' : formatCurrency(totalValue, currency)}
               </span>
               {change ? (
                 <span

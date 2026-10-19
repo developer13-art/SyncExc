@@ -62,7 +62,7 @@ export default function DashboardOverview() {
     isWorkspaceReady && canViewRisk,
   );
   const connectionsQuery = useConnections(
-    { status: 'active' },
+    {},
     isWorkspaceReady && canViewConnections,
   );
   const signalsQuery = useSignals({ limit: 5 }, isWorkspaceReady);

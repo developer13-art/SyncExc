@@ -191,14 +191,7 @@ export default function ConnectExchange() {
           }
           setConnection(existing);
           setCredentials({});
-          setPermissions(
-            Object.fromEntries(
-              storedPermissions.map((permission) => [
-                permission.key,
-                permission.verification,
-              ]),
-            ),
-          );
+          setPermissions(storedPermissions);
           await queryClient.invalidateQueries({ queryKey: queryKeys.connections.all });
           setConnectionNotice(
             'This connection was already saved. The credentials entered now were not applied; the saved connection is being resumed.',

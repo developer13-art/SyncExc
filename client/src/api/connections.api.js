@@ -45,7 +45,18 @@ export const connectionsApi = {
 
   getHealth: (connectionId) => api.get(endpoints.connections.health(connectionId)),
 
-  getPermissions: (connectionId) => api.get(endpoints.connections.permissions(connectionId)),
+  getPermissions: async (connectionId) => {
+    const permissions = await api.get(endpoints.connections.permissions(connectionId));
+    if (!Array.isArray(permissions)) {
+      return permissions ?? {};
+    }
+    return Object.fromEntries(
+      permissions.map((permission) => [
+        permission.key,
+        permission.verification,
+      ]),
+    );
+  },
 
   suspend: (connectionId, payload) =>
     api.post(endpoints.connections.suspend(connectionId), payload),

@@ -44,7 +44,7 @@ export function ProfitLossWidget({ overview, positions = [], isLoading, error })
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       <StatCard
         label="Portfolio Value"
-        value={formatCurrency(portfolioValue, currency)}
+        value={overview?.portfolioValue == null ? '—' : formatCurrency(portfolioValue, currency)}
         hint={
           overview?.portfolioChange24hPercent !== undefined
             ? `${formatPercent(overview.portfolioChange24hPercent, { showSign: true, already100: true })} in last 24h`

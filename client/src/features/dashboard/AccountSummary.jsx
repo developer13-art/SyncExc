@@ -7,6 +7,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { ConnectionHealthBadge } from '../../components/domain/connection/ConnectionHealthBadge.jsx';
 import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
+import { formatQuantity } from '../../lib/formatters/number.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 export function AccountSummary({ overview, isLoading, error }) {
@@ -91,10 +92,21 @@ export function AccountSummary({ overview, isLoading, error }) {
               <p className="text-2xs uppercase tracking-wide text-muted-foreground">
                 {account.exchangeName} · {account.type ?? 'spot'}
               </p>
+              {account.balances?.length ? (
+                <p className="mt-1 truncate text-2xs text-muted-foreground">
+                  {account.balances
+                    .slice(0, 3)
+                    .map((balance) => `${balance.asset} ${formatQuantity(balance.total, 8)}`)
+                    .join(' · ')}
+                  {account.balances.length > 3 ? ` · +${account.balances.length - 3} more` : ''}
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-foreground">
-                {formatCurrency(account.equity ?? account.balance ?? 0, account.currency ?? 'USD')}
+                {account.equity == null
+                  ? '—'
+                  : formatCurrency(account.equity, account.currency ?? 'USD')}
               </span>
               <ConnectionHealthBadge status={account.healthStatus} />
             </div>
