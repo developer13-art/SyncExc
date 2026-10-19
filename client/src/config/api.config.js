@@ -128,7 +128,8 @@ export const apiConfig = Object.freeze({
       instruments: (exchangeCode) =>
         `/connections/exchanges/${encodeURIComponent(exchangeCode)}/instruments`,
       capabilities: (exchangeId) => `/exchanges/${exchangeId}/capabilities`,
-      connectionRequirements: (exchangeId) => `/exchanges/${exchangeId}/connection-requirements`,
+      connectionRequirements: (exchangeId) =>
+        `/connections/exchanges/${encodeURIComponent(exchangeId)}/connection-requirements`,
     },
     terminal: {
       overview: () => '/terminal/overview',

@@ -56,14 +56,17 @@ export default function ConnectExchange() {
   const { exchanges, isLoading: exchangesLoading, error: exchangesError } = useExchangeRegistry();
   const [requirements, setRequirements] = useState([]);
   const [environmentOptions, setEnvironmentOptions] = useState([]);
+  const [requirementsError, setRequirementsError] = useState(null);
 
   useEffect(() => {
     if (!selectedExchange) {
       setRequirements([]);
       setEnvironmentOptions([]);
+      setRequirementsError(null);
       return;
     }
     let cancelled = false;
+    setRequirementsError(null);
     connectionsApi
       .getConnectionRequirements(selectedExchange.id)
       .then((result) => {
@@ -78,11 +81,11 @@ export default function ConnectExchange() {
       })
       .catch(() => {
         if (!cancelled) {
-          setRequirements([
-            { name: 'apiKey', label: 'API Key', type: 'text', required: true },
-            { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
-          ]);
-          setEnvironmentOptions([{ value: 'live', label: 'Real account' }]);
+          setRequirements([]);
+          setEnvironmentOptions([]);
+          setRequirementsError(
+            'Exchange connection options could not be loaded. Refresh the page and try again.',
+          );
         }
       });
     return () => {
@@ -112,6 +115,10 @@ export default function ConnectExchange() {
   };
 
   const handleCredentialSubmit = async () => {
+    if (requirementsError) {
+      setFormError(requirementsError);
+      return;
+    }
     setFormError(null);
     setCredentialErrors({});
 
@@ -240,7 +247,7 @@ export default function ConnectExchange() {
                 onSubmit={handleCredentialSubmit}
                 onCancel={() => setStep('exchange')}
                 isSubmitting={submitting}
-                formError={formError}
+                formError={formError ?? requirementsError}
               />
             </div>
           ) : step === 'verify' ? (

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { test } from 'node:test';
 import { createBybitAdapter } from '../../src/modules/connections/adapters/bybit.adapter.js';
 
@@ -92,3 +93,57 @@ test('routes Bybit demo credentials to the demo API', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('signs Bybit GET requests using the exact URL query string', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestUrl;
+  let requestHeaders;
+  globalThis.fetch = async (url, options) => {
+    requestUrl = String(url);
+    requestHeaders = options.headers;
+    return {
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          retCode: 0,
+          result: { list: [] },
+        }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    const credentials = {
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'demo',
+    };
+
+    await adapter.validateCredentials(credentials);
+    assert.equal(requestHeaders['X-BAPI-SIGN'], expectedSignature({
+      apiKey: credentials.apiKey,
+      apiSecret: credentials.apiSecret,
+      timestamp: requestHeaders['X-BAPI-TIMESTAMP'],
+      query: '',
+    }));
+
+    await adapter.fetchBalances(credentials);
+    const query = new URL(requestUrl).searchParams.toString();
+    assert.equal(query, 'accountType=UNIFIED');
+    assert.equal(requestHeaders['X-BAPI-SIGN'], expectedSignature({
+      apiKey: credentials.apiKey,
+      apiSecret: credentials.apiSecret,
+      timestamp: requestHeaders['X-BAPI-TIMESTAMP'],
+      query,
+    }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function expectedSignature({ apiKey, apiSecret, timestamp, query, recvWindow = '5000' }) {
+  return crypto
+    .createHmac('sha256', apiSecret)
+    .update(`${timestamp}${apiKey}${recvWindow}${query}`)
+    .digest('hex');
+}

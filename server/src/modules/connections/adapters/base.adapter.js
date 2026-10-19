@@ -75,6 +75,7 @@ export function createBaseAdapter({ exchangeCode, restBaseUrl, config, logger })
               );
               err.statusCode = res.status;
               err.exchangeResponse = json;
+              err.retryable = res.status === 429 || res.status >= 500;
               throw err;
             }
 
@@ -83,7 +84,12 @@ export function createBaseAdapter({ exchangeCode, restBaseUrl, config, logger })
             clearTimeout(timer);
           }
         },
-        { attempts: config?.exchange?.maxRetries || 3, baseMs: 500, maxMs: 8000 }
+        {
+          attempts: config?.exchange?.maxRetries || 3,
+          baseMs: 500,
+          maxMs: 8000,
+          shouldRetry: (err) => err.retryable !== false,
+        }
       );
     },
 

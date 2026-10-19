@@ -5,7 +5,14 @@
  * balance sync, instrument sync, health tracking.
  */
 
-import { AppError, ValidationError, ConflictError, NotFoundError, AuthorizationError } from '../../lib/errors.js';
+import {
+  AppError,
+  ExternalProviderError,
+  ValidationError,
+  ConflictError,
+  NotFoundError,
+  AuthorizationError,
+} from '../../lib/errors.js';
 import { CONNECTION_STATUS, EXCHANGE_ENVIRONMENTS } from '@syncexc/shared';
 
 export function createConnectionsService({
@@ -173,8 +180,58 @@ export function createConnectionsService({
         environment: selectedEnvironment,
       });
     } catch (err) {
-      logger.warn({ err, exchange }, 'Credential validation failed');
-      throw new ValidationError('Exchange credentials are invalid or lack required permissions');
+      const providerRawMessage =
+        typeof err?.exchangeResponse?.raw === 'string' ? err.exchangeResponse.raw : '';
+      if (
+        err?.statusCode === 403 &&
+        /CloudFront distribution is configured to block access from your country/i.test(
+          providerRawMessage
+        )
+      ) {
+        logger.warn(
+          { statusCode: 403, exchange },
+          'Exchange API is blocked from the server region'
+        );
+        throw new ExternalProviderError(
+          `${exchange} is blocking API requests from the server's current country. This is a provider region restriction, not a credential problem. Deploy in a region where the exchange allows API access, subject to its terms and local law, or use another supported exchange.`,
+          {
+            provider: exchange,
+            status: 403,
+            retryable: false,
+            details: { environment: selectedEnvironment },
+          }
+        );
+      }
+      if (err?.statusCode === 451 || err?.exchangeResponse?.code === 451) {
+        logger.warn(
+          { statusCode: 451, exchange },
+          'Exchange API is unavailable from this server region'
+        );
+        throw new ExternalProviderError(
+          `${exchange} has restricted API access from the server's current region. This is a provider location restriction, not an invalid API key. Contact the provider or use an exchange available for your jurisdiction and server location.`,
+          {
+            provider: exchange,
+            status: 451,
+            retryable: false,
+            details: { environment: selectedEnvironment },
+          }
+        );
+      }
+      const providerMessage = typeof err?.exchangeResponse?.retMsg === 'string'
+        ? err.exchangeResponse.retMsg
+        : typeof err?.message === 'string' && !/api.?key|secret|sign|signature|credential/i.test(err.message)
+          ? err.message.slice(0, 200)
+          : null;
+      logger.warn(
+        { errorCode: err?.exchangeResponse?.retCode ?? err?.statusCode, exchange },
+        'Credential validation failed'
+      );
+      throw new ValidationError(
+        providerMessage
+          ? `Exchange rejected the credentials: ${providerMessage}`
+          : 'Exchange rejected the credentials. Check the selected account mode, API key, secret, and read permissions.',
+        { exchange, environment: selectedEnvironment }
+      );
     }
 
     if (validationResult.canWithdraw) {

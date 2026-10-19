@@ -219,14 +219,17 @@ export function sleep(ms) {
 }
 
 /** Retry an async function with exponential backoff. */
-export async function retry(fn, { attempts = 5, baseMs = 500, maxMs = 30000 } = {}) {
+export async function retry(
+  fn,
+  { attempts = 5, baseMs = 500, maxMs = 30000, shouldRetry } = {}
+) {
   let lastError;
   for (let i = 0; i < attempts; i += 1) {
     try {
       return await fn(i);
     } catch (err) {
       lastError = err;
-      if (i === attempts - 1) break;
+      if (i === attempts - 1 || (shouldRetry && !shouldRetry(err, i))) break;
       await sleep(backoffDelay(i, baseMs, maxMs));
     }
   }

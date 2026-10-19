@@ -23,15 +23,19 @@ export function createBybitAdapter({ config, logger }) {
     logger,
   });
 
-  function signRequest({ apiKey, apiSecret, params, timestamp, recvWindow = 5000 }) {
-    const paramStr = typeof params === 'string' ? params : JSON.stringify(params || {});
+  function signRequest({ apiKey, apiSecret, params, timestamp, recvWindow = 5000, method = 'GET' }) {
+    const paramStr = typeof params === 'string'
+      ? params
+      : method === 'GET'
+        ? new URLSearchParams(params || {}).toString()
+        : JSON.stringify(params || {});
     const payload = `${timestamp}${apiKey}${recvWindow}${paramStr}`;
     return crypto.createHmac('sha256', apiSecret).update(payload).digest('hex');
   }
 
-  function signedHeaders({ apiKey, apiSecret, params }) {
+  function signedHeaders({ apiKey, apiSecret, params, method = 'GET' }) {
     const timestamp = Date.now();
-    const signature = signRequest({ apiKey, apiSecret, params, timestamp });
+    const signature = signRequest({ apiKey, apiSecret, params, timestamp, method });
     return {
       'X-BAPI-API-KEY': apiKey,
       'X-BAPI-TIMESTAMP': String(timestamp),
@@ -56,7 +60,7 @@ export function createBybitAdapter({ config, logger }) {
 
     async validateCredentials({ apiKey, apiSecret, environment }) {
       const path = '/v5/user/query-api';
-      const headers = signedHeaders({ apiKey, apiSecret, params: {} });
+      const headers = signedHeaders({ apiKey, apiSecret, params: '' });
       const data = await this.fetchSigned({
         url: `${getBaseUrl(environment)}${path}`,
         method: 'GET',
@@ -83,8 +87,8 @@ export function createBybitAdapter({ config, logger }) {
     async fetchBalances({ apiKey, apiSecret, accountType = 'unified', environment }) {
       const path = '/v5/account/wallet-balance';
       const params = { accountType: accountType === 'unified' ? 'UNIFIED' : 'SPOT' };
-      const headers = signedHeaders({ apiKey, apiSecret, params });
       const query = new URLSearchParams(params).toString();
+      const headers = signedHeaders({ apiKey, apiSecret, params: query });
       const data = await this.fetchSigned({
         url: `${getBaseUrl(environment)}${path}?${query}`,
         method: 'GET',
@@ -138,7 +142,7 @@ export function createBybitAdapter({ config, logger }) {
       if (order.reduceOnly) body.reduceOnly = true;
       if (order.timeInForce) body.timeInForce = order.timeInForce;
 
-      const headers = signedHeaders({ apiKey, apiSecret, params: body });
+      const headers = signedHeaders({ apiKey, apiSecret, params: body, method: 'POST' });
       const data = await this.fetchSigned({
         url: `${getBaseUrl(environment)}${path}`,
         method: 'POST',
@@ -168,7 +172,7 @@ export function createBybitAdapter({ config, logger }) {
         symbol: instrument,
         orderId: exchangeOrderId,
       };
-      const headers = signedHeaders({ apiKey, apiSecret, params: body });
+      const headers = signedHeaders({ apiKey, apiSecret, params: body, method: 'POST' });
       const data = await this.fetchSigned({
         url: `${getBaseUrl(environment)}/v5/order/cancel`,
         method: 'POST',
@@ -192,7 +196,7 @@ export function createBybitAdapter({ config, logger }) {
         symbol: instrument,
         orderId: exchangeOrderId,
       }).toString();
-      const headers = signedHeaders({ apiKey, apiSecret, params: {} });
+      const headers = signedHeaders({ apiKey, apiSecret, params: query });
       const data = await this.fetchSigned({
         url: `${getBaseUrl(environment)}/v5/order/realtime?${query}`,
         method: 'GET',
@@ -214,7 +218,7 @@ export function createBybitAdapter({ config, logger }) {
       const params = { category: 'linear', openOnly: '0' };
       if (instrument) params.symbol = instrument;
       const query = new URLSearchParams(params).toString();
-      const headers = signedHeaders({ apiKey, apiSecret, params });
+      const headers = signedHeaders({ apiKey, apiSecret, params: query });
       const data = await this.fetchSigned({
         url: `${getBaseUrl(environment)}/v5/order/realtime?${query}`,
         method: 'GET',
@@ -237,7 +241,7 @@ export function createBybitAdapter({ config, logger }) {
     async fetchPositions({ apiKey, apiSecret, environment }) {
       const params = { category: 'linear', settleCoin: 'USDT' };
       const query = new URLSearchParams(params).toString();
-      const headers = signedHeaders({ apiKey, apiSecret, params });
+      const headers = signedHeaders({ apiKey, apiSecret, params: query });
       const data = await this.fetchSigned({
         url: `${getBaseUrl(environment)}/v5/position/list?${query}`,
         method: 'GET',
