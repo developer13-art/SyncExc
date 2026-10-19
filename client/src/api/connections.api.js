@@ -39,8 +39,6 @@ export const connectionsApi = {
   rotateCredentials: (connectionId, payload) =>
     api.post(endpoints.connections.rotate(connectionId), payload),
 
-  sync: (connectionId) => api.post(endpoints.connections.sync(connectionId)),
-
   listAccounts: (connectionId) => api.get(endpoints.connections.accounts(connectionId)),
 
   listBalances: (connectionId) => api.get(endpoints.connections.balances(connectionId)),

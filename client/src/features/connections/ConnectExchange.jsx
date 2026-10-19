@@ -246,7 +246,6 @@ export default function ConnectExchange() {
     }
     setSubmitting(true);
     try {
-      await connectionsApi.sync(connection.id);
       const testResult = await connectionsApi.test(connection.id);
       if (!testResult.ok) {
         throw new Error(testResult.error || 'Exchange connection test failed.');
