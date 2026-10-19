@@ -31,6 +31,7 @@ export function createTerminalModule({ services }) {
   const service = createTerminalService({
     db: services.db,
     queries,
+    marketData: services.connections.marketData,
     events: services.events,
     audit: services.audit,
     logger,

@@ -10,8 +10,12 @@ function requireInProduction(value, name, fallback) {
   return value ?? fallback ?? '';
 }
 
-const baseURL = requireInProduction(env.VITE_API_URL, 'VITE_API_URL', 'http://localhost:4000/api/v1');
-const apiOrigin = new URL(baseURL, 'http://localhost:4000');
+const baseURL = env.DEV
+  ? (env.VITE_API_URL ?? '/api/v1')
+  : requireInProduction(env.VITE_API_URL, 'VITE_API_URL', '');
+const browserOrigin =
+  typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000';
+const apiOrigin = new URL(baseURL || '/', browserOrigin);
 apiOrigin.protocol = apiOrigin.protocol === 'https:' ? 'wss:' : 'ws:';
 apiOrigin.pathname = '/ws';
 apiOrigin.search = '';
@@ -115,7 +119,7 @@ export const apiConfig = Object.freeze({
       rotate: (id) => `/connections/${id}/rotate-credentials`,
       sync: (id) => `/connections/${id}/sync`,
       accounts: (id) => `/connections/${id}/accounts`,
-      balances: (id) => `/connections/${id}/balances`,
+      balances: (accountId) => `/connections/accounts/${accountId}/balances`,
       health: (id) => `/connections/${id}/health`,
       permissions: (id) => `/connections/${id}/permissions`,
       suspend: (id) => `/connections/${id}/suspend`,
@@ -131,8 +135,14 @@ export const apiConfig = Object.freeze({
       accounts: (workspaceId) => `/workspaces/${workspaceId}/terminal/accounts`,
       markets: (_workspaceId, exchangeCode) =>
         `/connections/exchanges/${encodeURIComponent(exchangeCode)}/instruments`,
+      marketData: (_workspaceId, exchangeCode, symbol) =>
+        `/terminal/markets/${encodeURIComponent(exchangeCode)}/${encodeURIComponent(symbol)}/data`,
       orders: (workspaceId) => `/terminal/orders`,
       order: (_workspaceId, orderId) => `/terminal/orders/${orderId}`,
+      confirmExecution: (_workspaceId, executionRequestId) =>
+        `/terminal/executions/${executionRequestId}/confirm`,
+      cancelExecutionConfirmation: (_workspaceId, executionRequestId) =>
+        `/terminal/executions/${executionRequestId}/cancel-confirmation`,
       cancelOrder: (workspaceId, orderId) =>
         `/workspaces/${workspaceId}/terminal/orders/${orderId}/cancel`,
       positions: () => '/terminal/positions',

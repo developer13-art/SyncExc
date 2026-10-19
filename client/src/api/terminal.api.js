@@ -17,6 +17,13 @@ export const terminalApi = {
     return api.get(endpoints.terminal.markets(workspaceId, exchangeCode), { params: query });
   },
 
+  getMarketData: (workspaceId, { exchangeCode, symbol, ...params }) => {
+    if (!exchangeCode || !symbol) {
+      throw new Error('An exchange and instrument are required to load market data.');
+    }
+    return api.get(endpoints.terminal.marketData(workspaceId, exchangeCode, symbol), { params });
+  },
+
   listOrders: (workspaceId, params) =>
     api.getPaged(endpoints.terminal.orders(workspaceId), { params }),
 
@@ -25,6 +32,12 @@ export const terminalApi = {
 
   submitOrder: (workspaceId, payload) =>
     api.post(endpoints.terminal.orders(workspaceId), payload),
+
+  confirmExecution: (workspaceId, executionRequestId) =>
+    api.post(endpoints.terminal.confirmExecution(workspaceId, executionRequestId)),
+
+  cancelExecutionConfirmation: (workspaceId, executionRequestId) =>
+    api.post(endpoints.terminal.cancelExecutionConfirmation(workspaceId, executionRequestId)),
 
   cancelOrder: (workspaceId, orderId, payload) =>
     api.post(endpoints.terminal.cancelOrder(workspaceId, orderId), payload),

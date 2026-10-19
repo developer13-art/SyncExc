@@ -2,9 +2,9 @@ import { RefreshCw } from 'lucide-react';
 
 import { DataTable } from '../../components/ui/DataTable.jsx';
 import { IconButton } from '../../components/ui/IconButton.jsx';
-import { useQuery } from '@tanstack/react-query';
-import { connectionsApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
+import { connectionsApi } from '../../api/index.js';
+import { useQuery } from '@tanstack/react-query';
 import { formatQuantity } from '../../lib/formatters/number.formatter.js';
 import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
@@ -13,7 +13,23 @@ import { cn } from '../../lib/utils/cn.util.js';
 export function ConnectionBalances({ connectionId }) {
   const balancesQuery = useQuery({
     queryKey: queryKeys.connections.balances(connectionId),
-    queryFn: () => connectionsApi.listBalances(connectionId),
+    queryFn: async () => {
+      const accounts = await connectionsApi.listAccounts(connectionId);
+      const accountBalances = await Promise.all(
+        accounts.map(async (account) => {
+          const snapshot = await connectionsApi.listBalances(account.id);
+          return (snapshot.items ?? []).map((item) => ({
+            ...item,
+            accountId: account.id,
+            accountType: account.accountType,
+            available: item.free,
+            reserved: item.used,
+            updatedAt: snapshot.observedAt,
+          }));
+        }),
+      );
+      return accountBalances.flat();
+    },
     enabled: Boolean(connectionId),
     refetchInterval: 60_000,
   });
@@ -21,6 +37,11 @@ export function ConnectionBalances({ connectionId }) {
   const balances = balancesQuery.data ?? [];
 
   const columns = [
+    {
+      key: 'accountType',
+      label: 'Account',
+      render: (row) => <span className="text-muted-foreground">{row.accountType ?? '—'}</span>,
+    },
     {
       key: 'asset',
       label: 'Asset',

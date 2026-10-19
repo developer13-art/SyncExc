@@ -27,6 +27,7 @@ import { createConnectionsRoutes } from './connections.routes.js';
 import { createAdapterRegistry } from './adapters/index.js';
 import { createRateLimitCoordinator } from './rate-limit-coordinator.service.js';
 import { createExchangeStreams } from './streams.js';
+import { createMarketDataService } from './market-data.service.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createConnectionsModule({ services }) {
@@ -39,6 +40,7 @@ export function createConnectionsModule({ services }) {
     rateLimiter: services.rateLimiter,
     logger,
   });
+  const marketData = createMarketDataService({ logger });
 
   const service = createConnectionsService({
     db: services.db,
@@ -64,6 +66,7 @@ export function createConnectionsModule({ services }) {
   const routes = createConnectionsRoutes({ service, middleware: services.middleware });
 
   const publicApi = {
+    marketData,
     getConnection: (connectionId) => service.getConnection(connectionId),
     getActiveConnectionForAccount: (accountId) => service.getActiveConnectionForAccount(accountId),
     getAdapter: (exchangeCode) => adapterRegistry.get(exchangeCode),
@@ -78,6 +81,7 @@ export function createConnectionsModule({ services }) {
     service,
     queries,
     adapterRegistry,
+    marketData,
     credentialVault,
     rateLimitCoordinator,
     streams,

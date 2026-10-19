@@ -51,6 +51,7 @@ export const queryKeys = {
     overview: (workspaceId) => ['terminal', 'overview', workspaceId],
     accounts: (workspaceId, params) => ['terminal', 'accounts', workspaceId, params],
     markets: (workspaceId, params) => ['terminal', 'markets', workspaceId, params],
+    marketData: (workspaceId, params) => ['terminal', 'market-data', workspaceId, params],
     orders: (workspaceId, params) => ['terminal', 'orders', workspaceId, params],
     order: (workspaceId, id) => ['terminal', 'order', workspaceId, id],
     positions: (workspaceId, params) => ['terminal', 'positions', workspaceId, params],

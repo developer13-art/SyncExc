@@ -32,8 +32,10 @@ export function createConnectionsController({ service }) {
     },
 
     async getConnection(req, res) {
-      const connection = await service.getConnection(req.params.connectionId);
-      if (!connection) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Connection not found' } });
+      const connection = await service.requireConnectionAccess({
+        connectionId: req.params.connectionId,
+        workspaceId: req.workspace.id,
+      });
       return success(res, serializeConnection(connection));
     },
 
@@ -52,6 +54,7 @@ export function createConnectionsController({ service }) {
     async testConnection(req, res) {
       const result = await service.testConnection({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         connectionId: req.params.connectionId,
       });
       return success(res, result);
@@ -60,6 +63,7 @@ export function createConnectionsController({ service }) {
     async rotateCredentials(req, res) {
       const result = await service.rotateCredentials({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         connectionId: req.params.connectionId,
         credentials: req.body.credentials,
         reason: req.body.reason,
@@ -70,6 +74,7 @@ export function createConnectionsController({ service }) {
     async suspendConnection(req, res) {
       const result = await service.suspendConnection({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         connectionId: req.params.connectionId,
         reason: req.body.reason,
       });
@@ -79,6 +84,7 @@ export function createConnectionsController({ service }) {
     async disconnectConnection(req, res) {
       const result = await service.disconnectConnection({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         connectionId: req.params.connectionId,
       });
       return success(res, result);
@@ -87,6 +93,7 @@ export function createConnectionsController({ service }) {
     async listAccounts(req, res) {
       const accounts = await service.listAccounts({
         connectionId: req.params.connectionId,
+        workspaceId: req.workspace.id,
       });
       return success(res, accounts.map(serializeAccount));
     },
@@ -94,6 +101,7 @@ export function createConnectionsController({ service }) {
     async fetchBalances(req, res) {
       const balances = await service.fetchBalances({
         accountId: req.params.accountId,
+        workspaceId: req.workspace.id,
       });
       return success(res, balances);
     },
@@ -109,8 +117,21 @@ export function createConnectionsController({ service }) {
     async getHealth(req, res) {
       const health = await service.getHealth({
         connectionId: req.params.connectionId,
+        workspaceId: req.workspace.id,
       });
       return success(res, health);
+    },
+
+    async listPermissions(req, res) {
+      const permissions = await service.listPermissions({
+        connectionId: req.params.connectionId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, permissions.map((permission) => ({
+        key: permission.permission_key,
+        verification: permission.verification,
+        lastCheckedAt: permission.last_checked_at,
+      })));
     },
   };
 }

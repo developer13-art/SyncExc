@@ -86,6 +86,64 @@ export function createConnectionsService({
     return { hasAccess: true, scope: 'shared', allowedOperations: allowed };
   }
 
+  async function requireConnectionAccess({
+    connectionId,
+    workspaceId,
+    operation = 'view_status',
+    allowShared = true,
+  }) {
+    const connection = await queries.findConnectionById(connectionId);
+    if (!connection) throw new NotFoundError('Connection');
+    if (connection.workspace_id === workspaceId) return connection;
+
+    if (allowShared) {
+      const grant = await db.query(
+        `
+        SELECT allowed_operations
+        FROM connection_sharing_grants
+        WHERE connection_id = $1
+          AND recipient_workspace_id = $2
+          AND status = 'active'
+          AND (expires_at IS NULL OR expires_at > now())
+        LIMIT 1
+        `,
+        [connectionId, workspaceId]
+      );
+      const allowed = grant.rows[0]?.allowed_operations || [];
+      if (allowed.includes(operation)) return connection;
+    }
+
+    // Do not disclose whether an inaccessible connection exists.
+    throw new NotFoundError('Connection');
+  }
+
+  async function requireAccountAccess({ accountId, workspaceId, operation = 'view_balances' }) {
+    const account = await queries.findAccountById(accountId);
+    if (!account) throw new NotFoundError('Account');
+    await requireConnectionAccess({
+      connectionId: account.connection_id,
+      workspaceId,
+      operation,
+    });
+    return account;
+  }
+
+  async function requireVerifiedPermission({ connectionId, permissionKey }) {
+    const permissions = await queries.listConnectionPermissions(connectionId);
+    const permission = permissions.find((item) => item.permission_key === permissionKey);
+    if (permission?.verification !== 'verified') {
+      throw new ConflictError(
+        permission?.verification === 'missing_permission'
+          ? `Exchange connection is missing the ${permissionKey} permission`
+          : `The ${permissionKey} permission could not be verified`,
+        permission?.verification === 'missing_permission'
+          ? 'EXCHANGE_PERMISSION_MISSING'
+          : 'EXCHANGE_PERMISSION_UNVERIFIED'
+      );
+    }
+    return permission;
+  }
+
   /* ===========================================================================
    * CONNECTION MANAGEMENT
    * ======================================================================== */
@@ -113,6 +171,12 @@ export function createConnectionsService({
       throw new ValidationError(
         'API key has withdrawal permission. Please disable withdrawals on the exchange and create a new key.',
         'WITHDRAWAL_PERMISSION_ENABLED'
+      );
+    }
+    if (!validationResult.canRead) {
+      throw new ValidationError(
+        'The exchange key must have verified read access to connect an account.',
+        'READ_PERMISSION_REQUIRED'
       );
     }
 
@@ -163,21 +227,39 @@ export function createConnectionsService({
 
       return connection;
     }).then(async (connection) => {
-      // Outside the transaction: discover accounts, sync instruments, balances
+      // Keep the connection out of the healthy/active state until account
+      // discovery has completed. Partial market or balance sync is visible as
+      // degraded rather than being presented as a healthy connection.
       try {
         await discoverAccountsAndSync(connection, credentials, adapter);
       } catch (err) {
-        logger.error({ err, connectionId: connection.id }, 'Post-create sync failed');
+        logger.warn(
+          { errorName: err?.name || 'Error', connectionId: connection.id },
+          'Post-create exchange sync failed'
+        );
+        await queries.updateConnection(connection.id, { status: 'degraded' });
+        await queries.upsertHealth({
+          connectionId: connection.id,
+          state: 'degraded',
+          lastError: 'Initial account synchronization failed. Test or reconnect this exchange.',
+          dataFreshness: 'stale',
+        });
+        return { ...connection, status: 'degraded' };
       }
 
-      await queries.updateConnection(connection.id, { status: 'active', lastValidatedAt: new Date() });
-
-      return connection;
+      const activeConnection = await queries.updateConnection(connection.id, {
+        status: 'active',
+        lastValidatedAt: new Date(),
+      });
+      return activeConnection || { ...connection, status: 'active' };
     });
   }
 
   async function discoverAccountsAndSync(connection, credentials, adapter) {
     const accounts = await adapter.discoverAccounts(credentials);
+    if (!Array.isArray(accounts) || accounts.length === 0) {
+      throw new Error('Exchange did not return any discoverable accounts');
+    }
     for (const acc of accounts) {
       await db.tx(async (tx) => {
         const account = await queries.insertAccount(tx, {
@@ -209,9 +291,14 @@ export function createConnectionsService({
           }
         } catch (err) {
           logger.error(
-            { err, connectionId: connection.id, accountType: acc.accountType },
+            {
+              errorName: err?.name || 'Error',
+              connectionId: connection.id,
+              accountType: acc.accountType,
+            },
             'Balance sync failed during account discovery'
           );
+          throw err;
         }
       });
     }
@@ -226,7 +313,11 @@ export function createConnectionsService({
         });
       }
     } catch (err) {
-      logger.error({ err, connectionId: connection.id }, 'Instrument sync failed');
+      logger.warn(
+        { errorName: err?.name || 'Error', connectionId: connection.id },
+        'Instrument sync failed'
+      );
+      throw err;
     }
 
     await queries.upsertHealth({
@@ -238,9 +329,12 @@ export function createConnectionsService({
     });
   }
 
-  async function testConnection({ userId, connectionId }) {
-    const connection = await queries.findConnectionById(connectionId);
-    if (!connection) throw new NotFoundError('Connection');
+  async function testConnection({ userId, workspaceId, connectionId }) {
+    const connection = await requireConnectionAccess({
+      connectionId,
+      workspaceId,
+      operation: 'view_status',
+    });
 
     const credentials = await loadCredentials(connectionId);
     const adapter = adapterRegistry.get(connection.exchange_code);
@@ -256,18 +350,28 @@ export function createConnectionsService({
       });
       return { ok: true, ...result };
     } catch (err) {
+      logger.warn(
+        { errorName: err?.name || 'Error', connectionId },
+        'Exchange connection test failed'
+      );
       await queries.upsertHealth({
         connectionId,
         state: 'unavailable',
-        lastError: err.message,
+        lastError: 'Exchange test failed. Check credentials, permissions, and exchange availability.',
       });
-      return { ok: false, error: err.message };
+      return {
+        ok: false,
+        error: 'Exchange test failed. Check credentials, permissions, and exchange availability.',
+      };
     }
   }
 
-  async function rotateCredentials({ userId, connectionId, credentials, reason }) {
-    const connection = await queries.findConnectionById(connectionId);
-    if (!connection) throw new NotFoundError('Connection');
+  async function rotateCredentials({ userId, workspaceId, connectionId, credentials, reason }) {
+    const connection = await requireConnectionAccess({
+      connectionId,
+      workspaceId,
+      allowShared: false,
+    });
 
     const adapter = adapterRegistry.get(connection.exchange_code);
     const validation = await adapter.validateCredentials(credentials);
@@ -294,6 +398,17 @@ export function createConnectionsService({
         keyVersion: encrypted.keyVersion,
       });
 
+      await queries.upsertConnectionPermission({
+        connectionId,
+        permissionKey: 'account.read',
+        verification: validation.canRead ? 'verified' : 'missing_permission',
+      });
+      await queries.upsertConnectionPermission({
+        connectionId,
+        permissionKey: 'trading',
+        verification: validation.canTrade ? 'verified' : 'missing_permission',
+      });
+
       await queries.insertCredentialRotation(tx, {
         connectionId,
         previousCredentialId: previous?.id || null,
@@ -318,9 +433,12 @@ export function createConnectionsService({
     });
   }
 
-  async function suspendConnection({ userId, connectionId, reason }) {
-    const connection = await queries.findConnectionById(connectionId);
-    if (!connection) throw new NotFoundError('Connection');
+  async function suspendConnection({ userId, workspaceId, connectionId, reason }) {
+    const connection = await requireConnectionAccess({
+      connectionId,
+      workspaceId,
+      allowShared: false,
+    });
 
     return db.tx(async (tx) => {
       await tx.query(
@@ -351,9 +469,12 @@ export function createConnectionsService({
     });
   }
 
-  async function disconnectConnection({ userId, connectionId }) {
-    const connection = await queries.findConnectionById(connectionId);
-    if (!connection) throw new NotFoundError('Connection');
+  async function disconnectConnection({ userId, workspaceId, connectionId }) {
+    const connection = await requireConnectionAccess({
+      connectionId,
+      workspaceId,
+      allowShared: false,
+    });
 
     const credential = await queries.findActiveCredentialForConnection(connectionId);
 
@@ -381,24 +502,63 @@ export function createConnectionsService({
   }
 
   async function listConnections({ userId, workspaceId }) {
-    return queries.listConnectionsForWorkspace(workspaceId, { includeShared: true });
+    const connections = await queries.listConnectionsForWorkspace(workspaceId, { includeShared: true });
+    return Promise.all(connections.map(async (connection) => {
+      const [accounts, health, exchange] = await Promise.all([
+        connection.is_shared && !connection.allowed_operations?.includes('view_balances')
+          ? Promise.resolve([])
+          : queries.listAccountsForConnection(connection.id),
+        queries.getHealth(connection.id),
+        queries.findExchangeByCode(connection.exchange_code),
+      ]);
+      return {
+        ...connection,
+        accounts,
+        account_count: accounts.length,
+        exchange_name: exchange?.display_name || connection.exchange_code,
+        health: health
+          ? {
+              status: health.state,
+              lastSuccessfulSync: health.last_successful_sync,
+              dataFreshness: health.data_freshness,
+            }
+          : null,
+      };
+    }));
   }
 
-  async function listAccounts({ connectionId }) {
+  async function listAccounts({ connectionId, workspaceId }) {
+    await requireConnectionAccess({
+      connectionId,
+      workspaceId,
+      operation: 'view_balances',
+    });
     return queries.listAccountsForConnection(connectionId);
   }
 
-  async function fetchBalances({ accountId }) {
+  async function fetchBalances({ accountId, workspaceId }) {
+    await requireAccountAccess({ accountId, workspaceId });
     const snapshot = await queries.getLatestBalanceSnapshot(accountId);
-    if (!snapshot) return { items: [], observedAt: null };
+    if (!snapshot) return { items: [], observedAt: null, freshness: 'unknown' };
     const items = await queries.listBalanceItemsForSnapshot(snapshot.id);
+    const observedAt = new Date(snapshot.observed_at);
+    const freshness = Number.isNaN(observedAt.getTime())
+      ? 'unknown'
+      : Date.now() - observedAt.getTime() > 60_000
+        ? 'stale'
+        : 'current';
     return {
       observedAt: snapshot.observed_at,
+      receivedAt: snapshot.received_at,
+      freshness,
       items: items.map((i) => ({
         asset: i.asset,
         free: i.free,
+        available: i.free,
         used: i.used,
+        reserved: i.used,
         total: i.total,
+        updatedAt: snapshot.observed_at,
       })),
     };
   }
@@ -408,8 +568,14 @@ export function createConnectionsService({
     return rows;
   }
 
-  async function getHealth({ connectionId }) {
+  async function getHealth({ connectionId, workspaceId }) {
+    await requireConnectionAccess({ connectionId, workspaceId });
     return queries.getHealth(connectionId);
+  }
+
+  async function listPermissions({ connectionId, workspaceId }) {
+    await requireConnectionAccess({ connectionId, workspaceId });
+    return queries.listConnectionPermissions(connectionId);
   }
 
   /* ===========================================================================
@@ -418,6 +584,9 @@ export function createConnectionsService({
 
   return {
     getConnection,
+    requireConnectionAccess,
+    requireAccountAccess,
+    requireVerifiedPermission,
     getActiveConnectionForAccount,
     getAdapter,
     getInstrument,
@@ -434,6 +603,7 @@ export function createConnectionsService({
     fetchBalances,
     listInstruments,
     getHealth,
+    listPermissions,
   };
 }
 

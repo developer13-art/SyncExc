@@ -16,9 +16,30 @@ const OrdersQuerySchema = PaginationSchema.keys({
   accountId: UuidSchema.optional(),
 });
 
+const MarketDataParamsSchema = Joi.object({
+  exchangeCode: Joi.string().valid('binance', 'bybit', 'bitget', 'okx').required(),
+  symbol: Joi.string().pattern(/^[A-Za-z0-9._-]{3,48}$/).required(),
+});
+
+const MarketDataQuerySchema = Joi.object({
+  marketType: Joi.string().valid('spot', 'futures', 'perpetual').default('spot'),
+  timeframe: Joi.string().valid('1m', '5m', '15m', '1h', '4h', '1d').default('1h'),
+  limit: Joi.number().integer().min(25).max(300).default(120),
+});
+
 export function createTerminalRoutes({ service, orderSubmissionService, portfolioService, middleware }) {
   const controller = createTerminalController({ service, orderSubmissionService, portfolioService });
   const router = Router();
+
+  router.get(
+    '/markets/:exchangeCode/:symbol/data',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('trading.monitor'),
+    middleware.validateParams(MarketDataParamsSchema),
+    middleware.validateQuery(MarketDataQuerySchema),
+    middleware.asyncHandler(controller.getMarketData)
+  );
 
   /* ---------------------------------------------------------------------------
    * Overview
@@ -74,7 +95,17 @@ export function createTerminalRoutes({ service, orderSubmissionService, portfoli
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.requirePermission('trading.approve_execution'),
+    middleware.validateParams(Joi.object({ executionRequestId: UuidSchema.required() })),
     middleware.asyncHandler(controller.confirmOrder)
+  );
+
+  router.post(
+    '/executions/:executionRequestId/cancel-confirmation',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('trading.request_execution'),
+    middleware.validateParams(Joi.object({ executionRequestId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.cancelConfirmation)
   );
 
   router.get(

@@ -48,7 +48,7 @@ export function createOrderSubmissionService({
    * @param {string} [params.clientOrderId]
    * @param {string} params.idempotencyKey
    */
-  async function submit(params) {
+  async function submit(params, { confirmedExecutionRequestId = null } = {}) {
     const {
       userId,
       workspaceId,
@@ -69,6 +69,7 @@ export function createOrderSubmissionService({
 
     // 1. Idempotency check — return prior result if the key exists
     const existing = await queries.findExecutionRequestByKey(idempotencyKey);
+    let approvedRequest = null;
     if (existing) {
       if (existing.state === 'completed' || existing.state === 'acknowledged') {
         const order = existing.payload?.orderId
@@ -76,25 +77,58 @@ export function createOrderSubmissionService({
           : null;
         return { executionRequest: existing, order, replayed: true };
       }
+      if (existing.state === 'awaiting_confirmation') {
+        if (!confirmedExecutionRequestId) {
+          return {
+            requiresConfirmation: true,
+            executionRequest: existing,
+            riskDecision: null,
+          };
+        }
+        if (existing.id !== confirmedExecutionRequestId) {
+          throw new ConflictError('Execution request does not match the pending approval', 'INVALID_STATE');
+        }
+        approvedRequest = existing;
+      }
       if (existing.state === 'pending' || existing.state === 'submitting') {
         throw new ConflictError('An identical order is already in progress', 'ORDER_IN_PROGRESS');
+      }
+      if (['canceled', 'rejected', 'failed'].includes(existing.state)) {
+        throw new ConflictError('This order request can no longer be submitted', 'INVALID_STATE');
       }
     }
 
     // 2. Load connection + credentials
-    const connection = await connections.getConnection(connectionId);
-    if (!connection) throw new NotFoundError('Connection');
-    if (connection.workspace_id !== workspaceId) {
-      throw new AppError('Connection does not belong to workspace', {
-        code: 'WORKSPACE_MISMATCH',
-        status: 403,
-      });
-    }
+    const connection = await connections.requireConnectionAccess({
+      connectionId,
+      workspaceId,
+      operation: 'execute_trades',
+    });
     if (connection.status !== 'active') {
       throw new ConflictError('Connection is not active', 'CONNECTION_NOT_ACTIVE');
     }
 
-    const account = await connections.getAdapter(connection.exchange_code);
+    const tradingAccount = await connections.requireAccountAccess({
+      accountId,
+      workspaceId,
+      operation: 'execute_trades',
+    });
+    if (tradingAccount.connection_id !== connectionId || tradingAccount.status !== 'active') {
+      throw new ConflictError('The selected account is not active on this connection', 'ACCOUNT_CONNECTION_MISMATCH');
+    }
+
+    const adapter = await connections.getAdapter(connection.exchange_code);
+    if (!adapter) throw new NotFoundError('Exchange adapter');
+    const marketSupported = marketType === 'spot'
+      ? adapter.capabilities?.hasSpot
+      : adapter.capabilities?.hasFutures;
+    if (!marketSupported) {
+      throw new ConflictError('This exchange does not support the selected market type', 'MARKET_TYPE_UNSUPPORTED');
+    }
+    await connections.requireVerifiedPermission({
+      connectionId,
+      permissionKey: 'trading',
+    });
     const credentials = await connections.loadCredentials(connectionId);
 
     // 3. Verify instrument exists
@@ -105,6 +139,9 @@ export function createOrderSubmissionService({
     if (!instrument) throw new ValidationError(`Unknown instrument: ${instrumentId}`);
     if (instrument.trading_status !== 'active') {
       throw new ConflictError('Instrument is not tradable', 'INSTRUMENT_INACTIVE');
+    }
+    if (instrument.market_type !== marketType) {
+      throw new ConflictError('Instrument does not belong to the selected market type', 'INSTRUMENT_MARKET_MISMATCH');
     }
 
     // 4. Pre-trade risk evaluation
@@ -124,6 +161,12 @@ export function createOrderSubmissionService({
     });
 
     if (riskDecision.outcome === 'blocked') {
+      if (approvedRequest) {
+        await queries.updateExecutionRequest(approvedRequest.id, {
+          state: 'rejected',
+          completedAt: new Date(),
+        });
+      }
       throw new AppError(`Order blocked by risk policy: ${riskDecision.reasonCode}`, {
         code: 'RISK_BLOCKED',
         status: 422,
@@ -132,7 +175,11 @@ export function createOrderSubmissionService({
       });
     }
 
-    if (riskDecision.outcome === 'approval_required' || riskDecision.outcome === 'confirmation_required') {
+    if (
+      (riskDecision.outcome === 'approval_required' ||
+        riskDecision.outcome === 'confirmation_required') &&
+      !approvedRequest
+    ) {
       // Create a pending execution request; a separate endpoint approves it
       const executionRequest = await db.tx(async (tx) => {
         const req = await queries.insertExecutionRequest(tx, {
@@ -171,33 +218,38 @@ export function createOrderSubmissionService({
     }
 
     // 5. Persist execution request
-    const executionRequest = await db.tx(async (tx) => {
-      return queries.insertExecutionRequest(tx, {
-        workspaceId,
-        connectionId,
-        accountId,
-        operationType: 'order_submission',
-        state: 'submitting',
-        payload: {
-          connectionId,
-          accountId,
-          instrumentId,
-          marketType,
-          side,
-          type,
-          quantity,
-          price,
-          triggerPrice,
-          timeInForce,
-          reduceOnly,
-          clientOrderId,
-        },
-        riskEvaluationId: riskDecision.id,
-        idempotencyKey,
-        correlationId: riskDecision.correlationId,
-        createdBy: userId,
-      });
-    });
+    const executionRequest = approvedRequest
+      ? await queries.claimExecutionRequestForSubmission(approvedRequest.id)
+      : await db.tx(async (tx) => {
+          return queries.insertExecutionRequest(tx, {
+            workspaceId,
+            connectionId,
+            accountId,
+            operationType: 'order_submission',
+            state: 'submitting',
+            payload: {
+              connectionId,
+              accountId,
+              instrumentId,
+              marketType,
+              side,
+              type,
+              quantity,
+              price,
+              triggerPrice,
+              timeInForce,
+              reduceOnly,
+              clientOrderId,
+            },
+            riskEvaluationId: riskDecision.id,
+            idempotencyKey,
+            correlationId: riskDecision.correlationId,
+            createdBy: userId,
+          });
+        });
+    if (!executionRequest) {
+      throw new ConflictError('Execution request is no longer awaiting approval', 'INVALID_STATE');
+    }
 
     // 6. Persist a pending order row
     const order = await db.tx(async (tx) => {
@@ -235,9 +287,9 @@ export function createOrderSubmissionService({
     let adapterError = null;
 
     try {
-      adapterResponse = await account.placeOrder({
+      adapterResponse = await adapter.placeOrder({
         ...credentials,
-        accountType: marketType === 'spot' ? 'spot' : 'usd_m_futures',
+        accountType: tradingAccount.account_type,
         order: {
           instrument: instrumentId,
           marketType,
@@ -414,17 +466,33 @@ export function createOrderSubmissionService({
     }
 
     // Convert the pending execution request into a live submission
-    return submit({
-      userId,
-      workspaceId,
-      ...req.payload,
-      idempotencyKey: req.idempotency_key,
-    });
+    return submit(
+      {
+        userId,
+        workspaceId,
+        ...req.payload,
+        idempotencyKey: req.idempotency_key,
+      },
+      { confirmedExecutionRequestId: req.id }
+    );
+  }
+
+  async function cancelConfirmation({ userId, workspaceId, executionRequestId }) {
+    const request = await queries.findExecutionRequestById(executionRequestId);
+    if (!request || request.workspace_id !== workspaceId || request.created_by !== userId) {
+      throw new NotFoundError('Execution request');
+    }
+    const canceled = await queries.cancelExecutionRequestIfAwaitingConfirmation(executionRequestId);
+    if (!canceled) {
+      throw new ConflictError('Execution request is no longer awaiting confirmation', 'INVALID_STATE');
+    }
+    return canceled;
   }
 
   return {
     submit,
     confirm,
+    cancelConfirmation,
   };
 }
 

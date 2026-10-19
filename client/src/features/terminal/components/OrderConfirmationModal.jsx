@@ -14,6 +14,8 @@ export function OrderConfirmationModal({
   account,
   onConfirm,
   isSubmitting,
+  approvalRequired = false,
+  approvalMessage = '',
 }) {
   if (!order) {
     return null;
@@ -29,8 +31,12 @@ export function OrderConfirmationModal({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title="Confirm order"
-      description="Review the details below before submitting."
+      title={approvalRequired ? 'Approve order after risk review' : 'Confirm order'}
+      description={
+        approvalRequired
+          ? 'The initial risk check requires a separate workspace approval before dispatch.'
+          : 'Review the details below before submitting.'
+      }
       footer={
         <>
           <Button variant="outline" onClick={() => onOpenChange?.(false)} disabled={isSubmitting}>
@@ -41,7 +47,13 @@ export function OrderConfirmationModal({
             onClick={onConfirm}
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Submitting…' : 'Confirm'}
+            {isSubmitting
+              ? approvalRequired
+                ? 'Approving…'
+                : 'Submitting…'
+              : approvalRequired
+                ? 'Approve and submit'
+                : 'Confirm'}
           </Button>
         </>
       }
@@ -84,8 +96,9 @@ export function OrderConfirmationModal({
       <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
         <p>
-          Pre-trade risk checks run before dispatch. The exchange may still reject the order or
-          partially fill it. Refer to the execution status after submission.
+          {approvalRequired && approvalMessage
+            ? `${approvalMessage} The exchange may still reject or partially fill the order.`
+            : 'Pre-trade risk checks run before dispatch. The exchange may still reject the order or partially fill it. Refer to the execution status after submission.'}
         </p>
       </div>
     </Modal>

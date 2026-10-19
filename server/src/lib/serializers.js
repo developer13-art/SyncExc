@@ -245,11 +245,15 @@ export function serializeConnection(row) {
     id: row.id,
     workspaceId: row.workspace_id,
     ownerId: row.owner_id,
-    exchange: row.exchange,
+    exchange: row.exchange_code || row.exchange,
+    exchangeName: row.exchange_name || row.display_name || row.exchange_code || row.exchange,
     environment: row.environment,
     label: row.label,
     status: row.status,
     capabilities: row.capabilities || {},
+    accountCount: row.account_count ?? row.accounts?.length ?? undefined,
+    accounts: row.accounts?.map(serializeAccount),
+    health: row.health || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -272,8 +276,9 @@ export function serializeInstrument(row) {
   if (!row) return null;
   return {
     id: row.id,
-    exchange: row.exchange,
+    exchange: row.exchange_code || row.exchange,
     exchangeSymbol: row.exchange_symbol,
+    symbol: row.exchange_symbol,
     normalizedSymbol: row.normalized_symbol,
     marketType: row.market_type,
     baseAsset: row.base_asset,

@@ -7,6 +7,17 @@ import { success, created, paginated } from '../../lib/response.js';
 
 export function createTerminalController({ service, orderSubmissionService, portfolioService }) {
   return {
+    async getMarketData(req, res) {
+      const result = await service.getMarketData({
+        exchangeCode: req.params.exchangeCode,
+        symbol: req.params.symbol,
+        marketType: req.query.marketType,
+        timeframe: req.query.timeframe,
+        limit: req.query.limit,
+      });
+      return success(res, result);
+    },
+
     async overview(req, res) {
       const overview = await portfolioService.getWorkspaceOverview({
         workspaceId: req.workspace.id,
@@ -37,7 +48,7 @@ export function createTerminalController({ service, orderSubmissionService, port
     },
 
     async getOrder(req, res) {
-      const result = await service.getOrder(req.params.orderId);
+      const result = await service.getOrder(req.params.orderId, req.workspace.id);
       return success(res, {
         order: serializeOrder(result.order),
         events: result.events,
@@ -80,6 +91,15 @@ export function createTerminalController({ service, orderSubmissionService, port
       });
     },
 
+    async cancelConfirmation(req, res) {
+      const result = await orderSubmissionService.cancelConfirmation({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        executionRequestId: req.params.executionRequestId,
+      });
+      return success(res, result);
+    },
+
     async listPositions(req, res) {
       const positions = await service.listPositions({
         workspaceId: req.workspace.id,
@@ -103,7 +123,10 @@ export function createTerminalController({ service, orderSubmissionService, port
     },
 
     async getExecutionRequest(req, res) {
-      const result = await service.getExecutionRequest(req.params.executionRequestId);
+      const result = await service.getExecutionRequest(
+        req.params.executionRequestId,
+        req.workspace.id
+      );
       return success(res, {
         request: result.request,
         attempts: result.attempts,

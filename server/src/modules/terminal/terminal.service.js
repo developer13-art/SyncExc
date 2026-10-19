@@ -8,10 +8,16 @@
 import { NotFoundError, ConflictError } from '../../lib/errors.js';
 import { ORDER_STATUS } from '@syncexc/shared';
 
-export function createTerminalService({ db, queries, events, audit, logger }) {
-  async function getOrder(orderId) {
+export function createTerminalService({ db, queries, marketData, events, audit, logger }) {
+  async function getMarketData(params) {
+    return marketData.getMarketData(params);
+  }
+
+  async function getOrder(orderId, workspaceId) {
     const order = await queries.findOrderById(orderId);
-    if (!order) throw new NotFoundError('Order');
+    if (!order || (workspaceId && order.workspace_id !== workspaceId)) {
+      throw new NotFoundError('Order');
+    }
     const events = await queries.listOrderEvents(orderId);
     const fills = await queries.listFillsForOrder(orderId);
     return { order, events, fills };
@@ -42,9 +48,11 @@ export function createTerminalService({ db, queries, events, audit, logger }) {
     return queries.listPositions(workspaceId, { accountId, instrument });
   }
 
-  async function getExecutionRequest(executionRequestId) {
+  async function getExecutionRequest(executionRequestId, workspaceId) {
     const request = await queries.findExecutionRequestById(executionRequestId);
-    if (!request) throw new NotFoundError('Execution request');
+    if (!request || (workspaceId && request.workspace_id !== workspaceId)) {
+      throw new NotFoundError('Execution request');
+    }
     const attempts = await queries.listExecutionAttempts(executionRequestId);
     return { request, attempts };
   }
@@ -80,6 +88,7 @@ export function createTerminalService({ db, queries, events, audit, logger }) {
   }
 
   return {
+    getMarketData,
     getOrder,
     listOrdersForScope,
     listOpenOrders,

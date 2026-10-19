@@ -334,6 +334,32 @@ export function createTerminalQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async claimExecutionRequestForSubmission(id) {
+      const result = await db.query(
+        `
+        UPDATE trading_execution_requests
+        SET state = 'submitting', updated_at = now()
+        WHERE id = $1 AND state = 'awaiting_confirmation'
+        RETURNING *
+        `,
+        [id]
+      );
+      return result.rows[0] || null;
+    },
+
+    async cancelExecutionRequestIfAwaitingConfirmation(id) {
+      const result = await db.query(
+        `
+        UPDATE trading_execution_requests
+        SET state = 'canceled', completed_at = now(), updated_at = now()
+        WHERE id = $1 AND state = 'awaiting_confirmation'
+        RETURNING *
+        `,
+        [id]
+      );
+      return result.rows[0] || null;
+    },
+
     async findExecutionRequestByKey(idempotencyKey) {
       const result = await db.query(
         `SELECT * FROM trading_execution_requests WHERE idempotency_key = $1`,

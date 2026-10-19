@@ -118,12 +118,22 @@ export function createConnectionsRoutes({ service, middleware }) {
     middleware.asyncHandler(controller.getHealth)
   );
 
+  router.get(
+    '/:connectionId/permissions',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('connections.view'),
+    middleware.asyncHandler(controller.listPermissions)
+  );
+
   /* ---------------------------------------------------------------------------
    * Accounts
    * ------------------------------------------------------------------------ */
   router.get(
     '/accounts/:accountId/balances',
     middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('connections.view'),
     middleware.validateParams(Joi.object({ accountId: UuidSchema.required() })),
     middleware.asyncHandler(controller.fetchBalances)
   );

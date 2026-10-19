@@ -84,7 +84,7 @@ export function useConnections(params = {}, enabled = true) {
   };
 }
 
-export function useConnection(connectionId) {
+export function useConnection(connectionId, accountId = null) {
   const detailQuery = useQuery({
     queryKey: queryKeys.connections.detail(connectionId),
     queryFn: () => connectionsApi.getById(connectionId),
@@ -100,8 +100,15 @@ export function useConnection(connectionId) {
   });
 
   const balancesQuery = useQuery({
-    queryKey: queryKeys.connections.balances(connectionId),
-    queryFn: () => connectionsApi.listBalances(connectionId),
+    queryKey: queryKeys.connections.balances(accountId ?? `${connectionId}:primary`),
+    queryFn: async () => {
+      let targetAccountId = accountId;
+      if (!targetAccountId) {
+        const accounts = await connectionsApi.listAccounts(connectionId);
+        targetAccountId = accounts[0]?.id;
+      }
+      return targetAccountId ? connectionsApi.listBalances(targetAccountId) : { items: [] };
+    },
     enabled: Boolean(connectionId),
     staleTime: 30_000,
   });
@@ -123,7 +130,7 @@ export function useConnection(connectionId) {
   return {
     connection: detailQuery.data ?? null,
     accounts: accountsQuery.data ?? [],
-    balances: balancesQuery.data ?? [],
+    balances: balancesQuery.data?.items ?? [],
     health: healthQuery.data ?? null,
     permissions: permissionsQuery.data ?? null,
     isLoading: detailQuery.isLoading,

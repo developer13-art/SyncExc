@@ -11,8 +11,9 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: {
-    port: 5173,
+    port: 5000,
     host: true,
+    allowedHosts: true,
     strictPort: true,
     proxy: {
       '/api': {
@@ -27,7 +28,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   preview: {
-    port: 5173,
+    port: 5000,
     host: true,
   },
   build: {

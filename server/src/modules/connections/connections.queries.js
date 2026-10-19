@@ -89,6 +89,7 @@ export function createConnectionsQueries({ db }) {
         WHERE g.recipient_workspace_id = $1
           AND g.status = 'active'
           AND (g.expires_at IS NULL OR g.expires_at > now())
+          AND g.allowed_operations && ARRAY['view_status', 'view_balances']::text[]
           AND c.status NOT IN ('disconnected', 'revoked')
         `,
         [workspaceId]

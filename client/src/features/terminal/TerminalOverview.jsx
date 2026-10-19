@@ -21,12 +21,23 @@ import { TradeHistory } from './TradeHistory.jsx';
 import { ExecutionStatus } from './ExecutionStatus.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
-import { useTerminalMarkets, useTerminalOrders } from '../../hooks/useTerminal.js';
+import {
+  useTerminalMarkets,
+  useTerminalMarketData,
+  useTerminalOrders,
+} from '../../hooks/useTerminal.js';
 import { useConnections, useConnection } from '../../hooks/useConnections.js';
 import { terminalApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
+
+const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
+
+function formatMarketValue(value, maximumFractionDigits = 6) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits });
+}
 
 export default function TerminalOverview() {
   const dispatch = useDispatch();
@@ -38,8 +49,14 @@ export default function TerminalOverview() {
 
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [selectedInstrument, setSelectedInstrument] = useState(null);
+  const [timeframe, setTimeframe] = useState('1h');
+  const [indicators, setIndicators] = useState(['sma20']);
+  const [levels, setLevels] = useState([]);
+  const [levelInput, setLevelInput] = useState('');
   const [pendingOrder, setPendingOrder] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [approvalRequestId, setApprovalRequestId] = useState(null);
+  const [approvalMessage, setApprovalMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const connections = connectionsQuery.data?.items ?? [];
@@ -85,10 +102,68 @@ export default function TerminalOverview() {
 
   const instruments = marketsQuery.data ?? [];
 
-  const connectionDetailQuery = useConnection(activeConnection?.id);
+  useEffect(() => {
+    if (!instruments.length) {
+      setSelectedInstrument(null);
+      return;
+    }
+    const currentSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;
+    if (!currentSymbol || !instruments.some((item) =>
+      (item.exchangeSymbol ?? item.symbol) === currentSymbol
+    )) {
+      setSelectedInstrument(instruments[0]);
+    }
+  }, [instruments, selectedInstrument]);
+
+  const selectedSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;
+  const analysisStorageKey = activeWorkspaceId && activeConnection?.exchange && selectedSymbol
+    ? `syncexc:terminal:analysis:${activeWorkspaceId}:${activeConnection.exchange}:${selectedSymbol}`
+    : null;
+
+  useEffect(() => {
+    if (!analysisStorageKey) {
+      setIndicators(['sma20']);
+      setLevels([]);
+      return;
+    }
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(analysisStorageKey) || '{}');
+      setIndicators(Array.isArray(saved.indicators) ? saved.indicators : ['sma20']);
+      setLevels(Array.isArray(saved.levels) ? saved.levels : []);
+    } catch {
+      setIndicators(['sma20']);
+      setLevels([]);
+    }
+  }, [analysisStorageKey]);
+
+  useEffect(() => {
+    if (!analysisStorageKey) return;
+    window.localStorage.setItem(
+      analysisStorageKey,
+      JSON.stringify({ indicators, levels, timeframe }),
+    );
+  }, [analysisStorageKey, indicators, levels, timeframe]);
+
+  const toggleIndicator = (indicator) => {
+    setIndicators((current) => current.includes(indicator)
+      ? current.filter((item) => item !== indicator)
+      : [...current, indicator]);
+  };
+
+  const marketDataQuery = useTerminalMarketData(activeWorkspaceId, {
+    exchangeCode: activeConnection?.exchange,
+    symbol: selectedSymbol,
+    marketType: selectedInstrument?.marketType ?? 'spot',
+    timeframe,
+    limit: 120,
+  });
+  const marketData = marketDataQuery.data;
+  const connectionDetailQuery = useConnection(activeConnection?.id, selectedAccountId);
 
   const handleSubmitOrder = (order) => {
-    setPendingOrder(order);
+    setPendingOrder({ ...order, idempotencyKey: createOrderIdempotencyKey() });
+    setApprovalRequestId(null);
+    setApprovalMessage('');
     setConfirmOpen(true);
   };
 
@@ -99,19 +174,43 @@ export default function TerminalOverview() {
 
     setSubmitting(true);
     try {
-      const result = await terminalApi.submitOrder(activeWorkspaceId, {
-        accountId: selectedAccountId,
-        connectionId: activeConnection.id,
-        instrumentId: selectedInstrument.id ?? selectedInstrument.symbol,
-        marketType: selectedInstrument.marketType ?? 'spot',
-        ...pendingOrder,
-      });
+      let result;
+      if (approvalRequestId) {
+        result = await terminalApi.confirmExecution(activeWorkspaceId, approvalRequestId);
+      } else {
+        const payload = { ...pendingOrder };
+        const triggerPrice = payload.stopPrice;
+        delete payload.stopPrice;
+        delete payload.leverage;
+        result = await terminalApi.submitOrder(activeWorkspaceId, {
+          accountId: selectedAccountId,
+          connectionId: activeConnection.id,
+          instrumentId: selectedInstrument.exchangeSymbol ?? selectedInstrument.symbol,
+          marketType: selectedInstrument.marketType ?? 'spot',
+          ...payload,
+          triggerPrice,
+        });
+      }
 
-      toast.success('Order submitted', {
-        description: `Order ${result?.id ?? ''} is being processed.`,
+      if (result?.requiresConfirmation) {
+        setApprovalRequestId(result.executionRequestId);
+        setApprovalMessage(
+          result.riskDecision?.reasonCode
+            ? `Risk checks require a separate approval (${result.riskDecision.reasonCode}).`
+            : 'Risk checks require a separate approval before this order can be sent.',
+        );
+        return;
+      }
+
+      toast.success(result?.ambiguous ? 'Order status needs checking' : 'Order submitted', {
+        description: result?.ambiguous
+          ? 'The exchange response was uncertain. Check execution status before trying again.'
+          : `Order ${result?.order?.id ?? ''} is being processed.`,
       });
       setConfirmOpen(false);
       setPendingOrder(null);
+      setApprovalRequestId(null);
+      setApprovalMessage('');
       await ordersQuery.refetch();
     } catch (error) {
       toast.error('Order submission failed', {
@@ -120,6 +219,27 @@ export default function TerminalOverview() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleConfirmationOpenChange = async (open) => {
+    if (open) {
+      setConfirmOpen(true);
+      return;
+    }
+    if (approvalRequestId) {
+      try {
+        await terminalApi.cancelExecutionConfirmation(activeWorkspaceId, approvalRequestId);
+      } catch (error) {
+        toast.error('Approval request was not canceled', {
+          description: getErrorMessage(error),
+        });
+        return;
+      }
+    }
+    setConfirmOpen(false);
+    setPendingOrder(null);
+    setApprovalRequestId(null);
+    setApprovalMessage('');
   };
 
   if (connectionsQuery.isLoading) {
@@ -180,10 +300,142 @@ export default function TerminalOverview() {
           <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
             <div className="flex flex-col gap-5">
               <Card>
-                <CardContent className="p-0">
+                <CardContent className="space-y-3 p-0">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="font-medium text-foreground">
+                          {activeConnection?.exchangeName ?? activeConnection?.exchange ?? 'Exchange'} market data
+                        </span>
+                        <span className="text-muted-foreground">
+                          {marketDataQuery.isFetching && marketData ? 'Refreshing…' : ''}
+                        </span>
+                        {marketData?.freshness?.state === 'stale' && (
+                          <span className="rounded bg-warning/15 px-2 py-0.5 text-warning">
+                            Stale data
+                          </span>
+                        )}
+                        {marketDataQuery.isError && (
+                          <span className="text-destructive">Market data unavailable</span>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-2xs text-muted-foreground">
+                        {marketData?.source ?? 'No exchange data loaded'}
+                        {marketData?.retrievedAt
+                          ? ` · Retrieved ${new Date(marketData.retrievedAt).toLocaleTimeString()}`
+                          : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1" aria-label="Chart timeframe">
+                      {TIMEFRAMES.map((option) => (
+                        <Button
+                          key={option}
+                          type="button"
+                          size="sm"
+                          variant={timeframe === option ? 'secondary' : 'ghost'}
+                          aria-pressed={timeframe === option}
+                          onClick={() => setTimeframe(option)}
+                        >
+                          {option}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4">
+                    <div className="flex flex-wrap items-center gap-2" aria-label="Technical indicators">
+                      {[
+                        ['sma20', 'SMA 20'],
+                        ['sma50', 'SMA 50'],
+                        ['bollinger', 'Bollinger'],
+                      ].map(([key, label]) => (
+                        <Button
+                          key={key}
+                          type="button"
+                          size="sm"
+                          variant={indicators.includes(key) ? 'secondary' : 'ghost'}
+                          aria-pressed={indicators.includes(key)}
+                          onClick={() => toggleIndicator(key)}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                    <form
+                      className="flex items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const price = Number(levelInput);
+                        if (Number.isFinite(price) && price > 0) {
+                          setLevels((current) => [
+                            ...current,
+                            { id: `${Date.now()}-${current.length}`, price, label: 'User level' },
+                          ]);
+                          setLevelInput('');
+                        }
+                      }}
+                    >
+                      <label className="sr-only" htmlFor="terminal-price-level">Horizontal price level</label>
+                      <input
+                        id="terminal-price-level"
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={levelInput}
+                        onChange={(event) => setLevelInput(event.target.value)}
+                        placeholder="Price level"
+                        className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
+                      />
+                      <Button type="submit" size="sm" variant="outline">Add level</Button>
+                    </form>
+                  </div>
+                  {levels.length > 0 && (
+                    <div className="flex flex-wrap gap-2 px-4 text-xs">
+                      {levels.map((level) => (
+                        <button
+                          key={level.id}
+                          type="button"
+                          onClick={() => setLevels((current) => current.filter((item) => item.id !== level.id))}
+                          className="rounded border border-warning/40 px-2 py-1 text-warning hover:bg-warning/10"
+                          aria-label={`Remove price level ${level.price}`}
+                          title="Remove price level"
+                        >
+                          {formatMarketValue(level.price)} ×
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 px-4 text-xs sm:grid-cols-4 xl:grid-cols-7">
+                    {[
+                      ['Last', marketData?.overview?.lastPrice],
+                      ['Mark', marketData?.overview?.markPrice],
+                      ['Index', marketData?.overview?.indexPrice],
+                      ['Funding', marketData?.overview?.fundingRate == null
+                        ? null
+                        : `${(Number(marketData.overview.fundingRate) * 100).toFixed(4)}%`],
+                      ['Open interest', marketData?.overview?.openInterest],
+                      ['24h change', marketData?.overview?.priceChangePercent == null
+                        ? null
+                        : `${Number(marketData.overview.priceChangePercent).toFixed(2)}%`],
+                      ['24h volume', marketData?.overview?.quoteVolume24h],
+                    ].map(([label, value]) => (
+                      <div key={label} className="min-w-0">
+                        <p className="text-2xs text-muted-foreground">{label}</p>
+                        <p className="truncate font-medium text-foreground">
+                          {typeof value === 'string' ? value : formatMarketValue(value, 4)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
                   <PriceChart
-                    candles={selectedInstrument?.candles ?? []}
-                    isLoading={marketsQuery.isLoading && !selectedInstrument}
+                    candles={marketData?.candles ?? []}
+                    indicators={indicators}
+                    levels={levels}
+                    isLoading={marketDataQuery.isLoading}
+                    error={marketDataQuery.isError ? 'Exchange market data is temporarily unavailable.' : undefined}
+                    onRetry={marketDataQuery.refetch}
                     className="border-0 shadow-none"
                   />
                 </CardContent>
@@ -193,8 +445,8 @@ export default function TerminalOverview() {
                 <Card>
                   <CardContent className="p-0">
                     <OrderBook
-                      bids={selectedInstrument?.orderBook?.bids ?? []}
-                      asks={selectedInstrument?.orderBook?.asks ?? []}
+                      bids={marketData?.orderBook?.bids ?? []}
+                      asks={marketData?.orderBook?.asks ?? []}
                       baseAsset={selectedInstrument?.baseAsset}
                       quoteAsset={selectedInstrument?.quoteAsset}
                     />
@@ -203,7 +455,7 @@ export default function TerminalOverview() {
                 <Card>
                   <CardContent className="p-0">
                     <RecentTrades
-                      trades={selectedInstrument?.recentTrades ?? []}
+                      trades={marketData?.recentTrades ?? []}
                       baseAsset={selectedInstrument?.baseAsset}
                       quoteAsset={selectedInstrument?.quoteAsset}
                     />
@@ -229,6 +481,7 @@ export default function TerminalOverview() {
                         (b) => b.asset === selectedInstrument.quoteAsset,
                       )?.available ?? 0
                     }
+                    maxLeverage={1}
                     onSubmit={handleSubmitOrder}
                   />
                 ) : (
@@ -260,13 +513,22 @@ export default function TerminalOverview() {
 
       <OrderConfirmationModal
         open={confirmOpen}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={handleConfirmationOpenChange}
         order={pendingOrder}
         instrument={selectedInstrument}
         account={accounts.find((a) => a.id === selectedAccountId)}
         onConfirm={handleConfirmOrder}
         isSubmitting={submitting}
+        approvalRequired={Boolean(approvalRequestId)}
+        approvalMessage={approvalMessage}
       />
     </div>
   );
+}
+
+function createOrderIdempotencyKey() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

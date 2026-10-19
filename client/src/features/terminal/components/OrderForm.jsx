@@ -116,7 +116,7 @@ export function OrderForm({
       stopPrice: needsStopPrice ? values.stopPrice : undefined,
       quantity: values.quantity,
       reduceOnly: isFutures ? values.reduceOnly : undefined,
-      leverage: isFutures ? Number(values.leverage) : undefined,
+      leverage: isFutures && (maxLeverage ?? 1) > 1 ? Number(values.leverage) : undefined,
     });
   });
 
@@ -256,31 +256,36 @@ export function OrderForm({
         ) : null}
 
         {isFutures ? (
-          <div>
-            <div className="flex items-center justify-between">
-              <Label>Leverage</Label>
-              <span className="text-xs font-medium text-foreground">{leverage}x</span>
-            </div>
-            <Controller
-              control={control}
-              name="leverage"
-              render={({ field }) => (
-                <Slider
-                  value={[field.value]}
-                  min={1}
-                  max={maxLeverage ?? 20}
-                  step={1}
-                  className="mt-3"
-                  onValueChange={(v) => field.onChange(v[0])}
-                />
-              )}
-            />
-            {maxLeverage ? (
+          maxLeverage > 1 ? (
+            <div>
+              <div className="flex items-center justify-between">
+                <Label>Leverage</Label>
+                <span className="text-xs font-medium text-foreground">{leverage}x</span>
+              </div>
+              <Controller
+                control={control}
+                name="leverage"
+                render={({ field }) => (
+                  <Slider
+                    value={[field.value]}
+                    min={1}
+                    max={maxLeverage}
+                    step={1}
+                    className="mt-3"
+                    onValueChange={(v) => field.onChange(v[0])}
+                  />
+                )}
+              />
               <p className="mt-1 text-2xs text-muted-foreground">
                 Max {maxLeverage}x for this instrument
               </p>
-            ) : null}
-          </div>
+            </div>
+          ) : (
+            <p className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              Leverage is managed by the exchange. This ticket uses the selected account’s current
+              leverage setting.
+            </p>
+          )
         ) : null}
 
         {isFutures ? (
