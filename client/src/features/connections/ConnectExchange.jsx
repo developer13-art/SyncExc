@@ -13,7 +13,7 @@ import { Stepper } from '../../components/ui/Stepper.jsx';
 import { CredentialForm } from './components/CredentialForm.jsx';
 import { PermissionChecklist } from './components/PermissionChecklist.jsx';
 import { connectionsApi } from '../../api/index.js';
-import { useConnections } from '../../hooks/useConnections.js';
+import { useExchangeRegistry } from '../../hooks/useConnections.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
@@ -53,10 +53,7 @@ export default function ConnectExchange() {
     );
   }, [dispatch]);
 
-  const exchangeRegistryQuery = useConnections({ registry: true });
-  const exchanges = exchangeRegistryQuery.data?.items ?? [];
-
-  const requirementsQuery = useConnections({});
+  const { exchanges, isLoading: exchangesLoading, error: exchangesError } = useExchangeRegistry();
   const [requirements, setRequirements] = useState([]);
 
   useEffect(() => {
@@ -125,9 +122,9 @@ export default function ConnectExchange() {
     setSubmitting(true);
     try {
       const created = await connectionsApi.create({
-        exchangeId: selectedExchange.id,
+        exchange: selectedExchange.id,
         label: label.trim() || selectedExchange.name,
-        environment,
+        environment: environment === 'production' ? 'live' : environment,
         credentials,
       });
 
@@ -180,7 +177,8 @@ export default function ConnectExchange() {
           {step === 'exchange' ? (
             <ExchangeStep
               exchanges={exchanges}
-              isLoading={exchangeRegistryQuery.isLoading}
+              isLoading={exchangesLoading}
+              error={exchangesError}
               onSelect={handleExchangeSelect}
             />
           ) : step === 'credentials' ? (
@@ -190,8 +188,8 @@ export default function ConnectExchange() {
                   Configure {selectedExchange.name} connection
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Provide a descriptive label and the credentials for this account. We
-                  recommend generating a dedicated API key with minimum required permissions.
+                  Provide a descriptive label and the credentials for this account. We recommend
+                  generating a dedicated API key with minimum required permissions.
                 </p>
               </div>
 
@@ -278,16 +276,11 @@ export default function ConnectExchange() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate(ROUTES.app.connections.overview)}
-                >
+                <Button variant="outline" onClick={() => navigate(ROUTES.app.connections.overview)}>
                   Back to connections
                 </Button>
                 <Button
-                  onClick={() =>
-                    navigate(ROUTES.app.connections.details(connection?.id ?? ''))
-                  }
+                  onClick={() => navigate(ROUTES.app.connections.details(connection?.id ?? ''))}
                 >
                   View connection
                 </Button>
@@ -300,7 +293,7 @@ export default function ConnectExchange() {
   );
 }
 
-function ExchangeStep({ exchanges, isLoading, onSelect }) {
+function ExchangeStep({ exchanges, isLoading, error, onSelect }) {
   if (isLoading) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -315,8 +308,10 @@ function ExchangeStep({ exchanges, isLoading, onSelect }) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/20 p-10 text-center">
         <Building2 className="mx-auto h-8 w-8 text-muted-foreground" />
-        <p className="mt-3 text-sm text-muted-foreground">
-          No exchanges are currently available for connection.
+        <p className="mt-3 text-sm text-muted-foreground" role={error ? 'alert' : undefined}>
+          {error
+            ? 'Exchanges could not be loaded. Check your connection and try again.'
+            : 'No exchanges are currently available for connection.'}
         </p>
       </div>
     );
@@ -327,8 +322,7 @@ function ExchangeStep({ exchanges, isLoading, onSelect }) {
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-foreground">Select an exchange</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Choose a supported exchange to connect. Availability may vary by region and account
-          type.
+          Choose a supported exchange to connect. Availability may vary by region and account type.
         </p>
       </div>
 
@@ -348,9 +342,7 @@ function ExchangeStep({ exchanges, isLoading, onSelect }) {
             </div>
             <p className="text-sm font-semibold text-foreground">{exchange.name}</p>
             {exchange.description ? (
-              <p className="text-xs text-muted-foreground line-clamp-2">
-                {exchange.description}
-              </p>
+              <p className="text-xs text-muted-foreground line-clamp-2">{exchange.description}</p>
             ) : null}
           </button>
         ))}

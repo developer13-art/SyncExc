@@ -46,16 +46,14 @@ export function useConnections(params = {}, enabled = true) {
   });
 
   const suspendConnection = useMutation({
-    mutationFn: ({ connectionId, ...payload }) =>
-      connectionsApi.suspend(connectionId, payload),
+    mutationFn: ({ connectionId, ...payload }) => connectionsApi.suspend(connectionId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.connections.all });
     },
   });
 
   const disconnect = useMutation({
-    mutationFn: ({ connectionId, ...payload }) =>
-      connectionsApi.disconnect(connectionId, payload),
+    mutationFn: ({ connectionId, ...payload }) => connectionsApi.disconnect(connectionId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.connections.all });
     },
@@ -74,6 +72,8 @@ export function useConnections(params = {}, enabled = true) {
     isLoading: listQuery.isLoading,
     error: listQuery.error,
     exchangeRegistry: exchangeRegistryQuery.data ?? [],
+    exchangeRegistryIsLoading: exchangeRegistryQuery.isLoading,
+    exchangeRegistryError: exchangeRegistryQuery.error,
     createConnection: createConnection.mutateAsync,
     validateConnection: validateConnection.mutateAsync,
     rotateCredentials: rotateCredentials.mutateAsync,
@@ -81,6 +81,29 @@ export function useConnections(params = {}, enabled = true) {
     disconnect: disconnect.mutateAsync,
     removeConnection: removeConnection.mutateAsync,
     isCreating: createConnection.isPending,
+  };
+}
+
+export function useExchangeRegistry(enabled = true) {
+  const query = useQuery({
+    queryKey: queryKeys.connections.exchangeRegistry,
+    queryFn: () => connectionsApi.listExchangeRegistry(),
+    enabled,
+    staleTime: 5 * 60_000,
+    select: (exchanges) =>
+      (Array.isArray(exchanges) ? exchanges : [])
+        .filter((exchange) => exchange.status === 'available')
+        .map((exchange) => ({
+          ...exchange,
+          id: exchange.code,
+          name: exchange.displayName,
+        })),
+  });
+
+  return {
+    exchanges: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error,
   };
 }
 

@@ -163,11 +163,6 @@ export default function Home() {
         </div>
         <div className="mx-auto max-w-7xl px-6 py-20 md:py-28">
           <div className="mx-auto max-w-4xl text-center">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1.5 text-[11px] font-medium text-muted-foreground shadow-sm">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Multi-exchange operations, unified
-            </span>
-
             <h1 className="mt-8 text-4xl font-semibold tracking-[-0.06em] text-foreground md:text-7xl">
               One workspace for every exchange you trade on
             </h1>

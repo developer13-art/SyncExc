@@ -21,7 +21,7 @@ import {
 import { InfoCallout } from '../../components/ui/InfoCallout.jsx';
 import { useAuthContext } from '../../context/AuthContext.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
-import { useConnections } from '../../hooks/useConnections.js';
+import { useConnections, useExchangeRegistry } from '../../hooks/useConnections.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
@@ -61,7 +61,7 @@ export default function OnboardingFlow() {
   const toast = useToast();
   const { user } = useAuthContext();
   const { activeWorkspace, createWorkspace, updateWorkspace } = useWorkspaceContext();
-  const { createConnection, isLoading: connectionsLoading } = useConnections();
+  const { createConnection } = useConnections();
 
   const [step, setStep] = useState('workspace');
   const [formError, setFormError] = useState(null);
@@ -174,19 +174,16 @@ export default function OnboardingFlow() {
     }
   };
 
-  const exchangeRegistryQuery = useConnections({ registry: true });
-  const exchangeRegistry = exchangeRegistryQuery.data?.items ?? [];
+  const { exchanges: exchangeRegistry, isLoading: exchangeRegistryLoading } = useExchangeRegistry();
 
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto flex max-w-2xl flex-col px-6 py-12">
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Set up SyncExc
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Set up SyncExc</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            This guided setup covers the essentials. You can skip any step and return to it
-            later from Settings.
+            This guided setup covers the essentials. You can skip any step and return to it later
+            from Settings.
           </p>
         </div>
 
@@ -212,9 +209,7 @@ export default function OnboardingFlow() {
                     <Input
                       id="onboarding-ws-name"
                       value={workspaceForm.name}
-                      onChange={(e) =>
-                        setWorkspaceForm({ ...workspaceForm, name: e.target.value })
-                      }
+                      onChange={(e) => setWorkspaceForm({ ...workspaceForm, name: e.target.value })}
                       placeholder="Trading Team"
                     />
                   </FormField>
@@ -258,8 +253,8 @@ export default function OnboardingFlow() {
               <Card>
                 <CardContent className="flex flex-col gap-4 p-6 pt-6">
                   <p className="text-sm text-muted-foreground">
-                    Select a supported exchange. You'll enter credentials and validate them
-                    from the Connections page.
+                    Select a supported exchange. You'll enter credentials and validate them from the
+                    Connections page.
                   </p>
 
                   <FormError>{formError}</FormError>
@@ -267,9 +262,7 @@ export default function OnboardingFlow() {
                   <FormField label="Exchange" htmlFor="onboarding-exchange" required>
                     <Select
                       value={connectionForm.exchangeId}
-                      onValueChange={(v) =>
-                        setConnectionForm({ ...connectionForm, exchangeId: v })
-                      }
+                      onValueChange={(v) => setConnectionForm({ ...connectionForm, exchangeId: v })}
                     >
                       <SelectTrigger id="onboarding-exchange" className="mt-1.5">
                         <SelectValue placeholder="Select an exchange" />
@@ -277,7 +270,7 @@ export default function OnboardingFlow() {
                       <SelectContent>
                         {exchangeRegistry.length === 0 ? (
                           <SelectItem value="" disabled>
-                            {connectionsLoading
+                            {exchangeRegistryLoading
                               ? 'Loading exchanges…'
                               : 'No exchanges available'}
                           </SelectItem>
@@ -310,13 +303,9 @@ export default function OnboardingFlow() {
                           key={env}
                           type="button"
                           size="sm"
-                          variant={
-                            connectionForm.environment === env ? 'default' : 'outline'
-                          }
+                          variant={connectionForm.environment === env ? 'default' : 'outline'}
                           className="flex-1 capitalize"
-                          onClick={() =>
-                            setConnectionForm({ ...connectionForm, environment: env })
-                          }
+                          onClick={() => setConnectionForm({ ...connectionForm, environment: env })}
                         >
                           {env}
                         </Button>
@@ -325,8 +314,8 @@ export default function OnboardingFlow() {
                   </FormField>
 
                   <InfoCallout>
-                    SyncExc never requests withdrawal permissions. Use restricted API keys
-                    scoped to the operations you intend to use.
+                    SyncExc never requests withdrawal permissions. Use restricted API keys scoped to
+                    the operations you intend to use.
                   </InfoCallout>
 
                   <div className="flex justify-between gap-2">
@@ -334,11 +323,7 @@ export default function OnboardingFlow() {
                       <Button variant="ghost" onClick={goBack} disabled={submitting}>
                         <ArrowLeft className="h-4 w-4" /> Back
                       </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={handleSkipConnection}
-                        disabled={submitting}
-                      >
+                      <Button variant="ghost" onClick={handleSkipConnection} disabled={submitting}>
                         Skip this step
                       </Button>
                     </div>
@@ -355,9 +340,9 @@ export default function OnboardingFlow() {
               <Card>
                 <CardContent className="flex flex-col gap-4 p-6 pt-6">
                   <p className="text-sm text-muted-foreground">
-                    Choose the default execution mode for your workspace. You can change it
-                    later, and the platform's authorization, entitlement, capability, and risk
-                    checks apply regardless of mode.
+                    Choose the default execution mode for your workspace. You can change it later,
+                    and the platform's authorization, entitlement, capability, and risk checks apply
+                    regardless of mode.
                   </p>
 
                   <FormError>{formError}</FormError>
@@ -383,9 +368,7 @@ export default function OnboardingFlow() {
                               className="mt-0.5 h-4 w-4 border-input text-primary focus:ring-ring"
                             />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-foreground">
-                                {mode.label}
-                              </p>
+                              <p className="text-sm font-medium text-foreground">{mode.label}</p>
                               <p className="mt-0.5 text-xs text-muted-foreground">
                                 {mode.description}
                               </p>
@@ -424,15 +407,12 @@ export default function OnboardingFlow() {
                     You're ready to explore SyncExc
                   </h2>
                   <p className="mt-1.5 text-sm text-muted-foreground">
-                    You can revisit any of these steps from Settings at any time. Most
-                    functionality is available from the dashboard.
+                    You can revisit any of these steps from Settings at any time. Most functionality
+                    is available from the dashboard.
                   </p>
                 </div>
                 <div className="flex flex-wrap justify-center gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate(ROUTES.onboarding.complete)}
-                  >
+                  <Button variant="outline" onClick={() => navigate(ROUTES.onboarding.complete)}>
                     Finish setup
                   </Button>
                   <Button onClick={() => navigate(ROUTES.app.dashboard)}>
