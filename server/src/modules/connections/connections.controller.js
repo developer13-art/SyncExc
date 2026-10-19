@@ -4,12 +4,18 @@
 
 import { success, created, noContent } from '../../lib/response.js';
 import { serializeConnection, serializeAccount, serializeInstrument } from '../../lib/serializers.js';
+import { EXCHANGE_ENVIRONMENTS } from '@syncexc/shared';
 
 export function createConnectionsController({ service }) {
   return {
     async getConnectionRequirements(req, res) {
       const exchange = String(req.params.exchangeCode).toLowerCase();
-      const requirements = {
+      const environmentLabels = {
+        live: 'Real account',
+        demo: 'Demo account',
+        testnet: 'Testnet',
+      };
+      const requirementsByExchange = {
         binance: [
           { name: 'apiKey', label: 'API Key', type: 'text', required: true },
           { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
@@ -41,7 +47,13 @@ export function createConnectionsController({ service }) {
           },
         ],
       };
-      return success(res, { requirements: requirements[exchange] ?? [] });
+      return success(res, {
+        requirements: requirementsByExchange[exchange] ?? [],
+        environments: (EXCHANGE_ENVIRONMENTS[exchange] ?? []).map((value) => ({
+          value,
+          label: environmentLabels[value],
+        })),
+      });
     },
 
     async listExchanges(req, res) {

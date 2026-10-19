@@ -35,7 +35,7 @@ export default function ConnectExchange() {
   const [step, setStep] = useState('exchange');
   const [selectedExchange, setSelectedExchange] = useState(null);
   const [label, setLabel] = useState('');
-  const [environment, setEnvironment] = useState('production');
+  const [environment, setEnvironment] = useState('live');
   const [credentials, setCredentials] = useState({});
   const [credentialErrors, setCredentialErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -55,10 +55,12 @@ export default function ConnectExchange() {
 
   const { exchanges, isLoading: exchangesLoading, error: exchangesError } = useExchangeRegistry();
   const [requirements, setRequirements] = useState([]);
+  const [environmentOptions, setEnvironmentOptions] = useState([]);
 
   useEffect(() => {
     if (!selectedExchange) {
       setRequirements([]);
+      setEnvironmentOptions([]);
       return;
     }
     let cancelled = false;
@@ -67,6 +69,11 @@ export default function ConnectExchange() {
       .then((result) => {
         if (!cancelled) {
           setRequirements(result.requirements ?? result ?? []);
+          const options = result.environments ?? [{ value: 'live', label: 'Real account' }];
+          setEnvironmentOptions(options);
+          setEnvironment((current) =>
+            options.some((option) => option.value === current) ? current : 'live',
+          );
         }
       })
       .catch(() => {
@@ -75,6 +82,7 @@ export default function ConnectExchange() {
             { name: 'apiKey', label: 'API Key', type: 'text', required: true },
             { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
           ]);
+          setEnvironmentOptions([{ value: 'live', label: 'Real account' }]);
         }
       });
     return () => {
@@ -124,7 +132,7 @@ export default function ConnectExchange() {
       const created = await connectionsApi.create({
         exchange: selectedExchange.id,
         label: label.trim() || selectedExchange.name,
-        environment: environment === 'production' ? 'live' : environment,
+        environment,
         credentials,
       });
 
@@ -204,19 +212,23 @@ export default function ConnectExchange() {
                 </FormField>
                 <FormField label="Environment" htmlFor="conn-env">
                   <div className="flex gap-1">
-                    {['production', 'testnet'].map((env) => (
+                    {environmentOptions.map((option) => (
                       <Button
-                        key={env}
+                        key={option.value}
                         type="button"
                         size="sm"
-                        variant={environment === env ? 'default' : 'outline'}
-                        className="flex-1 capitalize"
-                        onClick={() => setEnvironment(env)}
+                        variant={environment === option.value ? 'default' : 'outline'}
+                        className="flex-1"
+                        onClick={() => setEnvironment(option.value)}
                       >
-                        {env}
+                        {option.label}
                       </Button>
                     ))}
                   </div>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Use API credentials created for the selected account mode. Demo and testnet
+                    credentials are separate from real-account credentials.
+                  </p>
                 </FormField>
               </div>
 

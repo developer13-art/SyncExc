@@ -68,3 +68,27 @@ test('defaults Bybit private requests to mainnet', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('routes Bybit demo credentials to the demo API', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl;
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ retCode: 0, result: { permissions: {} } }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    await adapter.validateCredentials({
+      apiKey: 'demo-api-key',
+      apiSecret: 'demo-api-secret',
+      environment: 'demo',
+    });
+    assert.ok(requestedUrl.startsWith('https://api-demo.bybit.com/'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

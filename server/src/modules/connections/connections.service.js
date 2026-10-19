@@ -6,7 +6,7 @@
  */
 
 import { AppError, ValidationError, ConflictError, NotFoundError, AuthorizationError } from '../../lib/errors.js';
-import { CONNECTION_STATUS } from '@syncexc/shared';
+import { CONNECTION_STATUS, EXCHANGE_ENVIRONMENTS } from '@syncexc/shared';
 
 export function createConnectionsService({
   db,
@@ -149,6 +149,14 @@ export function createConnectionsService({
    * ======================================================================== */
 
   async function createConnection({ userId, workspaceId, exchange, environment, label, credentials }) {
+    const selectedEnvironment = environment || 'live';
+    if (!EXCHANGE_ENVIRONMENTS[exchange]?.includes(selectedEnvironment)) {
+      throw new ValidationError(
+        `Environment ${selectedEnvironment} is not supported for ${exchange}`,
+        { exchange, environment: selectedEnvironment }
+      );
+    }
+
     const exchangeRecord = await queries.findExchangeByCode(exchange);
     if (!exchangeRecord || exchangeRecord.integration_status === 'disabled') {
       throw new ValidationError(`Exchange not available: ${exchange}`);
@@ -160,7 +168,10 @@ export function createConnectionsService({
     // Validate credentials before persisting
     let validationResult;
     try {
-      validationResult = await adapter.validateCredentials({ ...credentials, environment });
+      validationResult = await adapter.validateCredentials({
+        ...credentials,
+        environment: selectedEnvironment,
+      });
     } catch (err) {
       logger.warn({ err, exchange }, 'Credential validation failed');
       throw new ValidationError('Exchange credentials are invalid or lack required permissions');
@@ -187,7 +198,7 @@ export function createConnectionsService({
         workspaceId,
         ownerId: userId,
         exchangeCode: exchange,
-        environment: environment || 'live',
+        environment: selectedEnvironment,
         label,
         status: 'validating',
         capabilities: adapter.capabilities,
@@ -216,7 +227,7 @@ export function createConnectionsService({
       await events.publish(
         tx,
         'connection.created',
-        { connectionId: connection.id, exchange, environment: environment || 'live' },
+        { connectionId: connection.id, exchange, environment: selectedEnvironment },
         {
           actorId: userId,
           workspaceId,

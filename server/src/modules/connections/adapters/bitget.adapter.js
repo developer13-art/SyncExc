@@ -15,7 +15,7 @@ export function createBitgetAdapter({ config, logger }) {
     logger,
   });
 
-  function signedHeaders({ apiKey, apiSecret, passphrase, method, requestPath, body }) {
+  function signedHeaders({ apiKey, apiSecret, passphrase, method, requestPath, body, environment }) {
     const timestamp = Date.now().toString();
     const bodyStr = body ? JSON.stringify(body) : '';
     const preSign = `${timestamp}${method}${requestPath}${bodyStr}`;
@@ -26,6 +26,7 @@ export function createBitgetAdapter({ config, logger }) {
       'ACCESS-TIMESTAMP': timestamp,
       'ACCESS-PASSPHRASE': passphrase,
       'Content-Type': 'application/json',
+      ...(environment === 'demo' ? { paptrading: '1' } : {}),
     };
   }
 
@@ -42,7 +43,7 @@ export function createBitgetAdapter({ config, logger }) {
       supportedTimeInForce: ['GTC', 'IOC', 'FOK', 'PostOnly'],
     },
 
-    async validateCredentials({ apiKey, apiSecret, passphrase }) {
+    async validateCredentials({ apiKey, apiSecret, passphrase, environment }) {
       const path = '/api/v2/spot/account/assets';
       const headers = signedHeaders({
         apiKey,
@@ -51,6 +52,7 @@ export function createBitgetAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -76,7 +78,7 @@ export function createBitgetAdapter({ config, logger }) {
       ];
     },
 
-    async fetchBalances({ apiKey, apiSecret, passphrase, accountType = 'spot' }) {
+    async fetchBalances({ apiKey, apiSecret, passphrase, accountType = 'spot', environment }) {
       const path = accountType === 'spot' ? '/api/v2/spot/account/assets' : '/api/v2/mix/account/accounts';
       const headers = signedHeaders({
         apiKey,
@@ -85,6 +87,7 @@ export function createBitgetAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -128,7 +131,7 @@ export function createBitgetAdapter({ config, logger }) {
       }));
     },
 
-    async placeOrder({ apiKey, apiSecret, passphrase, accountType = 'spot', order }) {
+    async placeOrder({ apiKey, apiSecret, passphrase, accountType = 'spot', environment, order }) {
       const path =
         accountType === 'spot' ? '/api/v2/spot/trade/place-order' : '/api/v2/mix/order/place-order';
       const body = {
@@ -148,6 +151,7 @@ export function createBitgetAdapter({ config, logger }) {
         method: 'POST',
         requestPath: path,
         body,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -165,7 +169,15 @@ export function createBitgetAdapter({ config, logger }) {
       };
     },
 
-    async cancelOrder({ apiKey, apiSecret, passphrase, accountType = 'spot', instrument, exchangeOrderId }) {
+    async cancelOrder({
+      apiKey,
+      apiSecret,
+      passphrase,
+      accountType = 'spot',
+      environment,
+      instrument,
+      exchangeOrderId,
+    }) {
       const path =
         accountType === 'spot' ? '/api/v2/spot/trade/cancel-order' : '/api/v2/mix/order/cancel-order';
       const body = { symbol: instrument, orderId: exchangeOrderId };
@@ -176,6 +188,7 @@ export function createBitgetAdapter({ config, logger }) {
         method: 'POST',
         requestPath: path,
         body,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -187,7 +200,15 @@ export function createBitgetAdapter({ config, logger }) {
       return { status: 'canceled' };
     },
 
-    async fetchOrder({ apiKey, apiSecret, passphrase, accountType = 'spot', instrument, exchangeOrderId }) {
+    async fetchOrder({
+      apiKey,
+      apiSecret,
+      passphrase,
+      accountType = 'spot',
+      environment,
+      instrument,
+      exchangeOrderId,
+    }) {
       const path =
         accountType === 'spot' ? '/api/v2/spot/trade/orderInfo' : '/api/v2/mix/order/detail';
       const query = new URLSearchParams({ symbol: instrument, orderId: exchangeOrderId }).toString();
@@ -199,6 +220,7 @@ export function createBitgetAdapter({ config, logger }) {
         method: 'GET',
         requestPath: fullPath,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${fullPath}`,
@@ -217,7 +239,14 @@ export function createBitgetAdapter({ config, logger }) {
       };
     },
 
-    async fetchOpenOrders({ apiKey, apiSecret, passphrase, accountType = 'spot', instrument }) {
+    async fetchOpenOrders({
+      apiKey,
+      apiSecret,
+      passphrase,
+      accountType = 'spot',
+      environment,
+      instrument,
+    }) {
       const path =
         accountType === 'spot' ? '/api/v2/spot/trade/unfilled-orders' : '/api/v2/mix/order/orders-pending';
       const params = instrument ? { symbol: instrument } : {};
@@ -230,6 +259,7 @@ export function createBitgetAdapter({ config, logger }) {
         method: 'GET',
         requestPath: fullPath,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${fullPath}`,
@@ -250,7 +280,7 @@ export function createBitgetAdapter({ config, logger }) {
       }));
     },
 
-    async fetchPositions({ apiKey, apiSecret, passphrase }) {
+    async fetchPositions({ apiKey, apiSecret, passphrase, environment }) {
       const path = '/api/v2/mix/position/all-position?productType=USDT-FUTURES&marginCoin=USDT';
       const headers = signedHeaders({
         apiKey,
@@ -259,6 +289,7 @@ export function createBitgetAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,

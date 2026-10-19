@@ -264,7 +264,7 @@ export const SubmitRefundRequestSchema = Joi.object({
 
 export const CreateConnectionRequestSchema = Joi.object({
   exchange: Joi.string().valid('binance', 'bybit', 'bitget', 'okx').required(),
-  environment: Joi.string().valid('live', 'testnet').default('live'),
+  environment: Joi.string().valid('live', 'demo', 'testnet').default('live'),
   label: Joi.string().trim().min(1).max(100).required(),
   credentials: Joi.object({
     apiKey: Joi.string().trim().min(8).max(256).required(),

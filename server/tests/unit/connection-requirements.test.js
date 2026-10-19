@@ -63,3 +63,36 @@ test('only requires API key and secret for Binance and Bybit', async () => {
     );
   }
 });
+
+test('offers demo mode only for exchanges with demo API support', async () => {
+  const controller = createConnectionsController({ service: {} });
+
+  for (const [exchangeCode, expectedModes] of [
+    ['binance', ['live', 'testnet']],
+    ['bybit', ['live', 'demo', 'testnet']],
+    ['bitget', ['live', 'demo']],
+    ['okx', ['live', 'demo']],
+  ]) {
+    let response;
+    const res = {
+      req: { headers: {} },
+      status() {
+        return this;
+      },
+      json(body) {
+        response = body;
+        return this;
+      },
+    };
+
+    await controller.getConnectionRequirements(
+      { params: { exchangeCode } },
+      res,
+    );
+
+    assert.deepEqual(
+      response.data.environments.map((environment) => environment.value),
+      expectedModes,
+    );
+  }
+});

@@ -7,9 +7,12 @@ import { createBaseAdapter } from './base.adapter.js';
 
 const BASE_URL = 'https://api.bybit.com';
 const TESTNET_BASE_URL = 'https://api-testnet.bybit.com';
+const DEMO_BASE_URL = 'https://api-demo.bybit.com';
 
 function getBaseUrl(environment) {
-  return environment === 'testnet' ? TESTNET_BASE_URL : BASE_URL;
+  if (environment === 'testnet') return TESTNET_BASE_URL;
+  if (environment === 'demo') return DEMO_BASE_URL;
+  return BASE_URL;
 }
 
 export function createBybitAdapter({ config, logger }) {

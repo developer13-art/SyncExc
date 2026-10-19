@@ -9,6 +9,16 @@ import { createBaseAdapter } from './base.adapter.js';
 
 const SPOT_BASE = 'https://api.binance.com';
 const FUTURES_BASE = 'https://fapi.binance.com';
+const SPOT_TESTNET_BASE = 'https://testnet.binance.vision';
+const FUTURES_TESTNET_BASE = 'https://testnet.binancefuture.com';
+
+function getBaseUrl(accountType, environment) {
+  const isFutures = accountType === 'usd_m_futures';
+  if (environment === 'testnet') {
+    return isFutures ? FUTURES_TESTNET_BASE : SPOT_TESTNET_BASE;
+  }
+  return isFutures ? FUTURES_BASE : SPOT_BASE;
+}
 
 export function createBinanceAdapter({ config, logger }) {
   const base = createBaseAdapter({
@@ -42,8 +52,14 @@ export function createBinanceAdapter({ config, logger }) {
       supportedTimeInForce: ['GTC', 'IOC', 'FOK'],
     },
 
-    async validateCredentials({ apiKey, apiSecret }) {
-      const url = buildSignedUrl(SPOT_BASE, '/api/v3/account', {}, apiKey, apiSecret);
+    async validateCredentials({ apiKey, apiSecret, environment }) {
+      const url = buildSignedUrl(
+        getBaseUrl('spot', environment),
+        '/api/v3/account',
+        {},
+        apiKey,
+        apiSecret
+      );
       const data = await this.fetchSigned({
         url,
         method: 'GET',
@@ -67,9 +83,15 @@ export function createBinanceAdapter({ config, logger }) {
       ];
     },
 
-    async fetchBalances({ apiKey, apiSecret, accountType = 'spot' }) {
+    async fetchBalances({ apiKey, apiSecret, accountType = 'spot', environment }) {
       if (accountType === 'spot') {
-        const url = buildSignedUrl(SPOT_BASE, '/api/v3/account', {}, apiKey, apiSecret);
+        const url = buildSignedUrl(
+          getBaseUrl(accountType, environment),
+          '/api/v3/account',
+          {},
+          apiKey,
+          apiSecret
+        );
         const data = await this.fetchSigned({
           url,
           method: 'GET',
@@ -83,7 +105,13 @@ export function createBinanceAdapter({ config, logger }) {
         }));
       }
       if (accountType === 'usd_m_futures') {
-        const url = buildSignedUrl(FUTURES_BASE, '/fapi/v2/balance', {}, apiKey, apiSecret);
+        const url = buildSignedUrl(
+          getBaseUrl(accountType, environment),
+          '/fapi/v2/balance',
+          {},
+          apiKey,
+          apiSecret
+        );
         const data = await this.fetchSigned({
           url,
           method: 'GET',
@@ -137,9 +165,9 @@ export function createBinanceAdapter({ config, logger }) {
       return [];
     },
 
-    async placeOrder({ apiKey, apiSecret, accountType, order }) {
+    async placeOrder({ apiKey, apiSecret, accountType, environment, order }) {
       const path = accountType === 'usd_m_futures' ? '/fapi/v1/order' : '/api/v3/order';
-      const baseUrl = accountType === 'usd_m_futures' ? FUTURES_BASE : SPOT_BASE;
+      const baseUrl = getBaseUrl(accountType, environment);
 
       const params = {
         symbol: order.instrument,
@@ -168,9 +196,9 @@ export function createBinanceAdapter({ config, logger }) {
       };
     },
 
-    async cancelOrder({ apiKey, apiSecret, accountType, instrument, exchangeOrderId }) {
+    async cancelOrder({ apiKey, apiSecret, accountType, environment, instrument, exchangeOrderId }) {
       const path = accountType === 'usd_m_futures' ? '/fapi/v1/order' : '/api/v3/order';
-      const baseUrl = accountType === 'usd_m_futures' ? FUTURES_BASE : SPOT_BASE;
+      const baseUrl = getBaseUrl(accountType, environment);
       const url = buildSignedUrl(
         baseUrl,
         path,
@@ -186,9 +214,9 @@ export function createBinanceAdapter({ config, logger }) {
       return { status: this._mapOrderStatus(data.status) };
     },
 
-    async fetchOrder({ apiKey, apiSecret, accountType, instrument, exchangeOrderId }) {
+    async fetchOrder({ apiKey, apiSecret, accountType, environment, instrument, exchangeOrderId }) {
       const path = accountType === 'usd_m_futures' ? '/fapi/v1/order' : '/api/v3/order';
-      const baseUrl = accountType === 'usd_m_futures' ? FUTURES_BASE : SPOT_BASE;
+      const baseUrl = getBaseUrl(accountType, environment);
       const url = buildSignedUrl(
         baseUrl,
         path,
@@ -210,9 +238,9 @@ export function createBinanceAdapter({ config, logger }) {
       };
     },
 
-    async fetchOpenOrders({ apiKey, apiSecret, accountType, instrument }) {
+    async fetchOpenOrders({ apiKey, apiSecret, accountType, environment, instrument }) {
       const path = accountType === 'usd_m_futures' ? '/fapi/v1/openOrders' : '/api/v3/openOrders';
-      const baseUrl = accountType === 'usd_m_futures' ? FUTURES_BASE : SPOT_BASE;
+      const baseUrl = getBaseUrl(accountType, environment);
       const params = instrument ? { symbol: instrument } : {};
       const url = buildSignedUrl(baseUrl, path, params, apiKey, apiSecret);
       const data = await this.fetchSigned({
@@ -232,8 +260,14 @@ export function createBinanceAdapter({ config, logger }) {
       }));
     },
 
-    async fetchPositions({ apiKey, apiSecret }) {
-      const url = buildSignedUrl(FUTURES_BASE, '/fapi/v2/positionRisk', {}, apiKey, apiSecret);
+    async fetchPositions({ apiKey, apiSecret, environment }) {
+      const url = buildSignedUrl(
+        getBaseUrl('usd_m_futures', environment),
+        '/fapi/v2/positionRisk',
+        {},
+        apiKey,
+        apiSecret
+      );
       const data = await this.fetchSigned({
         url,
         method: 'GET',

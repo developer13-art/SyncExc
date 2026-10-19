@@ -15,7 +15,7 @@ export function createOkxAdapter({ config, logger }) {
     logger,
   });
 
-  function signedHeaders({ apiKey, apiSecret, passphrase, method, requestPath, body }) {
+  function signedHeaders({ apiKey, apiSecret, passphrase, method, requestPath, body, environment }) {
     const timestamp = new Date().toISOString();
     const bodyStr = body ? JSON.stringify(body) : '';
     const preSign = `${timestamp}${method}${requestPath}${bodyStr}`;
@@ -29,6 +29,7 @@ export function createOkxAdapter({ config, logger }) {
       'OK-ACCESS-TIMESTAMP': timestamp,
       'OK-ACCESS-PASSPHRASE': passphrase,
       'Content-Type': 'application/json',
+      ...(environment === 'demo' ? { 'x-simulated-trading': '1' } : {}),
     };
   }
 
@@ -45,7 +46,7 @@ export function createOkxAdapter({ config, logger }) {
       supportedTimeInForce: ['GTC', 'IOC', 'FOK', 'PostOnly'],
     },
 
-    async validateCredentials({ apiKey, apiSecret, passphrase }) {
+    async validateCredentials({ apiKey, apiSecret, passphrase, environment }) {
       const path = '/api/v5/account/balance?ccy=USDT';
       const headers = signedHeaders({
         apiKey,
@@ -54,6 +55,7 @@ export function createOkxAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -79,7 +81,7 @@ export function createOkxAdapter({ config, logger }) {
       ];
     },
 
-    async fetchBalances({ apiKey, apiSecret, passphrase }) {
+    async fetchBalances({ apiKey, apiSecret, passphrase, environment }) {
       const path = '/api/v5/account/balance';
       const headers = signedHeaders({
         apiKey,
@@ -88,6 +90,7 @@ export function createOkxAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -128,7 +131,7 @@ export function createOkxAdapter({ config, logger }) {
       }));
     },
 
-    async placeOrder({ apiKey, apiSecret, passphrase, order }) {
+    async placeOrder({ apiKey, apiSecret, passphrase, environment, order }) {
       const path = '/api/v5/trade/order';
       const body = {
         instId: order.instrument,
@@ -148,6 +151,7 @@ export function createOkxAdapter({ config, logger }) {
         method: 'POST',
         requestPath: path,
         body,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -165,7 +169,7 @@ export function createOkxAdapter({ config, logger }) {
       };
     },
 
-    async cancelOrder({ apiKey, apiSecret, passphrase, instrument, exchangeOrderId }) {
+    async cancelOrder({ apiKey, apiSecret, passphrase, environment, instrument, exchangeOrderId }) {
       const path = '/api/v5/trade/cancel-order';
       const body = { instId: instrument, ordId: exchangeOrderId };
       const headers = signedHeaders({
@@ -175,6 +179,7 @@ export function createOkxAdapter({ config, logger }) {
         method: 'POST',
         requestPath: path,
         body,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -186,7 +191,7 @@ export function createOkxAdapter({ config, logger }) {
       return { status: 'canceled' };
     },
 
-    async fetchOrder({ apiKey, apiSecret, passphrase, instrument, exchangeOrderId }) {
+    async fetchOrder({ apiKey, apiSecret, passphrase, environment, instrument, exchangeOrderId }) {
       const query = new URLSearchParams({ instId: instrument, ordId: exchangeOrderId }).toString();
       const path = `/api/v5/trade/order?${query}`;
       const headers = signedHeaders({
@@ -196,6 +201,7 @@ export function createOkxAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -216,7 +222,7 @@ export function createOkxAdapter({ config, logger }) {
       };
     },
 
-    async fetchOpenOrders({ apiKey, apiSecret, passphrase, instrument }) {
+    async fetchOpenOrders({ apiKey, apiSecret, passphrase, environment, instrument }) {
       const query = instrument ? `instId=${instrument}` : '';
       const path = `/api/v5/trade/orders-pending${query ? `?${query}` : ''}`;
       const headers = signedHeaders({
@@ -226,6 +232,7 @@ export function createOkxAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
@@ -246,7 +253,7 @@ export function createOkxAdapter({ config, logger }) {
       }));
     },
 
-    async fetchPositions({ apiKey, apiSecret, passphrase }) {
+    async fetchPositions({ apiKey, apiSecret, passphrase, environment }) {
       const path = '/api/v5/account/positions';
       const headers = signedHeaders({
         apiKey,
@@ -255,6 +262,7 @@ export function createOkxAdapter({ config, logger }) {
         method: 'GET',
         requestPath: path,
         body: null,
+        environment,
       });
       const data = await this.fetchSigned({
         url: `${BASE_URL}${path}`,
