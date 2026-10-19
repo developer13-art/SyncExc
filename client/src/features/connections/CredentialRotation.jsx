@@ -102,9 +102,8 @@ export default function CredentialRotation() {
 
     setSubmitting(true);
     try {
-      await connectionsApi.rotateCredentials(connectionId, { credentials });
-      const validated = await connectionsApi.validate(connectionId);
-      setPermissions(validated.permissions ?? validated.capabilities ?? {});
+      const result = await connectionsApi.rotateCredentials(connectionId, { credentials });
+      setPermissions(result.permissions ?? {});
       setStep('verify');
       toast.success('Credentials rotated', {
         description: 'Review the updated permissions before confirming.',

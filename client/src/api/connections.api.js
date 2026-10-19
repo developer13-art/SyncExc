@@ -15,7 +15,26 @@ export const connectionsApi = {
 
   test: (connectionId) => api.post(endpoints.connections.test(connectionId)),
 
-  validate: (connectionId) => api.post(endpoints.connections.validate(connectionId)),
+  validate: async (connectionId) => {
+    const result = await api.post(endpoints.connections.validate(connectionId));
+    return {
+      ...result,
+      permissions: result.permissions ?? {
+        'account.read':
+          typeof result.canRead === 'boolean'
+            ? result.canRead
+              ? 'verified'
+              : 'missing_permission'
+            : 'unknown',
+        trading:
+          typeof result.canTrade === 'boolean'
+            ? result.canTrade
+              ? 'verified'
+              : 'missing_permission'
+            : 'unknown',
+      },
+    };
+  },
 
   rotateCredentials: (connectionId, payload) =>
     api.post(endpoints.connections.rotate(connectionId), payload),

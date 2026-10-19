@@ -115,7 +115,7 @@ export const apiConfig = Object.freeze({
       create: '/connections',
       detail: (id) => `/connections/${id}`,
       test: (id) => `/connections/${id}/test`,
-      validate: (id) => `/connections/${id}/validate`,
+      validate: (id) => `/connections/${id}/test`,
       rotate: (id) => `/connections/${id}/rotate-credentials`,
       sync: (id) => `/connections/${id}/sync`,
       accounts: (id) => `/connections/${id}/accounts`,

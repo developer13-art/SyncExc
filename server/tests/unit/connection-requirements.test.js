@@ -96,3 +96,84 @@ test('offers demo mode only for exchanges with demo API support', async () => {
     );
   }
 });
+
+test('returns stored verified permissions when creating or rotating a connection', async () => {
+  const connection = {
+    id: 'connection-id',
+    workspace_id: 'workspace-id',
+    owner_id: 'user-id',
+    exchange_code: 'bybit',
+    environment: 'demo',
+    label: 'Bybit Demo',
+    status: 'active',
+  };
+  const permissions = [
+    { permission_key: 'account.read', verification: 'verified' },
+    { permission_key: 'trading', verification: 'missing_permission' },
+  ];
+  const service = {
+    createConnection: async () => connection,
+    rotateCredentials: async () => ({ id: 'credential-id' }),
+    listPermissions: async () => permissions,
+  };
+  const controller = createConnectionsController({ service });
+  const createResponse = {
+    req: { headers: {} },
+    status(status) {
+      this.statusCode = status;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+
+  await controller.createConnection(
+    {
+      auth: { userId: 'user-id' },
+      workspace: { id: 'workspace-id' },
+      body: {
+        exchange: 'bybit',
+        environment: 'demo',
+        label: 'Bybit Demo',
+        credentials: { apiKey: 'key', apiSecret: 'secret' },
+      },
+    },
+    createResponse,
+  );
+
+  assert.equal(createResponse.statusCode, 201);
+  assert.deepEqual(createResponse.body.data.permissions, {
+    'account.read': 'verified',
+    trading: 'missing_permission',
+  });
+
+  const rotateResponse = {
+    req: { headers: {} },
+    status(status) {
+      this.statusCode = status;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+
+  await controller.rotateCredentials(
+    {
+      auth: { userId: 'user-id' },
+      workspace: { id: 'workspace-id' },
+      params: { connectionId: 'connection-id' },
+      body: { credentials: { apiKey: 'key', apiSecret: 'secret' } },
+    },
+    rotateResponse,
+  );
+
+  assert.equal(rotateResponse.statusCode, 200);
+  assert.deepEqual(rotateResponse.body.data.permissions, {
+    'account.read': 'verified',
+    trading: 'missing_permission',
+  });
+});

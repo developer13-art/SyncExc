@@ -40,6 +40,7 @@ export default function ConnectExchange() {
   const [credentialErrors, setCredentialErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [connection, setConnection] = useState(null);
+  const [connectionNotice, setConnectionNotice] = useState(null);
   const [permissions, setPermissions] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -98,6 +99,7 @@ export default function ConnectExchange() {
   const handleExchangeSelect = (exchange) => {
     setSelectedExchange(exchange);
     setLabel(exchange.defaultLabel ?? exchange.name);
+    setConnectionNotice(null);
     setStep('credentials');
   };
 
@@ -144,14 +146,60 @@ export default function ConnectExchange() {
       });
 
       setConnection(created);
-
-      const validated = await connectionsApi.validate(created.id);
-      setPermissions(validated.permissions ?? validated.capabilities ?? {});
+      setPermissions(created.permissions ?? {});
       setStep('verify');
       toast.success('Connection validated', {
         description: 'Review the verified permissions before activating.',
       });
     } catch (error) {
+      if (error?.status === 409) {
+        let items;
+        try {
+          ({ items } = await connectionsApi.list());
+        } catch (recoveryError) {
+          setFormError(
+            `${getErrorMessage(error)} Could not check for an already-saved connection: ${getErrorMessage(recoveryError)}`,
+          );
+          return;
+        }
+        const existing = items.find(
+          (item) =>
+            item.label === (label.trim() || selectedExchange.name) &&
+            item.exchange === selectedExchange.id &&
+            item.environment === environment &&
+            !['disconnected', 'revoked'].includes(item.status),
+        );
+
+        if (existing) {
+          let storedPermissions;
+          try {
+            storedPermissions = await connectionsApi.getPermissions(existing.id);
+          } catch (recoveryError) {
+            setFormError(
+              `This connection may already be saved, but its permissions could not be loaded: ${getErrorMessage(recoveryError)}`,
+            );
+            return;
+          }
+          setConnection(existing);
+          setCredentials({});
+          setPermissions(
+            Object.fromEntries(
+              storedPermissions.map((permission) => [
+                permission.key,
+                permission.verification,
+              ]),
+            ),
+          );
+          setConnectionNotice(
+            'This connection was already saved. The credentials entered now were not applied; the saved connection is being resumed.',
+          );
+          setStep('verify');
+          toast.info('Existing connection found', {
+            description: 'Your newly entered credentials were not applied.',
+          });
+          return;
+        }
+      }
       setFormError(getErrorMessage(error));
     } finally {
       setSubmitting(false);
@@ -165,7 +213,10 @@ export default function ConnectExchange() {
     setSubmitting(true);
     try {
       await connectionsApi.sync(connection.id);
-      await connectionsApi.test(connection.id);
+      const testResult = await connectionsApi.test(connection.id);
+      if (!testResult.ok) {
+        throw new Error(testResult.error || 'Exchange connection test failed.');
+      }
       setStep('complete');
       toast.success('Connection activated');
     } catch (error) {
@@ -187,6 +238,19 @@ export default function ConnectExchange() {
 
       <div className="mx-auto w-full max-w-3xl">
         <Stepper steps={STEPS} currentStep={currentStepIndex} />
+        {connectionNotice ? (
+          <div className="mt-4 rounded-md border border-info/30 bg-info/5 px-3 py-2 text-xs text-muted-foreground">
+            {connectionNotice}{' '}
+            {connection ? (
+              <Link
+                className="font-medium text-info underline underline-offset-2"
+                to={ROUTES.app.connections.details(connection.id)}
+              >
+                Open connection
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mt-8">
           {step === 'exchange' ? (

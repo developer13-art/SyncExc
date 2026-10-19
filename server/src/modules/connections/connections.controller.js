@@ -6,6 +6,15 @@ import { success, created, noContent } from '../../lib/response.js';
 import { serializeConnection, serializeAccount, serializeInstrument } from '../../lib/serializers.js';
 import { EXCHANGE_ENVIRONMENTS } from '@syncexc/shared';
 
+function serializePermissionMap(permissions) {
+  return Object.fromEntries(
+    permissions.map((permission) => [
+      permission.permission_key,
+      permission.verification,
+    ]),
+  );
+}
+
 export function createConnectionsController({ service }) {
   return {
     async getConnectionRequirements(req, res) {
@@ -97,7 +106,14 @@ export function createConnectionsController({ service }) {
         label: req.body.label,
         credentials: req.body.credentials,
       });
-      return created(res, serializeConnection(connection));
+      const permissions = await service.listPermissions({
+        connectionId: connection.id,
+        workspaceId: req.workspace.id,
+      });
+      return created(res, {
+        ...serializeConnection(connection),
+        permissions: serializePermissionMap(permissions),
+      });
     },
 
     async testConnection(req, res) {
@@ -110,14 +126,21 @@ export function createConnectionsController({ service }) {
     },
 
     async rotateCredentials(req, res) {
-      const result = await service.rotateCredentials({
+      await service.rotateCredentials({
         userId: req.auth.userId,
         workspaceId: req.workspace.id,
         connectionId: req.params.connectionId,
         credentials: req.body.credentials,
         reason: req.body.reason,
       });
-      return success(res, { rotated: true });
+      const permissions = await service.listPermissions({
+        connectionId: req.params.connectionId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, {
+        rotated: true,
+        permissions: serializePermissionMap(permissions),
+      });
     },
 
     async suspendConnection(req, res) {
