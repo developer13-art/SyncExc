@@ -26,6 +26,17 @@ export function createConnectionsRoutes({ service, middleware }) {
   );
 
   router.get(
+    '/exchanges/:exchangeCode/connection-requirements',
+    middleware.optionalAuth(),
+    middleware.validateParams(
+      Joi.object({
+        exchangeCode: Joi.string().valid('binance', 'bybit', 'bitget', 'okx').required(),
+      }),
+    ),
+    middleware.asyncHandler(controller.getConnectionRequirements)
+  );
+
+  router.get(
     '/exchanges/:exchangeCode/instruments',
     middleware.optionalAuth(),
     middleware.validateQuery(Joi.object({

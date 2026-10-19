@@ -7,6 +7,43 @@ import { serializeConnection, serializeAccount, serializeInstrument } from '../.
 
 export function createConnectionsController({ service }) {
   return {
+    async getConnectionRequirements(req, res) {
+      const exchange = String(req.params.exchangeCode).toLowerCase();
+      const requirements = {
+        binance: [
+          { name: 'apiKey', label: 'API Key', type: 'text', required: true },
+          { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
+        ],
+        bybit: [
+          { name: 'apiKey', label: 'API Key', type: 'text', required: true },
+          { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
+        ],
+        bitget: [
+          { name: 'apiKey', label: 'API Key', type: 'text', required: true },
+          { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
+          {
+            name: 'passphrase',
+            label: 'API Key Passphrase',
+            type: 'password',
+            required: true,
+            hint: 'Enter the passphrase you set when creating this API key on Bitget.',
+          },
+        ],
+        okx: [
+          { name: 'apiKey', label: 'API Key', type: 'text', required: true },
+          { name: 'apiSecret', label: 'API Secret', type: 'password', required: true },
+          {
+            name: 'passphrase',
+            label: 'API Key Passphrase',
+            type: 'password',
+            required: true,
+            hint: 'Enter the passphrase you set when creating this API key on OKX.',
+          },
+        ],
+      };
+      return success(res, { requirements: requirements[exchange] ?? [] });
+    },
+
     async listExchanges(req, res) {
       const { db } = req.services;
       const { rows } = await db.query(
