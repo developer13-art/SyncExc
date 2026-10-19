@@ -65,6 +65,14 @@ function normalizeError(err) {
 
   // PostgreSQL unique violation
   if (err.code === '23505') {
+    if (err.constraint === 'exchange_connections_label_unique') {
+      return {
+        status: 409,
+        code: 'CONNECTION_LABEL_CONFLICT',
+        message: 'A connection with this label already exists in this workspace. Choose another label.',
+        details: { constraint: err.constraint },
+      };
+    }
     return {
       status: 409,
       code: 'CONFLICT',

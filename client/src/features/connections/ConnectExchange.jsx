@@ -116,6 +116,11 @@ export default function ConnectExchange() {
     setFormError(null);
   };
 
+  const handleLabelChange = (event) => {
+    setLabel(event.target.value);
+    setFormError(null);
+  };
+
   const handleCredentialSubmit = async () => {
     if (requirementsError) {
       setFormError(requirementsError);
@@ -199,6 +204,35 @@ export default function ConnectExchange() {
           });
           return;
         }
+
+        const isLabelConflict =
+          error.code === 'CONNECTION_LABEL_CONFLICT' ||
+          error.details?.constraint === 'exchange_connections_label_unique';
+        if (isLabelConflict) {
+          const currentLabel = label.trim() || selectedExchange.name;
+          const modeLabel = environmentOptions.find(
+            (option) => option.value === environment,
+          )?.label;
+          const suffix =
+            environment === 'demo'
+              ? 'Demo'
+              : environment === 'testnet'
+                ? 'Testnet'
+                : modeLabel || 'Real';
+          const baseSuggestion = `${currentLabel} (${suffix})`;
+          const existingLabels = new Set(items.map((item) => item.label.toLowerCase()));
+          let suggestedLabel = baseSuggestion;
+          let disambiguator = 2;
+          while (existingLabels.has(suggestedLabel.toLowerCase())) {
+            suggestedLabel = `${baseSuggestion} ${disambiguator}`;
+            disambiguator += 1;
+          }
+          setLabel(suggestedLabel);
+          setFormError(
+            `The label "${currentLabel}" is already used in this workspace. It has been changed to "${suggestedLabel}"; click Validate and connect again. Your entered credentials are still here.`,
+          );
+          return;
+        }
       }
       setFormError(getErrorMessage(error));
     } finally {
@@ -277,7 +311,7 @@ export default function ConnectExchange() {
                   <Input
                     id="conn-label"
                     value={label}
-                    onChange={(e) => setLabel(e.target.value)}
+                    onChange={handleLabelChange}
                     placeholder="Primary Spot Account"
                   />
                 </FormField>
