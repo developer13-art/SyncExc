@@ -48,6 +48,13 @@ export function createWorkspacesRoutes({ service, middleware }) {
     middleware.asyncHandler(controller.get)
   );
 
+  router.get(
+    '/:workspaceId/capabilities',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.getCapabilities)
+  );
+
   router.patch(
     '/:workspaceId',
     middleware.requireAuth(),

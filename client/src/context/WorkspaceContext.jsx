@@ -53,15 +53,19 @@ export function WorkspaceProvider({ children }) {
       if (workspaceId === activeWorkspaceId) {
         return;
       }
-      dispatch(workspaceActions.setActiveWorkspace(workspaceId));
-      try {
-        await workspacesApi.switchContext(workspaceId);
-      } catch {
-        // Server switch-context may not be required in all deployments.
+      const cachedWorkspaceList = queryClient.getQueryData(queryKeys.workspaces.list({}));
+      const targetWorkspace =
+        workspaces.find((workspace) => workspace.id === workspaceId) ??
+        cachedWorkspaceList?.items?.find((workspace) => workspace.id === workspaceId);
+      if (!targetWorkspace || targetWorkspace.status !== 'active') {
+        throw new Error('This workspace is unavailable.');
       }
-      await queryClient.invalidateQueries();
+
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      dispatch(workspaceActions.setActiveWorkspace(workspaceId));
     },
-    [activeWorkspaceId, dispatch, queryClient],
+    [activeWorkspaceId, dispatch, queryClient, workspaces],
   );
 
   const reloadWorkspaces = useCallback(async () => {

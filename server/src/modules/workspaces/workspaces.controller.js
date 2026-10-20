@@ -57,6 +57,14 @@ export function createWorkspacesController({ service }) {
       return success(res, serializeWorkspace(workspace));
     },
 
+    async getCapabilities(req, res) {
+      const capabilities = await service.getWorkspaceCapabilities({
+        userId: req.auth.userId,
+        workspaceId: req.params.workspaceId,
+      });
+      return success(res, capabilities);
+    },
+
     async update(req, res) {
       const updated = await service.updateWorkspace({
         userId: req.auth.userId,

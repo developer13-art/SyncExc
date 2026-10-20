@@ -11,6 +11,7 @@ export const queryKeys = {
     all: ['workspaces'],
     list: (params) => ['workspaces', 'list', params],
     detail: (id) => ['workspaces', 'detail', id],
+    capabilities: (id) => ['workspaces', 'capabilities', id],
     members: (id, params) => ['workspaces', 'members', id, params],
     invitations: (id, params) => ['workspaces', 'invitations', id, params],
     roles: (id) => ['workspaces', 'roles', id],

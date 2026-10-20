@@ -16,6 +16,25 @@ import DEFAULT_WORKSPACE_ROLES from '../../database/seeds/roles.js';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OWNERSHIP_TRANSFER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const WORKSPACE_CAPABILITIES = {
+  personal: [
+    { key: 'exchange_connections', entitlement: 'exchangeConnections.max', kind: 'limit' },
+    { key: 'signal_sources', entitlement: 'signalSources.max', kind: 'limit' },
+    { key: 'automation', entitlement: 'automation.enabled', kind: 'boolean' },
+  ],
+  trader: [
+    { key: 'trader_profile', entitlement: 'marketplace.enabled', kind: 'boolean' },
+    { key: 'signal_publishing', entitlement: 'marketplace.enabled', kind: 'boolean' },
+  ],
+  developer: [
+    { key: 'applications', kind: 'base' },
+    { key: 'sandbox', kind: 'base' },
+    { key: 'production_api', entitlement: 'developerApi.enabled', kind: 'boolean' },
+  ],
+  organization: [
+    { key: 'team_collaboration', entitlement: 'workspaceMembers.max', kind: 'limit' },
+  ],
+};
 
 function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
@@ -42,61 +61,64 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
 
   async function ensurePersonalWorkspace(userId) {
     const existing = await queries.findPersonalWorkspaceForUser(userId);
-    if (existing) return existing;
 
     return db.tx(async (tx) => {
-      const workspace = await queries.insertWorkspace(tx, {
-        name: 'Personal',
-        type: 'personal',
-        ownerId: userId,
-      });
-
-      // Seed roles for the new workspace
-      await seedRolesForWorkspace(tx, workspace.id);
-
-      // Add the owner
-      await queries.insertMembership(tx, {
-        workspaceId: workspace.id,
-        userId,
-        role: 'owner',
-        status: 'active',
-      });
-
-      await events.publish(
-        tx,
-        'workspace.created',
-        { workspaceId: workspace.id, type: 'personal', ownerId: userId },
-        {
-          actorId: userId,
-          workspaceId: workspace.id,
-          resourceType: 'workspace',
-          resourceId: workspace.id,
+      let workspace = existing;
+      let created = false;
+      if (!workspace) {
+        workspace = await queries.insertPersonalWorkspace(tx, userId);
+        created = Boolean(workspace);
+        if (!workspace) {
+          workspace = await queries.findPersonalWorkspaceForUser(userId, tx);
         }
-      );
+      }
+      if (!workspace) {
+        throw new AppError('Could not create the personal workspace', {
+          code: 'PERSONAL_WORKSPACE_CREATION_FAILED',
+          status: 500,
+        });
+      }
+
+      await seedRolesForWorkspace(tx, workspace.id);
+      await queries.ensureOwnerMembership(tx, workspace.id, userId);
+
+      if (created) {
+        await events.publish(
+          tx,
+          'workspace.created',
+          { workspaceId: workspace.id, type: 'personal', ownerId: userId },
+          {
+            actorId: userId,
+            workspaceId: workspace.id,
+            resourceType: 'workspace',
+            resourceId: workspace.id,
+          }
+        );
+      }
 
       return workspace;
     });
   }
 
   async function createOrganizationWorkspace({ userId, name, description, timezone, preferredLanguage }) {
-    // Basic limits: one organization workspace per personal subscription tier
-    const existingCount = await db.query(
-      `
-      SELECT count(*)::int AS count
-      FROM workspaces
-      WHERE owner_id = $1 AND type = 'organization' AND status <> 'closed'
-      `,
-      [userId]
-    );
-    if (existingCount.rows[0].count >= 10) {
-      throw new AppError('Workspace creation limit reached', {
-        code: 'WORKSPACE_LIMIT_REACHED',
-        status: 402,
-        expose: true,
-      });
-    }
-
+    const limit = await getWorkspaceLimit(userId, 'organization');
     return db.tx(async (tx) => {
+      await lockWorkspaceOwner(tx, userId);
+      const current = await countOwnedWorkspaces(tx, userId, 'organization');
+      if (current >= limit) {
+        throw new AppError('Organization workspace limit reached', {
+          code: 'WORKSPACE_LIMIT_REACHED',
+          status: 402,
+          expose: true,
+          details: {
+            type: 'organization',
+            current,
+            limit,
+            entitlement: 'organizationWorkspaces.max',
+          },
+        });
+      }
+
       const workspace = await queries.insertWorkspace(tx, {
         name,
         type: 'organization',
@@ -138,7 +160,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
     });
   }
 
-  async function getWorkspaceLimit(userId, type) {
+  async function getWorkspaceLimit(userId, type, entitlementKey = `${type}Workspaces.max`) {
     const fallback = type === 'organization' ? 10 : 1;
     const personal = await queries.findPersonalWorkspaceForUser(userId);
     const billing = getBilling?.();
@@ -148,7 +170,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
       ...(personal ? [{ scopeType: 'workspace', scopeId: personal.id }] : []),
       { scopeType: 'user', scopeId: userId },
     ];
-    const key = `${type}Workspaces.max`;
+    const key = entitlementKey;
     for (const scope of scopes) {
       const entitlements = await billing.listEntitlementsForScope(scope);
       if (Object.prototype.hasOwnProperty.call(entitlements, key)) {
@@ -161,6 +183,102 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
       }
     }
     return fallback;
+  }
+
+  async function lockWorkspaceOwner(tx, userId) {
+    const result = await tx.query(
+      'SELECT id FROM users WHERE id = $1 FOR UPDATE',
+      [userId],
+    );
+    if (!result.rows[0]) throw new NotFoundError('User');
+  }
+
+  async function countOwnedWorkspaces(tx, userId, type) {
+    const result = await tx.query(
+      `
+      SELECT count(*)::int AS count
+      FROM workspaces
+      WHERE owner_id = $1 AND type = $2 AND status NOT IN ('closed', 'archived')
+      `,
+      [userId, type],
+    );
+    const count = result.rows[0]?.count;
+    if (!Number.isInteger(count)) {
+      throw new AppError('Could not count owned workspaces', {
+        code: 'WORKSPACE_COUNT_FAILED',
+        status: 500,
+      });
+    }
+    return count;
+  }
+
+  async function getWorkspaceEntitlements(workspace) {
+    const billing = getBilling?.();
+    if (!billing?.listEntitlementsForScope) return {};
+
+    const personal = await queries.findPersonalWorkspaceForUser(workspace.owner_id);
+    const scopes = [
+      { scopeType: 'user', scopeId: workspace.owner_id },
+      ...(personal ? [{ scopeType: 'workspace', scopeId: personal.id }] : []),
+      { scopeType: 'workspace', scopeId: workspace.id },
+    ];
+    const entitlements = {};
+    for (const scope of scopes) {
+      Object.assign(entitlements, await billing.listEntitlementsForScope(scope));
+    }
+    return entitlements;
+  }
+
+  async function getWorkspaceCapabilities({ userId, workspaceId }) {
+    const workspace = await queries.findWorkspaceById(workspaceId);
+    const membership = await queries.findMembership(workspaceId, userId);
+    if (!workspace || !membership || membership.status !== 'active') {
+      throw new NotFoundError('Workspace');
+    }
+
+    const [entitlements, grants] = await Promise.all([
+      getWorkspaceEntitlements(workspace),
+      queries.listCapabilityGrantsForWorkspace(workspaceId),
+    ]);
+    const grantsByKey = new Map(grants.map((grant) => [grant.capability_key, grant]));
+    const capabilities = (WORKSPACE_CAPABILITIES[workspace.type] || []).map((definition) => {
+      const grant = grantsByKey.get(definition.key);
+      const entitlementValue = definition.entitlement
+        ? entitlements[definition.entitlement]
+        : true;
+      const entitled = definition.kind === 'base'
+        ? true
+        : definition.kind === 'limit'
+          ? Number(entitlementValue) > 0
+          : entitlementValue === true;
+      const enabled = workspace.status === 'active' && entitled && grant?.enabled !== false;
+
+      return {
+        key: definition.key,
+        entitlement: definition.entitlement || null,
+        limit: definition.kind === 'limit' && typeof entitlementValue === 'number'
+          ? entitlementValue
+          : null,
+        entitled,
+        enabled,
+        status: workspace.status !== 'active'
+          ? 'workspace_inactive'
+          : !entitled
+            ? 'not_entitled'
+            : grant?.enabled === false
+              ? 'disabled_by_policy'
+              : 'available',
+        grantSource: grant?.source || null,
+      };
+    });
+
+    return {
+      workspaceId: workspace.id,
+      workspaceType: workspace.type,
+      workspaceStatus: workspace.status,
+      capabilities,
+      entitlements,
+    };
   }
 
   async function createSpecializedWorkspace({
@@ -177,22 +295,6 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
 
     await ensurePersonalWorkspace(userId);
     const limit = await getWorkspaceLimit(userId, type);
-    const count = await db.query(
-      `
-      SELECT count(*)::int AS count
-      FROM workspaces
-      WHERE owner_id = $1 AND type = $2 AND status NOT IN ('closed', 'archived')
-      `,
-      [userId, type]
-    );
-    if (count.rows[0].count >= limit) {
-      throw new AppError(`${type === 'trader' ? 'Trader' : 'Developer'} workspace limit reached`, {
-        code: 'WORKSPACE_LIMIT_REACHED',
-        status: 402,
-        expose: true,
-        details: { type, current: count.rows[0].count, limit, entitlement: `${type}Workspaces.max` },
-      });
-    }
 
     const suffix = randomUUID().slice(0, 6);
     const baseSlug = String(name)
@@ -204,6 +306,17 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
       .slice(0, 48) || type;
 
     return db.tx(async (tx) => {
+      await lockWorkspaceOwner(tx, userId);
+      const current = await countOwnedWorkspaces(tx, userId, type);
+      if (current >= limit) {
+        throw new AppError(`${type === 'trader' ? 'Trader' : 'Developer'} workspace limit reached`, {
+          code: 'WORKSPACE_LIMIT_REACHED',
+          status: 402,
+          expose: true,
+          details: { type, current, limit, entitlement: `${type}Workspaces.max` },
+        });
+      }
+
       const workspace = await queries.insertWorkspace(tx, {
         name,
         type,
@@ -243,21 +356,27 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
   }
 
   async function updateWorkspaceLifecycle({ userId, workspaceId, status, reason }) {
-    const workspace = await queries.findWorkspaceById(workspaceId);
-    if (!workspace || workspace.owner_id !== userId || workspace.type === 'personal') {
-      throw new NotFoundError('Workspace');
-    }
-    const allowed = workspace.status === 'active'
-      ? ['paused', 'archived']
-      : workspace.status === 'paused'
-        ? ['active', 'archived']
-        : [];
-    if (!allowed.includes(status)) {
-      throw new ValidationError(`Cannot change workspace status from ${workspace.status} to ${status}`);
-    }
-
     return db.tx(async (tx) => {
+      const lockedResult = await tx.query(
+        `SELECT * FROM workspaces WHERE id = $1 AND status <> 'closed' FOR UPDATE`,
+        [workspaceId],
+      );
+      const workspace = lockedResult.rows[0];
+      if (!workspace || workspace.owner_id !== userId || workspace.type === 'personal') {
+        throw new NotFoundError('Workspace');
+      }
+
+      const allowed = workspace.status === 'active'
+        ? ['paused', 'archived']
+        : workspace.status === 'paused'
+          ? ['active', 'archived']
+          : [];
+      if (!allowed.includes(status)) {
+        throw new ValidationError(`Cannot change workspace status from ${workspace.status} to ${status}`);
+      }
+
       const updated = await queries.setWorkspaceStatus(workspaceId, status, tx);
+      if (!updated) throw new NotFoundError('Workspace');
       await queries.insertWorkspaceLifecycleEvent(tx, {
         workspaceId,
         actorId: userId,
@@ -562,6 +681,14 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
       permission: PERMISSION.MEMBERS_INVITE,
     });
 
+    const workspace = await queries.findWorkspaceById(workspaceId);
+    if (!workspace) throw new NotFoundError('Workspace');
+    const memberLimit = await getWorkspaceLimit(
+      workspace.owner_id,
+      'workspaceMembers',
+      'workspaceMembers.max',
+    );
+
     const emailNormalized = normalizeEmail(email);
 
     const existing = await db.query(
@@ -588,6 +715,25 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
     const expiresAt = new Date(Date.now() + (expiresInDays || 7) * 24 * 60 * 60 * 1000);
 
     const result = await db.tx(async (tx) => {
+      const lockedWorkspace = await tx.query(
+        `SELECT id FROM workspaces WHERE id = $1 AND status = 'active' FOR UPDATE`,
+        [workspaceId],
+      );
+      if (!lockedWorkspace.rows[0]) throw new NotFoundError('Workspace');
+      const memberCount = await queries.countMembersAndPendingInvitations(workspaceId, tx);
+      if (memberCount >= memberLimit) {
+        throw new AppError('Workspace member limit reached', {
+          code: 'WORKSPACE_MEMBER_LIMIT_REACHED',
+          status: 402,
+          expose: true,
+          details: {
+            current: memberCount,
+            limit: memberLimit,
+            entitlement: 'workspaceMembers.max',
+          },
+        });
+      }
+
       const invitation = await queries.insertInvitation(tx, {
         workspaceId,
         email,
@@ -650,13 +796,68 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
     }
 
     return db.tx(async (tx) => {
+      const lockedInvitationResult = await tx.query(
+        `
+        SELECT id, workspace_id, email_normalized, role, invited_by, status, expires_at
+        FROM workspace_invitations
+        WHERE id = $1
+        FOR UPDATE
+        `,
+        [invitation.id],
+      );
+      const lockedInvitation = lockedInvitationResult.rows[0];
+      if (
+        !lockedInvitation ||
+        lockedInvitation.status !== 'pending' ||
+        new Date(lockedInvitation.expires_at) <= new Date()
+      ) {
+        throw new ValidationError('Invalid or expired invitation');
+      }
+
+      const workspaceResult = await tx.query(
+        `SELECT owner_id FROM workspaces WHERE id = $1 AND status = 'active' FOR UPDATE`,
+        [lockedInvitation.workspace_id],
+      );
+      const workspace = workspaceResult.rows[0];
+      if (!workspace) throw new ConflictError('This workspace is not active', 'WORKSPACE_NOT_ACTIVE');
+
+      const userResult = await tx.query(
+        `SELECT email_normalized FROM users WHERE id = $1 AND deleted_at IS NULL`,
+        [userId],
+      );
+      if (
+        !userResult.rows[0] ||
+        normalizeEmail(userResult.rows[0].email_normalized) !== lockedInvitation.email_normalized
+      ) {
+        throw new AuthorizationError('This invitation belongs to another account', 'INVITATION_EMAIL_MISMATCH');
+      }
+
+      const memberLimit = await getWorkspaceLimit(
+        workspace.owner_id,
+        'workspaceMembers',
+        'workspaceMembers.max',
+      );
+      const memberCount = await queries.countMembersAndPendingInvitations(lockedInvitation.workspace_id, tx);
+      if (memberCount > memberLimit) {
+        throw new AppError('Workspace member limit reached', {
+          code: 'WORKSPACE_MEMBER_LIMIT_REACHED',
+          status: 402,
+          expose: true,
+          details: {
+            current: memberCount,
+            limit: memberLimit,
+            entitlement: 'workspaceMembers.max',
+          },
+        });
+      }
+
       const existingMembership = await tx.query(
         `
         SELECT id, status FROM workspace_memberships
         WHERE workspace_id = $1 AND user_id = $2
         LIMIT 1
         `,
-        [invitation.workspace_id, userId]
+        [lockedInvitation.workspace_id, userId]
       );
 
       if (existingMembership.rows.length > 0) {
@@ -666,15 +867,15 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
           SET status = 'active', role = $3, updated_at = now()
           WHERE workspace_id = $1 AND user_id = $2
           `,
-          [invitation.workspace_id, userId, invitation.role]
+          [lockedInvitation.workspace_id, userId, lockedInvitation.role]
         );
       } else {
         await queries.insertMembership(tx, {
-          workspaceId: invitation.workspace_id,
+          workspaceId: lockedInvitation.workspace_id,
           userId,
-          role: invitation.role,
+          role: lockedInvitation.role,
           status: 'active',
-          invitedBy: invitation.invited_by,
+          invitedBy: lockedInvitation.invited_by,
         });
       }
 
@@ -690,16 +891,16 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
       await events.publish(
         tx,
         'workspace.invitation_accepted',
-        { workspaceId: invitation.workspace_id, userId, role: invitation.role },
+        { workspaceId: lockedInvitation.workspace_id, userId, role: lockedInvitation.role },
         {
           actorId: userId,
-          workspaceId: invitation.workspace_id,
+          workspaceId: lockedInvitation.workspace_id,
           resourceType: 'workspace_invitation',
-          resourceId: invitation.id,
+          resourceId: lockedInvitation.id,
         }
       );
 
-      return { workspaceId: invitation.workspace_id, role: invitation.role };
+      return { workspaceId: lockedInvitation.workspace_id, role: lockedInvitation.role };
     });
   }
 
@@ -1080,6 +1281,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
     createSpecializedWorkspace,
     updateWorkspaceLifecycle,
     getWorkspaceById,
+    getWorkspaceCapabilities,
     listWorkspacesForUser,
     getActiveWorkspaceIdsForUser,
     updateWorkspace,

@@ -45,6 +45,8 @@ export default function WorkspaceManagement() {
   const [type, setType] = useState('trader');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [error, setError] = useState('');
   const [busyWorkspaceId, setBusyWorkspaceId] = useState(null);
 
@@ -91,7 +93,14 @@ export default function WorkspaceManagement() {
     }
   };
 
-  const visibleWorkspaces = [...workspaces].sort((a, b) => {
+  const visibleWorkspaces = workspaces
+    .filter((workspace) =>
+      (typeFilter === 'all' || workspace.type === typeFilter) &&
+      `${workspace.name} ${workspace.description || ''}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase()),
+    )
+    .sort((a, b) => {
     const order = { personal: 0, trader: 1, developer: 2, organization: 3 };
     return (order[a.type] ?? 4) - (order[b.type] ?? 4) || a.name.localeCompare(b.name);
   });
@@ -174,7 +183,27 @@ export default function WorkspaceManagement() {
           <h2 id="workspace-list-title" className="text-lg font-semibold text-foreground">
             Your workspaces
           </h2>
-          <span className="text-sm text-muted-foreground">{visibleWorkspaces.length} total</span>
+          <span className="text-sm text-muted-foreground">{workspaces.length} total</span>
+        </div>
+        <div className="mb-3 grid gap-3 sm:grid-cols-[1fr_12rem]">
+          <Input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search workspaces"
+            aria-label="Search workspaces"
+          />
+          <select
+            value={typeFilter}
+            onChange={(event) => setTypeFilter(event.target.value)}
+            aria-label="Filter workspaces by type"
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+          >
+            <option value="all">All types</option>
+            {Object.entries(typeLabels).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
         </div>
         <div className="grid gap-3">
           {visibleWorkspaces.map((workspace) => {

@@ -33,6 +33,19 @@ export function createWorkspacesQueries({ db }) {
       return result.rows[0];
     },
 
+    async insertPersonalWorkspace(client, userId) {
+      const result = await client.query(
+        `
+        INSERT INTO workspaces (name, type, owner_id)
+        VALUES ('Personal', 'personal', $1)
+        ON CONFLICT (owner_id) WHERE type = 'personal' DO NOTHING
+        RETURNING *
+        `,
+        [userId]
+      );
+      return result.rows[0] || null;
+    },
+
     async findWorkspaceById(id, client = db) {
       const result = await client.query(
         `SELECT * FROM workspaces WHERE id = $1 AND status <> 'closed'`,
@@ -62,7 +75,14 @@ export function createWorkspacesQueries({ db }) {
         WHERE m.user_id = $1
           AND m.status = 'active'
           AND w.status <> 'closed'
-        ORDER BY w.type ASC, w.created_at ASC
+        ORDER BY
+          CASE w.type
+            WHEN 'personal' THEN 0
+            WHEN 'trader' THEN 1
+            WHEN 'developer' THEN 2
+            ELSE 3
+          END,
+          w.created_at ASC
         `,
         [userId]
       );
@@ -79,6 +99,42 @@ export function createWorkspacesQueries({ db }) {
         [userId]
       );
       return result.rows.map((r) => r.workspace_id);
+    },
+
+    async listCapabilityGrantsForWorkspace(workspaceId) {
+      const result = await db.query(
+        `
+        SELECT capability_key, enabled, source, expires_at
+        FROM workspace_capability_grants
+        WHERE workspace_id = $1
+          AND (expires_at IS NULL OR expires_at > now())
+        `,
+        [workspaceId]
+      );
+      return result.rows;
+    },
+
+    async countMembersAndPendingInvitations(workspaceId, client = db) {
+      const result = await client.query(
+        `
+        SELECT
+          (
+            SELECT count(*)::int
+            FROM workspace_memberships
+            WHERE workspace_id = $1
+              AND status IN ('active', 'invited', 'ownership_transfer_pending')
+          ) +
+          (
+            SELECT count(*)::int
+            FROM workspace_invitations
+            WHERE workspace_id = $1
+              AND status = 'pending'
+              AND expires_at > now()
+          ) AS count
+        `,
+        [workspaceId]
+      );
+      return result.rows[0].count;
     },
 
     async updateWorkspace(id, fields) {
@@ -172,6 +228,20 @@ export function createWorkspacesQueries({ db }) {
           data.extraPermissions || [],
           data.invitedBy || null,
         ]
+      );
+      return result.rows[0];
+    },
+
+    async ensureOwnerMembership(client, workspaceId, userId) {
+      const result = await client.query(
+        `
+        INSERT INTO workspace_memberships (workspace_id, user_id, role, status)
+        VALUES ($1, $2, 'owner', 'active')
+        ON CONFLICT (workspace_id, user_id)
+        DO UPDATE SET role = 'owner', status = 'active', removed_at = NULL, updated_at = now()
+        RETURNING *
+        `,
+        [workspaceId, userId]
       );
       return result.rows[0];
     },

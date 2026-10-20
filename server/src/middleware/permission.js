@@ -8,8 +8,8 @@
  *   requireEntitlement(key) → checks a subscription entitlement
  *
  * Workspace resolution precedence:
- *   1. `X-Workspace-Id` header
- *   2. `:workspaceId` route param
+ *   1. `:workspaceId` route param
+ *   2. `X-Workspace-Id` header
  *   3. `body.workspaceId`
  *   4. `query.workspaceId`
  *
@@ -28,8 +28,8 @@ const logger = createLogger({ component: 'permission' });
 
 function extractWorkspaceId(req) {
   return (
-    req.headers['x-workspace-id'] ||
     req.params?.workspaceId ||
+    req.headers['x-workspace-id'] ||
     req.body?.workspaceId ||
     req.query?.workspaceId ||
     null

@@ -48,6 +48,7 @@ export function createBillingModule({ services }) {
 
   const publicApi = {
     checkEntitlement: (params) => service.checkEntitlement(params),
+    listEntitlementsForScope: (scope) => service.listEntitlementsForScope(scope),
     getActiveSubscriptionForScope: (scopeType, scopeId) =>
       service.getActiveSubscriptionForScope(scopeType, scopeId),
     recordUsage: (params) => service.recordUsage(params),

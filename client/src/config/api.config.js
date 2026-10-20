@@ -78,6 +78,7 @@ export const apiConfig = Object.freeze({
       list: '/workspaces',
       create: '/workspaces',
       detail: (id) => `/workspaces/${id}`,
+      capabilities: (id) => `/workspaces/${id}/capabilities`,
       members: (id) => `/workspaces/${id}/members`,
       member: (id, userId) => `/workspaces/${id}/members/${userId}`,
       invitations: (id) => `/workspaces/${id}/invitations`,

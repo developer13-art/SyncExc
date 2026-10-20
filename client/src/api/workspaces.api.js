@@ -10,6 +10,8 @@ export const workspacesApi = {
 
   getById: (workspaceId) => api.get(endpoints.workspaces.detail(workspaceId)),
 
+  getCapabilities: (workspaceId) => api.get(endpoints.workspaces.capabilities(workspaceId)),
+
   update: (workspaceId, payload) => api.patch(endpoints.workspaces.detail(workspaceId), payload),
 
   updateLifecycle: (workspaceId, payload) =>
@@ -81,6 +83,4 @@ export const workspacesApi = {
   getAuditEvents: (workspaceId, params) =>
     api.getPaged(endpoints.workspaces.audit(workspaceId), { params }),
 
-  switchContext: (workspaceId) =>
-    api.post(`${endpoints.workspaces.detail(workspaceId)}/switch-context`),
 };
