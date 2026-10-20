@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import bigInt from 'big-integer';
 import { Api } from 'teleproto';
 import {
+  createTelegramClient,
   getTelegramPeer,
   listTelegramDialogs,
   requireTelegramCredentials,
@@ -53,4 +54,12 @@ test('requires Telegram app credentials before connecting', () => {
     () => requireTelegramCredentials({ telegram: {} }),
     /TELEGRAM_API_ID and TELEGRAM_API_HASH/,
   );
+});
+
+test('allows Telegram client to retry DC migration during phone login', () => {
+  const client = createTelegramClient('', {
+    telegram: { apiId: 123, apiHash: 'app-hash' },
+  });
+
+  assert.ok(client._requestRetries > 1);
 });

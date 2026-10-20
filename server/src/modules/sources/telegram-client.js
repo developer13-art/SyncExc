@@ -19,7 +19,7 @@ export function createTelegramClient(sessionString, config) {
   const { apiId, apiHash } = requireTelegramCredentials(config);
   return new TelegramClient(new StringSession(sessionString || ''), apiId, apiHash, {
     connectionRetries: 2,
-    requestRetries: 1,
+    requestRetries: 5,
   });
 }
 
