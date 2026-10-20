@@ -10,6 +10,7 @@ import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { SettingsSectionNav } from './components/SettingsSectionNav.jsx';
 
 export default function Sessions() {
   const dispatch = useDispatch();
@@ -52,6 +53,7 @@ export default function Sessions() {
           <LogOut className="h-4 w-4" /> Sign out everywhere else
         </Button>
       </div>
+      <SettingsSectionNav activePath={ROUTES.app.settings.sessions} />
 
       <SessionList />
 

@@ -67,6 +67,7 @@ export const apiConfig = Object.freeze({
     },
     users: {
       me: '/users/me',
+      preferences: '/users/me/preferences',
       sessions: '/users/me/sessions',
       session: (id) => `/users/me/sessions/${id}`,
       trustedDevices: '/users/me/trusted-devices',

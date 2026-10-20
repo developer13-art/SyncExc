@@ -556,6 +556,41 @@ export function createIdentityQueries({ db }) {
     },
 
     /* =========================================================================
+     * PERSONAL PREFERENCES
+     * ====================================================================== */
+
+    async getUserPreferences(userId) {
+      const result = await db.query(
+        `SELECT general_preferences, trading_preferences
+         FROM user_preferences WHERE user_id = $1`,
+        [userId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async upsertUserPreferences(userId, updates, client = db) {
+      const result = await client.query(
+        `
+        INSERT INTO user_preferences (
+          user_id, general_preferences, trading_preferences
+        )
+        VALUES ($1, $2::jsonb, $3::jsonb)
+        ON CONFLICT (user_id) DO UPDATE SET
+          general_preferences = user_preferences.general_preferences || EXCLUDED.general_preferences,
+          trading_preferences = user_preferences.trading_preferences || EXCLUDED.trading_preferences,
+          updated_at = now()
+        RETURNING general_preferences, trading_preferences, updated_at
+        `,
+        [
+          userId,
+          JSON.stringify(updates.general || {}),
+          JSON.stringify(updates.trading || {}),
+        ],
+      );
+      return result.rows[0] || null;
+    },
+
+    /* =========================================================================
      * AUTH METHODS
      * ====================================================================== */
 

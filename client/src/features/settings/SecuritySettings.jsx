@@ -11,6 +11,11 @@ import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { SettingsSectionNav } from './components/SettingsSectionNav.jsx';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
+import { LoadingState } from '../../components/ui/LoadingState.jsx';
+import { Badge } from '../../components/ui/Badge.jsx';
+import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 
 export default function SecuritySettings() {
   const dispatch = useDispatch();
@@ -22,6 +27,10 @@ export default function SecuritySettings() {
   const mfaQuery = useQuery({
     queryKey: queryKeys.auth.mfaStatus,
     queryFn: () => identityApi.getMfaStatus(),
+  });
+  const securityEventsQuery = useQuery({
+    queryKey: queryKeys.auth.securityEvents({ limit: 10 }),
+    queryFn: () => identityApi.getSecurityEvents({ limit: 10 }),
   });
 
   useEffect(() => {
@@ -65,6 +74,7 @@ export default function SecuritySettings() {
           authentication.
         </p>
       </div>
+      <SettingsSectionNav activePath={ROUTES.app.settings.security} />
 
       <Card>
         <CardHeader>
@@ -83,6 +93,41 @@ export default function SecuritySettings() {
         status={mfaQuery.data}
         onStatusChange={handleMfaStatusChange}
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent security activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {securityEventsQuery.isLoading ? (
+            <LoadingState label="Loading security activity" />
+          ) : securityEventsQuery.isError ? (
+            <ErrorState
+              title="Security activity unavailable"
+              description={getErrorMessage(securityEventsQuery.error)}
+              onRetry={securityEventsQuery.refetch}
+            />
+          ) : securityEventsQuery.data?.items?.length ? (
+            <ul className="divide-y divide-border">
+              {securityEventsQuery.data.items.map((event) => (
+                <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div>
+                    <p className="font-medium text-foreground">{event.eventType?.replaceAll('_', ' ')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {event.occurredAt ? formatRelativeTime(event.occurredAt) : 'Time unavailable'}
+                    </p>
+                  </div>
+                  <Badge variant={event.outcome === 'success' ? 'success' : 'warning'}>
+                    {event.outcome}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-4 text-sm text-muted-foreground">No security events are available yet.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-info/30 bg-info/5">
         <CardContent className="p-4 pt-4 text-xs text-muted-foreground">

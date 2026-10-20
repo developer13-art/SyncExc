@@ -11,6 +11,10 @@ function getSystemPreference() {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+function resolveTheme(themePreference) {
+  return themePreference === 'system' ? getSystemPreference() : themePreference;
+}
+
 function applyThemeClass(theme) {
   const root = document.documentElement;
   root.classList.remove('light', 'dark');
@@ -22,51 +26,47 @@ function applyThemeClass(theme) {
 }
 
 export function ThemeProvider({ children, defaultTheme = 'dark' }) {
-  const [theme, setThemeState] = useState(() => {
+  const [themePreference, setThemePreference] = useState(() => {
     const stored = storage.get(STORAGE_KEYS.THEME, null, { parse: false });
     return stored ?? defaultTheme;
   });
+  const [theme, setThemeState] = useState(() => resolveTheme(
+    storage.get(STORAGE_KEYS.THEME, null, { parse: false }) ?? defaultTheme,
+  ));
 
   useEffect(() => {
     applyThemeClass(theme);
-    storage.set(STORAGE_KEYS.THEME, theme, { stringify: false });
-  }, [theme]);
+    storage.set(STORAGE_KEYS.THEME, themePreference, { stringify: false });
+  }, [theme, themePreference]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) {
+    if (themePreference !== 'system' || typeof window === 'undefined' || !window.matchMedia) {
       return undefined;
     }
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (event) => {
-      const stored = storage.get(STORAGE_KEYS.THEME, null, { parse: false });
-      if (stored) {
-        return;
-      }
-      setThemeState(event.matches ? 'dark' : 'light');
-    };
+    const handler = (event) => setThemeState(event.matches ? 'dark' : 'light');
     if (media.addEventListener) {
       media.addEventListener('change', handler);
       return () => media.removeEventListener('change', handler);
     }
     media.addListener(handler);
     return () => media.removeListener(handler);
-  }, []);
+  }, [themePreference]);
 
   const setTheme = useCallback((next) => {
-    if (next === 'system') {
-      setThemeState(getSystemPreference());
-    } else {
-      setThemeState(next);
-    }
+    setThemePreference(next);
+    setThemeState(resolveTheme(next));
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setThemeState((current) => (current === 'light' ? 'dark' : 'light'));
-  }, []);
+    const next = theme === 'light' ? 'dark' : 'light';
+    setThemePreference(next);
+    setThemeState(next);
+  }, [theme]);
 
   const value = useMemo(
-    () => ({ theme, setTheme, toggleTheme, isDark: theme === 'dark' }),
-    [theme, setTheme, toggleTheme],
+    () => ({ theme, themePreference, setTheme, toggleTheme, isDark: theme === 'dark' }),
+    [theme, themePreference, setTheme, toggleTheme],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

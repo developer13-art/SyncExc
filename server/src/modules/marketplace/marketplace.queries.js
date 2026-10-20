@@ -13,9 +13,9 @@ export function createMarketplaceQueries({ db }) {
         `
         INSERT INTO marketplace_provider_profiles (
           user_id, workspace_id, handle, display_name, account_type, biography, methodology,
-          supported_markets, supported_languages
+          supported_markets, supported_languages, moderation_state
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'approved')
         RETURNING *
         `,
         [

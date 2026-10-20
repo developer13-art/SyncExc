@@ -861,6 +861,46 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     return updated;
   }
 
+  const DEFAULT_USER_PREFERENCES = Object.freeze({
+    general: {
+      theme: 'system',
+    },
+    trading: {
+      defaultMarketType: 'spot',
+      defaultOrderType: 'limit',
+      defaultChartTimeframe: '1h',
+    },
+  });
+
+  async function getUserPreferences(userId) {
+    const saved = await queries.getUserPreferences(userId);
+    return {
+      general: { ...DEFAULT_USER_PREFERENCES.general, ...(saved?.general_preferences || {}) },
+      trading: { ...DEFAULT_USER_PREFERENCES.trading, ...(saved?.trading_preferences || {}) },
+    };
+  }
+
+  async function updateUserPreferences({ userId, updates }) {
+    const updated = await db.tx(async (tx) => {
+      const preferences = await queries.upsertUserPreferences(userId, updates, tx);
+      await events.publish(
+        tx,
+        'user.preferences_updated',
+        { userId, sections: Object.keys(updates) },
+        {
+          actorId: userId,
+          resourceType: 'user_preferences',
+          resourceId: userId,
+        },
+      );
+      return preferences;
+    });
+    return {
+      general: { ...DEFAULT_USER_PREFERENCES.general, ...(updated?.general_preferences || {}) },
+      trading: { ...DEFAULT_USER_PREFERENCES.trading, ...(updated?.trading_preferences || {}) },
+    };
+  }
+
   async function requestEmailChange({ userId, newEmail, password }) {
     const user = await queries.findUserById(userId);
     if (!user) throw new NotFoundError('User');
@@ -1027,6 +1067,8 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
 
     // Profile
     updateProfile,
+    getUserPreferences,
+    updateUserPreferences,
     requestEmailChange,
     confirmEmailChange,
 

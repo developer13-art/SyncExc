@@ -43,6 +43,10 @@ export const identityApi = {
 
   updateProfile: (payload) => api.patch(endpoints.users.me, payload),
 
+  getPreferences: () => api.get(endpoints.users.preferences),
+
+  updatePreferences: (payload) => api.patch(endpoints.users.preferences, payload),
+
   changeEmail: (payload) => api.post(endpoints.users.changeEmail, payload),
 
   listSessions: () => api.get(endpoints.users.sessions),

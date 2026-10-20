@@ -7,6 +7,7 @@ import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { SettingsSectionNav } from './components/SettingsSectionNav.jsx';
 
 export default function NotificationSettings() {
   const dispatch = useDispatch();
@@ -35,6 +36,7 @@ export default function NotificationSettings() {
           the Notifications area.
         </p>
       </div>
+      <SettingsSectionNav activePath={ROUTES.app.settings.notifications} />
 
       <Card>
         <CardContent className="flex flex-col items-center gap-4 py-10 text-center">

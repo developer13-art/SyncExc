@@ -299,12 +299,14 @@ export function createMarketplaceRoutes(services) {
   router.get(
     '/moderation/cases',
     middleware.requireAuth(),
+    middleware.requireAdmin(),
     middleware.asyncHandler(controller.listModerationCases)
   );
 
   router.post(
     '/moderation/cases/:caseId/decide',
     middleware.requireAuth(),
+    middleware.requireAdmin(),
     middleware.validateBody(ModerationDecisionSchema),
     middleware.asyncHandler(controller.decideModeration)
   );

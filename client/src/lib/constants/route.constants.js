@@ -69,7 +69,14 @@ export const NAV_SECTIONS = Object.freeze([
         path: '/app/notifications',
         icon: 'notifications',
       },
-      { id: 'settings', label: 'Settings', path: '/app/settings/profile', icon: 'settings' },
+      { id: 'settings', label: 'Settings', path: '/app/settings', icon: 'settings' },
+    ],
+  },
+  {
+    id: 'trader-account',
+    label: 'Account',
+    items: [
+      { id: 'trader-settings', label: 'Settings', path: '/app/settings', icon: 'settings' },
     ],
   },
 ]);

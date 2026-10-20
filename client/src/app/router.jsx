@@ -21,7 +21,8 @@ export function WorkspaceRouteGuard() {
   }
 
   const traderRoute = location.pathname.startsWith('/app/trader');
-  if (activeWorkspace?.type === 'trader' && !traderRoute) {
+  const sharedSettingsRoute = location.pathname.startsWith('/app/settings');
+  if (activeWorkspace?.type === 'trader' && !traderRoute && !sharedSettingsRoute) {
     return <Navigate to={ROUTES.app.trader.overview} replace />;
   }
   if (activeWorkspace?.type !== 'trader' && traderRoute) {

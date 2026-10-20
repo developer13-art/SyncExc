@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Info } from 'lucide-react';
 
@@ -46,6 +46,7 @@ export function OrderForm({
   availableBalance,
   availableMargin,
   maxLeverage,
+  defaultOrderType = 'limit',
   className,
 }) {
   const isFutures = marketType === 'futures' || marketType === 'perpetual';
@@ -62,7 +63,7 @@ export function OrderForm({
     formState: { errors },
   } = useForm({
     defaultValues: {
-      type: 'limit',
+      type: defaultOrderType,
       timeInForce: 'GTC',
       price: '',
       quantity: '',
@@ -71,6 +72,13 @@ export function OrderForm({
       leverage: 1,
     },
   });
+
+  useEffect(() => {
+    const supportedTypes = isFutures
+      ? FUTURES_ORDER_TYPES.map((option) => option.value)
+      : SPOT_ORDER_TYPES.map((option) => option.value);
+    setValue('type', supportedTypes.includes(defaultOrderType) ? defaultOrderType : 'limit');
+  }, [defaultOrderType, isFutures, setValue]);
 
   const type = watch('type');
   const price = watch('price');

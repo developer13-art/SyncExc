@@ -22,6 +22,17 @@ import {
 import Joi from 'joi';
 import { createIdentityController } from './identity.controller.js';
 
+const UserPreferencesSchema = Joi.object({
+  general: Joi.object({
+    theme: Joi.string().valid('light', 'dark', 'system'),
+  }).min(1),
+  trading: Joi.object({
+    defaultMarketType: Joi.string().valid('spot', 'futures'),
+    defaultOrderType: Joi.string().valid('limit', 'market'),
+    defaultChartTimeframe: Joi.string().valid('1m', '5m', '15m', '1h', '4h', '1d'),
+  }).min(1),
+}).min(1);
+
 export function createIdentityRoutes({ service, middleware }) {
   const controller = createIdentityController({ service });
 
@@ -161,6 +172,19 @@ export function createIdentityRoutes({ service, middleware }) {
     middleware.requireAuth(),
     middleware.validateBody(ProfileUpdateSchema),
     middleware.asyncHandler(controller.updateProfile)
+  );
+
+  usersRouter.get(
+    '/me/preferences',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.getUserPreferences)
+  );
+
+  usersRouter.patch(
+    '/me/preferences',
+    middleware.requireAuth(),
+    middleware.validateBody(UserPreferencesSchema),
+    middleware.asyncHandler(controller.updateUserPreferences)
   );
 
   usersRouter.post(

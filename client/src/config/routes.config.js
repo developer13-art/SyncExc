@@ -242,7 +242,10 @@ export const ROUTES = Object.freeze({
     },
 
     settings: {
+      overview: '/app/settings',
       profile: '/app/settings/profile',
+      preferences: '/app/settings/preferences',
+      trading: '/app/settings/trading',
       security: '/app/settings/security',
       sessions: '/app/settings/sessions',
       devices: '/app/settings/devices',

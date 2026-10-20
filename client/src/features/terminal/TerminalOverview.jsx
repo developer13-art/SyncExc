@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
@@ -27,10 +28,11 @@ import {
   useTerminalOrders,
 } from '../../hooks/useTerminal.js';
 import { useConnections, useConnection } from '../../hooks/useConnections.js';
-import { terminalApi } from '../../api/index.js';
+import { identityApi, terminalApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { userPreferencesQueryKey } from '../settings/useUserPreferences.js';
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
 
@@ -45,6 +47,10 @@ export default function TerminalOverview() {
   const toast = useToast();
   const { activeWorkspaceId } = useWorkspaceContext();
 
+  const preferencesQuery = useQuery({
+    queryKey: userPreferencesQueryKey,
+    queryFn: () => identityApi.getPreferences(),
+  });
   const connectionsQuery = useConnections({ status: 'active' });
 
   const [selectedAccountId, setSelectedAccountId] = useState(null);
@@ -58,6 +64,12 @@ export default function TerminalOverview() {
   const [approvalRequestId, setApprovalRequestId] = useState(null);
   const [approvalMessage, setApprovalMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const tradingPreferences = preferencesQuery.data?.trading;
+
+  useEffect(() => {
+    const preferredTimeframe = tradingPreferences?.defaultChartTimeframe;
+    if (TIMEFRAMES.includes(preferredTimeframe)) setTimeframe(preferredTimeframe);
+  }, [tradingPreferences?.defaultChartTimeframe]);
 
   const connections = connectionsQuery.data?.items ?? [];
 
@@ -98,7 +110,7 @@ export default function TerminalOverview() {
 
   const marketsQuery = useTerminalMarkets(activeWorkspaceId, {
     exchangeCode: activeConnection?.exchange,
-    marketType: 'spot',
+    marketType: tradingPreferences?.defaultMarketType ?? 'spot',
   });
 
   const ordersQuery = useTerminalOrders(activeWorkspaceId, {
@@ -113,13 +125,15 @@ export default function TerminalOverview() {
       setSelectedInstrument(null);
       return;
     }
+    const preferredMarketType = tradingPreferences?.defaultMarketType ?? 'spot';
     const currentSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;
     if (!currentSymbol || !instruments.some((item) =>
-      (item.exchangeSymbol ?? item.symbol) === currentSymbol
+      (item.exchangeSymbol ?? item.symbol) === currentSymbol &&
+      (item.marketType ?? preferredMarketType) === preferredMarketType
     )) {
       setSelectedInstrument(instruments[0]);
     }
-  }, [instruments, selectedInstrument]);
+  }, [instruments, selectedInstrument, tradingPreferences?.defaultMarketType]);
 
   const selectedSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;
   const analysisStorageKey = activeWorkspaceId && activeConnection?.exchange && selectedSymbol
@@ -480,6 +494,7 @@ export default function TerminalOverview() {
                     instrument={selectedInstrument}
                     account={accounts.find((a) => a.id === selectedAccountId)}
                     marketType={selectedInstrument.marketType ?? 'spot'}
+                    defaultOrderType={tradingPreferences?.defaultOrderType ?? 'limit'}
                     availableBalance={
                       connectionDetailQuery.balances?.find(
                         (b) => b.asset === selectedInstrument.baseAsset,

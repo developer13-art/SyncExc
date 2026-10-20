@@ -10,6 +10,7 @@ import {
 import { createPublicationService } from '../../src/modules/marketplace/publication.service.js';
 import { createProviderService } from '../../src/modules/marketplace/provider.service.js';
 import { createSubscriptionService } from '../../src/modules/marketplace/subscription.service.js';
+import { createMarketplaceQueries } from '../../src/modules/marketplace/marketplace.queries.js';
 
 function createResponse() {
   return {
@@ -26,6 +27,29 @@ function createResponse() {
 }
 
 describe('Trader Studio API', () => {
+  it('creates new Trader profiles as approved', async () => {
+    let insertQuery;
+    const client = {
+      async query(query) {
+        insertQuery = query;
+        return { rows: [{ id: 'provider-1', moderation_state: 'approved' }] };
+      },
+    };
+    const queries = createMarketplaceQueries({ db: {} });
+
+    const provider = await queries.insertProvider(client, {
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      handle: 'trader',
+      displayName: 'Trader',
+      accountType: 'individual',
+    });
+
+    assert.match(insertQuery, /moderation_state/);
+    assert.match(insertQuery, /'approved'/);
+    assert.equal(provider.moderation_state, 'approved');
+  });
+
   it('lists only the signals owned by the active Trader workspace', async () => {
     let providerLookup;
     let signalLookup;

@@ -10,6 +10,7 @@ import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { SettingsSectionNav } from './components/SettingsSectionNav.jsx';
 
 export default function ProfileSettings() {
   const dispatch = useDispatch();
@@ -57,6 +58,7 @@ export default function ProfileSettings() {
           workflow.
         </p>
       </div>
+      <SettingsSectionNav activePath={ROUTES.app.settings.profile} />
 
       <Card>
         <CardHeader>
@@ -69,6 +71,27 @@ export default function ProfileSettings() {
             isSubmitting={submitting}
             formError={error}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Account information</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 text-sm sm:grid-cols-2">
+          <div>
+            <p className="text-muted-foreground">Email</p>
+            <p className="mt-1 font-medium text-foreground">{user.email}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {user.emailVerified ? 'Verified' : 'Email verification pending'}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Account created</p>
+            <p className="mt-1 font-medium text-foreground">
+              {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
+            </p>
+          </div>
         </CardContent>
       </Card>
 

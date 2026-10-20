@@ -248,6 +248,18 @@ export function createIdentityController({ service }) {
       return success(res, serializeUser(user));
     },
 
+    async getUserPreferences(req, res) {
+      return success(res, await service.getUserPreferences(req.auth.userId));
+    },
+
+    async updateUserPreferences(req, res) {
+      const preferences = await service.updateUserPreferences({
+        userId: req.auth.userId,
+        updates: req.body,
+      });
+      return success(res, preferences);
+    },
+
     async requestEmailChange(req, res) {
       const result = await service.requestEmailChange({
         userId: req.auth.userId,

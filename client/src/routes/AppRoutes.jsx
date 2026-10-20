@@ -36,6 +36,13 @@ const Billing = lazy(() => import('../features/billing/Plans.jsx'));
 const Support = lazy(() => import('../features/support/SupportCenter.jsx'));
 const Notifications = lazy(() => import('../features/notifications/NotificationCenter.jsx'));
 const Settings = lazy(() => import('../features/settings/ProfileSettings.jsx'));
+const SettingsOverview = lazy(() => import('../features/settings/SettingsOverview.jsx'));
+const PreferencesSettings = lazy(() => import('../features/settings/PreferencesSettings.jsx'));
+const TradingPreferences = lazy(() => import('../features/settings/TradingPreferences.jsx'));
+const SecuritySettings = lazy(() => import('../features/settings/SecuritySettings.jsx'));
+const Sessions = lazy(() => import('../features/settings/Sessions.jsx'));
+const TrustedDevices = lazy(() => import('../features/settings/TrustedDevices.jsx'));
+const NotificationSettings = lazy(() => import('../features/settings/NotificationSettings.jsx'));
 const WorkspaceManagement = lazy(() => import('../features/settings/WorkspaceManagement.jsx'));
 const WorkspaceSettings = lazy(() => import('../features/settings/WorkspaceSettings.jsx'));
 const WorkspaceMembers = lazy(() => import('../features/settings/WorkspaceMembers.jsx'));
@@ -92,6 +99,14 @@ export function AppRoutes() {
         <Route path="billing/*" element={<Fallback><Billing /></Fallback>} />
         <Route path="support/*" element={<Fallback><Support /></Fallback>} />
         <Route path="notifications/*" element={<Fallback><Notifications /></Fallback>} />
+        <Route path="settings" element={<Fallback><SettingsOverview /></Fallback>} />
+        <Route path="settings/profile" element={<Fallback><Settings /></Fallback>} />
+        <Route path="settings/preferences" element={<Fallback><PreferencesSettings /></Fallback>} />
+        <Route path="settings/trading" element={<Fallback><TradingPreferences /></Fallback>} />
+        <Route path="settings/security" element={<Fallback><SecuritySettings /></Fallback>} />
+        <Route path="settings/sessions" element={<Fallback><Sessions /></Fallback>} />
+        <Route path="settings/devices" element={<Fallback><TrustedDevices /></Fallback>} />
+        <Route path="settings/notifications" element={<Fallback><NotificationSettings /></Fallback>} />
         <Route path="settings/workspaces" element={<Fallback><WorkspaceManagement /></Fallback>} />
         <Route path="settings/workspaces/new" element={<Fallback><WorkspaceManagement /></Fallback>} />
         <Route path="settings/workspaces/:workspaceId/members" element={<Fallback><WorkspaceMembers /></Fallback>} />
@@ -101,7 +116,7 @@ export function AppRoutes() {
         <Route path="settings/workspaces/:workspaceId/ownership" element={<Fallback><WorkspaceOwnership /></Fallback>} />
         <Route path="settings/workspaces/:workspaceId/audit" element={<Fallback><WorkspaceAudit /></Fallback>} />
         <Route path="settings/workspaces/:workspaceId" element={<Fallback><WorkspaceSettings /></Fallback>} />
-        <Route path="settings/*" element={<Fallback><Settings /></Fallback>} />
+        <Route path="settings/*" element={<Fallback><SettingsOverview /></Fallback>} />
         <Route path="*" element={<NotFoundRoute />} />
         </Route>
       </Route>

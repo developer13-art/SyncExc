@@ -17,6 +17,7 @@ export const IDENTITY_EMITS = [
   'user.mfa_disabled',
   'user.session_created',
   'user.session_revoked',
+  'user.preferences_updated',
   'user.restricted',
   'user.restored',
 ];
