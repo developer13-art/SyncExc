@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { workspacesApi } from '../api/index.js';
 import { queryKeys } from '../hooks/queryKeys.js';
@@ -73,6 +73,24 @@ export function WorkspaceProvider({ children }) {
     return result.items;
   }, [activeWorkspaceId, dispatch, queryClient]);
 
+  const createWorkspace = useMutation({
+    mutationFn: (payload) => workspacesApi.create(payload),
+    onSuccess: (workspace) => {
+      dispatch(workspaceActions.workspaceAdded(workspace));
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
+    },
+  });
+
+  const updateWorkspace = useMutation({
+    mutationFn: ({ workspaceId, ...payload }) => workspacesApi.update(workspaceId, payload),
+    onSuccess: (workspace) => {
+      dispatch(workspaceActions.workspaceUpdated(workspace));
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.detail(workspace.id),
+      });
+    },
+  });
+
   const value = useMemo(
     () => ({
       workspaces,
@@ -85,6 +103,10 @@ export function WorkspaceProvider({ children }) {
       error: listQuery.error ?? permissionsQuery.error,
       switchWorkspace,
       reloadWorkspaces,
+      createWorkspace: createWorkspace.mutateAsync,
+      updateWorkspace: updateWorkspace.mutateAsync,
+      isCreating: createWorkspace.isPending,
+      isUpdating: updateWorkspace.isPending,
     }),
     [
       workspaces,
@@ -99,6 +121,10 @@ export function WorkspaceProvider({ children }) {
       permissionsQuery.error,
       switchWorkspace,
       reloadWorkspaces,
+      createWorkspace.mutateAsync,
+      createWorkspace.isPending,
+      updateWorkspace.mutateAsync,
+      updateWorkspace.isPending,
     ],
   );
 
