@@ -104,6 +104,7 @@ export function createProviderService({ db, queries, events, logger }) {
       stats: await queries.getProviderDashboard(provider.id),
       recentSignals: (await queries.listPublishedSignals({
         providerId: provider.id,
+        publicOnly: true,
         limit: 5,
       })).rows,
     };

@@ -167,8 +167,8 @@ export function createPublicationService({ db, queries, events, disclosureServic
     });
   }
 
-  async function listSignals({ providerId, status, limit, cursor }) {
-    return queries.listPublishedSignals({ providerId, status, limit, cursor });
+  async function listSignals({ providerId, status, publicOnly = false, limit, cursor }) {
+    return queries.listPublishedSignals({ providerId, status, publicOnly, limit, cursor });
   }
 
   async function getSignal(signalId) {

@@ -93,6 +93,7 @@ export const TRADER_NAV_SECTIONS = Object.freeze([
       { id: 'trader-plans', label: 'Subscription plans', path: '/app/trader/plans', icon: 'billing' },
       { id: 'trader-revenue', label: 'Revenue & payouts', path: '/app/trader/revenue', icon: 'billing' },
       { id: 'trader-profile', label: 'Public profile', path: '/app/trader/profile', icon: 'marketplace' },
+      { id: 'trader-marketplace', label: 'Marketplace', path: '/app/marketplace', icon: 'marketplace' },
     ],
   },
 ]);

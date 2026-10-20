@@ -17,8 +17,6 @@ import { DestinationSelector } from '../../synchronization/components/Destinatio
 const SIZING_OPTIONS = [
   { value: 'fixed_amount', label: 'Fixed amount' },
   { value: 'fixed_percentage', label: 'Fixed percentage of balance' },
-  { value: 'provider_relative', label: 'Provider-relative sizing' },
-  { value: 'user_rules', label: 'User-defined rules' },
 ];
 
 const EXECUTION_MODES = [
@@ -148,9 +146,7 @@ export function CopyConfigForm({
           label={
             sizingType === 'fixed_percentage'
               ? 'Percentage (%)'
-              : sizingType === 'provider_relative'
-                ? 'Provider-relative factor'
-                : 'Fixed amount'
+              : 'Fixed amount'
           }
           htmlFor="copy-sizing-value"
           required

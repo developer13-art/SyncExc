@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Bell, BellOff, Star, Users } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, Copy, Star, Users } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
@@ -133,8 +133,8 @@ export default function ProviderProfile() {
                 <p className="mt-1 text-sm text-muted-foreground">@{provider.handle}</p>
               ) : null}
 
-              {provider.bio ? (
-                <p className="mt-3 text-sm text-muted-foreground">{provider.bio}</p>
+              {provider.biography ? (
+                <p className="mt-3 text-sm text-muted-foreground">{provider.biography}</p>
               ) : null}
 
               <div className="mt-4 flex flex-wrap gap-4 text-xs">
@@ -156,9 +156,9 @@ export default function ProviderProfile() {
                 ) : null}
               </div>
 
-              {provider.markets?.length > 0 ? (
+              {provider.supportedMarkets?.length > 0 ? (
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {provider.markets.map((market) => (
+                  {provider.supportedMarkets.map((market) => (
                     <span
                       key={market}
                       className={cn(
@@ -183,6 +183,11 @@ export default function ProviderProfile() {
                     <Bell className="h-4 w-4" /> Follow
                   </>
                 )}
+              </Button>
+              <Button variant="outline" asChild>
+                <Link to={`${ROUTES.app.marketplace.createCopyConfiguration}?provider=${provider.id}`}>
+                  <Copy className="h-4 w-4" /> Configure copying
+                </Link>
               </Button>
               {plans.length > 0 ? (
                 <Button onClick={() => setSubscribePlan(plans[0])}>Subscribe</Button>
@@ -219,7 +224,10 @@ export default function ProviderProfile() {
           <TabsTrigger value="disclosures">Disclosures</TabsTrigger>
         </TabsList>
         <TabsContent value="signals">
-          <ProviderSignals providerId={provider.id} />
+          <ProviderSignals
+            providerId={provider.id}
+            onSubscribe={plans.length > 0 ? () => setSubscribePlan(plans[0]) : undefined}
+          />
         </TabsContent>
         <TabsContent value="performance">
           <ProviderPerformance providerId={provider.id} />

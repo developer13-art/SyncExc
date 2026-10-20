@@ -3,6 +3,7 @@
  */
 
 import { success, created, paginated } from '../../lib/response.js';
+import { SubscriptionRequiredError } from '../../lib/errors.js';
 import {
   serializeProvider,
   serializePublishedSignal,
@@ -60,7 +61,11 @@ export function createMarketplaceController(services) {
       if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
       }
-      return success(res, serializeProvider(provider));
+      const viewerIsFollowing = await followService.isFollowing({
+        userId: req.auth?.userId,
+        providerId: provider.id,
+      });
+      return success(res, { ...serializeProvider(provider), viewerIsFollowing });
     },
 
     async listProviderPlans(req, res) {
@@ -197,9 +202,21 @@ export function createMarketplaceController(services) {
       if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
       }
+      const subscription = req.auth?.userId
+        ? await subscriptionService.getSubscription({
+          userId: req.auth.userId,
+          providerId: req.params.providerId,
+        })
+        : null;
+      if (!subscription) {
+        throw new SubscriptionRequiredError(
+          'Subscribe to this provider to view published signals',
+          'marketplace_signals'
+        );
+      }
       const { rows, nextCursor } = await publicationService.listSignals({
         providerId: req.params.providerId,
-        status: req.query.status,
+        publicOnly: true,
         limit: Number(req.query.limit) || 50,
         cursor: req.query.cursor || null,
       });

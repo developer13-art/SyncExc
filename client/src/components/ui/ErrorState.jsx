@@ -8,6 +8,7 @@ export function ErrorState({
   description = 'We could not load this content. Please try again.',
   onRetry,
   retryLabel = 'Try again',
+  action,
   className,
 }) {
   return (
@@ -28,6 +29,7 @@ export function ErrorState({
           {retryLabel}
         </Button>
       ) : null}
+      {action ? <div className={onRetry ? 'mt-3' : 'mt-5'}>{action}</div> : null}
     </div>
   );
 }

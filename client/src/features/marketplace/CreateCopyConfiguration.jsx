@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { CopyConfigForm } from './components/CopyConfigForm.jsx';
 import { useMarketplaceProvider, useCopyConfigurations } from '../../hooks/useMarketplace.js';
 import { useConnections } from '../../hooks/useConnections.js';
@@ -63,26 +64,58 @@ export default function CreateCopyConfiguration() {
     return <LoadingState label="Loading provider" />;
   }
 
+  if (providerQuery.error || !providerQuery.provider) {
+    return (
+      <ErrorState
+        title="Provider is unavailable"
+        description={getErrorMessage(providerQuery.error)}
+        onRetry={providerQuery.refetch}
+      />
+    );
+  }
+
+  if (connectionsQuery.error) {
+    return (
+      <ErrorState
+        title="Unable to load destination accounts"
+        description={getErrorMessage(connectionsQuery.error)}
+        onRetry={connectionsQuery.refetch}
+      />
+    );
+  }
+
   const handleSubmit = async (values) => {
     setError(null);
     if (values.destinationAccountIds.length === 0) {
       setError('Add at least one destination account');
       return;
     }
+    const marketTypes = [...new Set((providerQuery.provider.supportedMarkets ?? [])
+      .map((market) => String(market).toLowerCase())
+      .filter((market) => ['spot', 'futures', 'perpetual'].includes(market)))];
+    if (marketTypes.length === 0) {
+      setError('This provider has not configured a supported market for copying.');
+      return;
+    }
     setSubmitting(true);
     try {
       const created = await createConfiguration({
         providerId,
-        planId: values.planId,
-        name: values.name.trim(),
-        destinationAccountIds: values.destinationAccountIds,
-        sizingPolicy: {
+        ...(values.planId ? { providerPlanId: values.planId } : {}),
+        destinationAccounts: values.destinationAccountIds.map((accountId) => {
+          const account = accounts.find((item) => item.id === accountId);
+          if (!account) throw new Error('A selected destination account is no longer available.');
+          return { connectionId: account.connectionId, accountId: account.id };
+        }),
+        marketTypes,
+        sizingRule: {
           type: values.sizingType,
-          value: Number(values.sizingValue),
+          config: values.sizingType === 'fixed_percentage'
+            ? { percentage: Number(values.sizingValue) }
+            : { amount: Number(values.sizingValue) },
         },
         executionMode: values.executionMode,
-        maxOpenPositions: Number(values.maxOpenPositions) || undefined,
-        notes: values.notes?.trim() || undefined,
+        instrumentFilters: [],
       });
 
       toast.success('Copy configuration created', {

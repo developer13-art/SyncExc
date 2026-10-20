@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { marketplaceApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
 import { usePagination } from '../../hooks/usePagination.js';
-import { uiActions } from '../../app/slices/uiActions.js';
+import { uiActions } from '../../app/slices/uiSlice.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
 

@@ -52,11 +52,17 @@ export function createFollowService({ db, queries, events, logger }) {
     return queries.countFollowers(providerId);
   }
 
+  async function isFollowing({ userId, providerId }) {
+    if (!userId) return false;
+    return queries.isFollowing(providerId, userId);
+  }
+
   return {
     follow,
     unfollow,
     listFollowing,
     countFollowers,
+    isFollowing,
   };
 }
 

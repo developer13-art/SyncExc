@@ -6,8 +6,13 @@ import { marketplaceApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
 import { formatQuantity } from '../../lib/formatters/number.formatter.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
+import { Button } from '../../components/ui/Button.jsx';
+import { Link } from 'react-router-dom';
+import { ROUTES } from '../../config/routes.config.js';
+import { getErrorMessage } from '../../api/errors.js';
 
-export function ProviderSignals({ providerId }) {
+export function ProviderSignals({ providerId, onSubscribe }) {
   const signalsQuery = useQuery({
     queryKey: queryKeys.marketplace.providerSignals(providerId, {}),
     queryFn: () => marketplaceApi.listProviderSignals(providerId, { limit: 50 }),
@@ -15,6 +20,23 @@ export function ProviderSignals({ providerId }) {
   });
 
   const signals = signalsQuery.data?.items ?? [];
+
+  if (signalsQuery.isError) {
+    return (
+      <ErrorState
+        title="Published signals are unavailable"
+        description={getErrorMessage(signalsQuery.error)}
+        onRetry={signalsQuery.refetch}
+        action={signalsQuery.error?.code === 'SUBSCRIPTION_REQUIRED' && onSubscribe ? (
+          <Button onClick={onSubscribe}>Subscribe to view signals</Button>
+        ) : signalsQuery.error?.code === 'SUBSCRIPTION_REQUIRED' ? (
+          <Button asChild>
+            <Link to={ROUTES.app.marketplace.subscriptions}>View subscriptions</Link>
+          </Button>
+        ) : null}
+      />
+    );
+  }
 
   const columns = [
     {

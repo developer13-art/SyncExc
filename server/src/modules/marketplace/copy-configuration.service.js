@@ -2,7 +2,12 @@
  * SyncExc Server — Copy configuration service
  */
 
-import { NotFoundError, ConflictError, ValidationError } from '../../lib/errors.js';
+import {
+  NotFoundError,
+  ConflictError,
+  ValidationError,
+  SubscriptionRequiredError,
+} from '../../lib/errors.js';
 
 export function createCopyConfigurationService({
   db,
@@ -26,6 +31,16 @@ export function createCopyConfigurationService({
     if (!provider) throw new NotFoundError('Provider');
     if (provider.moderation_state !== 'approved') {
       throw new ConflictError('Provider is not approved', 'PROVIDER_NOT_APPROVED');
+    }
+    if (provider.visibility !== 'public') {
+      throw new ConflictError('Provider is not accepting copy configurations', 'PROVIDER_NOT_PUBLISHED');
+    }
+    const subscription = await queries.findActiveSubscription(providerId, userId);
+    if (!subscription) {
+      throw new SubscriptionRequiredError(
+        'Subscribe to this provider before configuring copying',
+        'marketplace_copy'
+      );
     }
 
     if (!destinationAccounts || destinationAccounts.length === 0) {

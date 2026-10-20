@@ -74,6 +74,8 @@ export function useMarketplaceProvider(providerId) {
     performance: performanceQuery.data ?? null,
     disclosures: disclosuresQuery.data ?? [],
     isLoading: detailQuery.isLoading,
+    error: detailQuery.error,
+    refetch: detailQuery.refetch,
     subscribe: subscribe.mutateAsync,
   };
 }

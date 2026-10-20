@@ -11,6 +11,7 @@ import { createPublicationService } from '../../src/modules/marketplace/publicat
 import { createProviderService } from '../../src/modules/marketplace/provider.service.js';
 import { createSubscriptionService } from '../../src/modules/marketplace/subscription.service.js';
 import { createMarketplaceQueries } from '../../src/modules/marketplace/marketplace.queries.js';
+import { createCopyConfigurationService } from '../../src/modules/marketplace/copy-configuration.service.js';
 
 function createResponse() {
   return {
@@ -99,6 +100,127 @@ describe('Trader Studio API', () => {
     assert.equal(response.body.data[0].id, 'signal-1');
     assert.equal(response.body.data[0].marketType, 'spot');
     assert.equal(response.body.data[0].sourceEvidence, 'https://example.test/evidence');
+  });
+
+  it('requires an active subscription before returning provider signals', async () => {
+    let queriedSignals = false;
+    const controller = createMarketplaceController({
+      providerService: {
+        async getProvider() {
+          return {
+            id: 'provider-1',
+            visibility: 'public',
+            moderation_state: 'approved',
+          };
+        },
+      },
+      subscriptionService: {
+        async getSubscription() {
+          return null;
+        },
+      },
+      publicationService: {
+        async listSignals() {
+          queriedSignals = true;
+          return { rows: [], nextCursor: null };
+        },
+      },
+    });
+
+    await assert.rejects(
+      controller.listSignals({
+        params: { providerId: 'provider-1' },
+        auth: { userId: 'user-1' },
+        query: {},
+      }, createResponse()),
+      { code: 'SUBSCRIPTION_REQUIRED' },
+    );
+    assert.equal(queriedSignals, false);
+  });
+
+  it('returns only published signals to an active provider subscriber', async () => {
+    let signalQuery;
+    const controller = createMarketplaceController({
+      providerService: {
+        async getProvider() {
+          return {
+            id: 'provider-1',
+            visibility: 'public',
+            moderation_state: 'approved',
+          };
+        },
+      },
+      subscriptionService: {
+        async getSubscription() {
+          return { status: 'active' };
+        },
+      },
+      publicationService: {
+        async listSignals(query) {
+          signalQuery = query;
+          return { rows: [], nextCursor: null };
+        },
+      },
+    });
+    const response = createResponse();
+
+    await controller.listSignals({
+      params: { providerId: 'provider-1' },
+      auth: { userId: 'user-1' },
+      query: { status: 'draft' },
+    }, response);
+
+    assert.deepEqual(signalQuery, {
+      providerId: 'provider-1',
+      publicOnly: true,
+      limit: 50,
+      cursor: null,
+    });
+    assert.equal(response.statusCode, 200);
+  });
+
+  it('filters public signal queries to published and updated statuses', async () => {
+    let sql;
+    const queries = createMarketplaceQueries({
+      db: {
+        async query(query) {
+          sql = query;
+          return { rows: [] };
+        },
+      },
+    });
+
+    await queries.listPublishedSignals({ providerId: 'provider-1', publicOnly: true });
+
+    assert.match(sql, /signal\.status IN \('published', 'updated'\)/);
+    assert.doesNotMatch(sql, /draft|cancelled|rejected/);
+  });
+
+  it('does not allow copy configuration without an active subscription', async () => {
+    const service = createCopyConfigurationService({
+      db: {},
+      queries: {
+        async findProviderById() {
+          return {
+            id: 'provider-1',
+            moderation_state: 'approved',
+            visibility: 'public',
+          };
+        },
+        async findActiveSubscription() {
+          return null;
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.createConfiguration({
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        providerId: 'provider-1',
+      }),
+      { code: 'SUBSCRIPTION_REQUIRED' },
+    );
   });
 
   it('returns an empty list when the active workspace has no Trader profile', async () => {

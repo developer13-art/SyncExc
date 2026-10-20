@@ -48,8 +48,10 @@ export function ProviderCard({ provider, className }) {
           </div>
         </div>
 
-        {provider.bio ? (
-          <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{provider.bio}</p>
+        {(provider.biography || provider.bio) ? (
+          <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">
+            {provider.biography || provider.bio}
+          </p>
         ) : null}
 
         <div className="mt-3 flex flex-wrap gap-3 text-xs">
@@ -72,9 +74,9 @@ export function ProviderCard({ provider, className }) {
           ) : null}
         </div>
 
-        {provider.markets?.length > 0 ? (
+        {(provider.supportedMarkets || provider.markets)?.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-3">
-            {provider.markets.slice(0, 4).map((market) => (
+            {(provider.supportedMarkets || provider.markets).slice(0, 4).map((market) => (
               <span
                 key={market}
                 className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground"
@@ -82,9 +84,9 @@ export function ProviderCard({ provider, className }) {
                 {market}
               </span>
             ))}
-            {provider.markets.length > 4 ? (
+            {(provider.supportedMarkets || provider.markets).length > 4 ? (
               <span className="text-2xs text-muted-foreground">
-                +{provider.markets.length - 4}
+                +{(provider.supportedMarkets || provider.markets).length - 4}
               </span>
             ) : null}
           </div>

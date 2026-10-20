@@ -41,6 +41,19 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async isFollowing(providerId, followerUserId) {
+      const result = await db.query(
+        `
+        SELECT 1
+        FROM marketplace_follows
+        WHERE provider_id = $1 AND follower_user_id = $2
+        LIMIT 1
+        `,
+        [providerId, followerUserId]
+      );
+      return result.rowCount > 0;
+    },
+
     async findProviderByHandle(handle) {
       const result = await db.query(
         `SELECT * FROM marketplace_provider_profiles WHERE handle = $1`,
@@ -234,7 +247,7 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async listPublishedSignals({ providerId, status, limit = 50, cursor = null } = {}) {
+    async listPublishedSignals({ providerId, status, publicOnly = false, limit = 50, cursor = null } = {}) {
       const params = [limit + 1];
       const conditions = [];
       if (providerId) {
@@ -244,6 +257,9 @@ export function createMarketplaceQueries({ db }) {
       if (status) {
         params.push(status);
         conditions.push(`signal.status = $${params.length}`);
+      }
+      if (publicOnly) {
+        conditions.push(`signal.status IN ('published', 'updated')`);
       }
       if (cursor) {
         params.push(cursor);
