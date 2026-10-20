@@ -9,6 +9,12 @@ import { InfoCallout } from '../../../components/ui/InfoCallout.jsx';
 import { sourcesApi } from '../../../api/index.js';
 import { getErrorMessage } from '../../../api/errors.js';
 
+function getTelegramErrorMessage(error) {
+  const message = getErrorMessage(error);
+  const code = error?.details?.telegramErrorCode;
+  return code ? `${message} (Telegram error: ${code})` : message;
+}
+
 export function TelegramSourceWizard({ onComplete, onCancel, reauthorizeSourceId }) {
   const [step, setStep] = useState('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -33,7 +39,7 @@ export function TelegramSourceWizard({ onComplete, onCancel, reauthorizeSourceId
       setDelivery(result.delivery);
       setStep('code');
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      setError(getTelegramErrorMessage(requestError));
     } finally {
       setBusy(false);
     }
@@ -57,7 +63,7 @@ export function TelegramSourceWizard({ onComplete, onCancel, reauthorizeSourceId
       const listedChannels = await sourcesApi.telegramListChannels(loginId);
       setChannels(listedChannels);
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      setError(getTelegramErrorMessage(requestError));
     } finally {
       setBusy(false);
     }
@@ -70,7 +76,7 @@ export function TelegramSourceWizard({ onComplete, onCancel, reauthorizeSourceId
     try {
       setChannels(await sourcesApi.telegramListChannels(loginId));
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      setError(getTelegramErrorMessage(requestError));
     } finally {
       setBusy(false);
     }
@@ -107,7 +113,7 @@ export function TelegramSourceWizard({ onComplete, onCancel, reauthorizeSourceId
         await onComplete(createdSources);
       }
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      setError(getTelegramErrorMessage(requestError));
     } finally {
       setBusy(false);
     }
@@ -118,7 +124,7 @@ export function TelegramSourceWizard({ onComplete, onCancel, reauthorizeSourceId
       try {
         await sourcesApi.telegramCancelLogin(loginId);
       } catch (cancelError) {
-        setError(getErrorMessage(cancelError));
+        setError(getTelegramErrorMessage(cancelError));
         return;
       }
     }

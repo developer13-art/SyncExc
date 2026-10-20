@@ -22,7 +22,16 @@ const SEND_COOLDOWN_SECONDS = 45;
 const MAX_VERIFY_ATTEMPTS = 5;
 
 function providerErrorCode(error) {
-  return String(error?.errorMessage || error?.message || '').toUpperCase();
+  return [
+    error?.errorMessage,
+    error?.message,
+    error?.code,
+    error?.cause?.errorMessage,
+    error?.cause?.message,
+  ]
+    .filter((value) => typeof value === 'string')
+    .join(' ')
+    .toUpperCase();
 }
 
 function mapTelegramSendCodeError(error) {
@@ -99,14 +108,31 @@ function mapTelegramSendCodeError(error) {
   }
   return new ExternalProviderError(
     'Telegram could not process the login-code request. Check the phone number and try again later.',
-    { provider: 'telegram', retryable: true, status: 502 },
+    {
+      provider: 'telegram',
+      retryable: true,
+      status: 502,
+      details: { telegramErrorCode: safeProviderErrorCode(error) },
+    },
   );
 }
 
 function safeProviderErrorCode(error) {
-  const raw = String(error?.errorMessage || error?.code || '').toUpperCase();
-  const code = raw.match(/\b[A-Z][A-Z0-9_]{1,63}\b/)?.[0];
-  return code ?? 'UNKNOWN';
+  for (const value of [
+    error?.errorMessage,
+    error?.code,
+    error?.cause?.errorMessage,
+    error?.message,
+    error?.cause?.message,
+  ]) {
+    if (typeof value !== 'string') continue;
+    const raw = value.toUpperCase();
+    const exactCode = raw.match(/^[A-Z][A-Z0-9_]{1,63}$/)?.[0];
+    if (exactCode && !/^(ERROR|UNKNOWN|TELEGRAM)$/.test(exactCode)) return exactCode;
+    const messageCode = raw.match(/\b(?:[A-Z][A-Z0-9]*_[A-Z0-9_]+|FLOOD)\b/)?.[0];
+    if (messageCode) return messageCode;
+  }
+  return 'UNKNOWN';
 }
 
 function normalizePhoneNumber(value) {
