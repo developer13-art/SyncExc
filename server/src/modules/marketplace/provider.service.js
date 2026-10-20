@@ -2,7 +2,11 @@
  * SyncExc Server — Provider service
  */
 
-import { NotFoundError, ConflictError, AuthorizationError } from '../../lib/errors.js';
+import {
+  NotFoundError,
+  ConflictError,
+  AuthorizationError,
+} from '../../lib/errors.js';
 
 export function createProviderService({ db, queries, events, logger }) {
   async function createProvider({
@@ -92,6 +96,111 @@ export function createProviderService({ db, queries, events, logger }) {
     return queries.listProviders({ moderationState, limit, cursor, search, markets });
   }
 
+  async function getProviderDashboard({ userId, workspaceId }) {
+    const provider = await getProviderForUser(userId, workspaceId);
+    if (!provider) return null;
+    return {
+      provider,
+      stats: await queries.getProviderDashboard(provider.id),
+      recentSignals: (await queries.listPublishedSignals({
+        providerId: provider.id,
+        limit: 5,
+      })).rows,
+    };
+  }
+
+  async function listProviderSubscribers({ userId, workspaceId }) {
+    if (!await getProviderForUser(userId, workspaceId)) return null;
+    const provider = await requireProviderManager(userId, workspaceId);
+    return queries.listProviderSubscribers(provider.id);
+  }
+
+  async function listManagedProviderPlans({ userId, workspaceId }) {
+    if (!await getProviderForUser(userId, workspaceId)) return [];
+    const provider = await requireProviderManager(userId, workspaceId);
+    return queries.listManagedProviderPlans(provider.id);
+  }
+
+  async function listProviderPlans(providerId) {
+    return queries.listProviderPlans(providerId);
+  }
+
+  async function createProviderPlan({
+    userId,
+    workspaceId,
+    name,
+    pricing,
+    entitlements,
+  }) {
+    const provider = await requireProviderManager(userId, workspaceId);
+    return db.tx(async (tx) => {
+      const plan = await queries.insertProviderPlan(tx, {
+        providerId: provider.id,
+        name,
+        pricing,
+        entitlements,
+      });
+      await queries.insertProviderPlanVersion(tx, plan);
+      return plan;
+    });
+  }
+
+  async function updateProviderPlan({ userId, workspaceId, planId, status }) {
+    const provider = await requireProviderManager(userId, workspaceId);
+    const plan = await queries.findProviderPlanById(planId);
+    if (!plan || plan.provider_id !== provider.id) throw new NotFoundError('Provider plan');
+
+    const allowed = plan.status === 'draft'
+      ? ['active', 'archived']
+      : plan.status === 'active'
+        ? ['retired']
+        : plan.status === 'retired'
+          ? ['active', 'archived']
+          : [];
+    if (!allowed.includes(status)) {
+      throw new ConflictError('Provider plan cannot transition to that status', 'INVALID_PLAN_STATE');
+    }
+    if (status === 'active') {
+      if (provider.moderation_state !== 'approved' || provider.visibility !== 'public') {
+        throw new ConflictError('An approved, public profile is required to activate a plan', 'PROFILE_NOT_PUBLISHED');
+      }
+      if (Number(plan.pricing?.amountMinor) !== 0) {
+        throw new ConflictError(
+          'Paid subscription plans cannot be activated until marketplace billing is available',
+          'PAID_PLANS_UNAVAILABLE',
+        );
+      }
+    }
+
+    return db.tx(async (tx) => {
+      const updated = await queries.updateProviderPlanStatus(provider.id, planId, status, tx);
+      if (!updated) throw new NotFoundError('Provider plan');
+      await queries.insertProviderPlanVersion(tx, updated);
+      return updated;
+    });
+  }
+
+  async function requireProviderManager(userId, workspaceId) {
+    const result = await db.query(
+      `
+      SELECT w.type, m.role
+      FROM workspaces w
+      JOIN workspace_memberships m ON m.workspace_id = w.id
+      WHERE w.id = $1 AND m.user_id = $2 AND m.status = 'active' AND w.status = 'active'
+      `,
+      [workspaceId, userId],
+    );
+    if (!result.rows[0] || result.rows[0].type !== 'trader') {
+      throw new AuthorizationError('An active Trader workspace is required', 'TRADER_WORKSPACE_REQUIRED');
+    }
+    if (!['owner', 'administrator'].includes(result.rows[0].role)) {
+      throw new AuthorizationError('Only Trader workspace owners and administrators can manage plans');
+    }
+    const provider = await queries.findProviderByWorkspaceId(workspaceId);
+    if (!provider) throw new NotFoundError('Trader profile');
+    return provider;
+  }
+
   async function updateProvider({ userId, workspaceId, providerId, updates }) {
     const provider = await queries.findProviderById(providerId);
     if (!provider) throw new NotFoundError('Provider');
@@ -123,6 +232,12 @@ export function createProviderService({ db, queries, events, logger }) {
     getProviderForUser,
     getProviderByHandle,
     listProviders,
+    getProviderDashboard,
+    listProviderSubscribers,
+    listManagedProviderPlans,
+    listProviderPlans,
+    createProviderPlan,
+    updateProviderPlan,
     updateProvider,
   };
 }

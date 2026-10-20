@@ -569,6 +569,18 @@ export function serializeProviderPlan(row) {
   };
 }
 
+export function serializeProviderSubscriber(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    status: row.status,
+    planName: row.plan_name || 'No plan',
+    createdAt: row.created_at,
+  };
+}
+
 export function serializeCopyConfiguration(row) {
   if (!row) return null;
   return {
@@ -911,6 +923,7 @@ export const serializers = {
   provider: serializeProvider,
   publishedSignal: serializePublishedSignal,
   providerPlan: serializeProviderPlan,
+  providerSubscriber: serializeProviderSubscriber,
   copyConfiguration: serializeCopyConfiguration,
   workflow: serializeWorkflow,
   workflowRun: serializeWorkflowRun,

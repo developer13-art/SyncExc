@@ -36,6 +36,18 @@ export const marketplaceApi = {
   getProviderDashboard: (params) =>
     api.get(endpoints.marketplace.providerDashboard, { params }),
 
+  getMySubscribers: (params) =>
+    api.getPaged(endpoints.marketplace.mySubscribers, { params }),
+
+  getMyProviderPlans: () =>
+    api.get(endpoints.marketplace.myPlans),
+
+  createMyProviderPlan: (payload) =>
+    api.post(endpoints.marketplace.myPlans, payload),
+
+  updateMyProviderPlan: (planId, payload) =>
+    api.patch(`${endpoints.marketplace.myPlans}/${planId}`, payload),
+
   getSubscriberDashboard: () => api.get(endpoints.marketplace.subscriberDashboard),
 
   followProvider: (providerId, payload) =>
@@ -63,7 +75,7 @@ export const marketplaceApi = {
   listMySignals: (params) =>
     api.getPaged(endpoints.marketplace.mySignals, { params }),
 
-  publishSignal: (payload) => api.post(endpoints.marketplace.signals, payload),
+  publishSignal: (payload) => api.post(endpoints.marketplace.mySignals, payload),
 
   updateSignal: (signalId, payload) =>
     api.patch(endpoints.marketplace.signal(signalId), payload),

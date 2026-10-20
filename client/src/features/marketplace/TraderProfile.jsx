@@ -59,8 +59,8 @@ export default function TraderProfile() {
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Trader Studio'));
     dispatch(uiActions.setBreadcrumbs([
-      { label: 'Marketplace', path: ROUTES.app.marketplace.browse },
-      { label: 'Trader Studio', path: ROUTES.app.marketplace.traderProfile },
+      { label: 'Trader workspace', path: ROUTES.app.trader.overview },
+      { label: 'Public profile', path: ROUTES.app.trader.profile },
     ]));
   }, [dispatch]);
 
@@ -268,8 +268,8 @@ export default function TraderProfile() {
           </p>
         </div>
         <Button variant="outline" asChild>
-          <Link to={ROUTES.app.marketplace.browse}>
-            View marketplace <ArrowUpRight className="h-4 w-4" />
+          <Link to={ROUTES.app.trader.overview}>
+            Trader dashboard <ArrowUpRight className="h-4 w-4" />
           </Link>
         </Button>
       </header>

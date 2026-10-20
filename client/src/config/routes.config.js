@@ -122,6 +122,16 @@ export const ROUTES = Object.freeze({
       copyResults: '/app/marketplace/results',
     },
 
+    trader: {
+      overview: '/app/trader/dashboard',
+      publishSignal: '/app/trader/signals/publish',
+      signalHistory: '/app/trader/signals/history',
+      subscribers: '/app/trader/subscribers',
+      plans: '/app/trader/plans',
+      revenue: '/app/trader/revenue',
+      profile: '/app/trader/profile',
+    },
+
     automation: {
       overview: '/app/automation',
       create: '/app/automation/new',

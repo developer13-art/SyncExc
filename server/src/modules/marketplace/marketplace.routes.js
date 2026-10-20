@@ -37,6 +37,22 @@ const MySignalsQuerySchema = PaginationSchema.keys({
     .optional(),
 });
 
+const CreateProviderPlanSchema = Joi.object({
+  name: Joi.string().trim().min(1).max(100).required(),
+  pricing: Joi.object({
+    currency: Joi.string().valid('USD').required(),
+    amountMinor: Joi.number().integer().min(0).max(100000000).required(),
+    billingInterval: Joi.string().valid('monthly', 'yearly').required(),
+  }).required(),
+  entitlements: Joi.object({
+    features: Joi.array().items(Joi.string().trim().min(1).max(120)).max(20).default([]),
+  }).default({ features: [] }),
+});
+
+const UpdateProviderPlanSchema = Joi.object({
+  status: Joi.string().valid('active', 'retired', 'archived').required(),
+});
+
 const UpdateProviderSchema = Joi.object({
   displayName: Joi.string().trim().min(1).max(120).optional(),
   biography: Joi.string().trim().max(4000).optional().allow(''),
@@ -76,6 +92,12 @@ export function createMarketplaceRoutes(services) {
   );
 
   router.get(
+    '/providers/:providerId/plans',
+    middleware.optionalAuth(),
+    middleware.asyncHandler(controller.listProviderPlans)
+  );
+
+  router.get(
     '/providers/:providerId/performance',
     middleware.optionalAuth(),
     middleware.asyncHandler(controller.listPerformanceReports)
@@ -95,6 +117,44 @@ export function createMarketplaceRoutes(services) {
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.asyncHandler(controller.getMyProvider)
+  );
+
+  router.get(
+    '/me/dashboard',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.getMyDashboard)
+  );
+
+  router.get(
+    '/me/subscribers',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.listMySubscribers)
+  );
+
+  router.get(
+    '/me/plans',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.listMyPlans)
+  );
+
+  router.post(
+    '/me/plans',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(CreateProviderPlanSchema),
+    middleware.asyncHandler(controller.createMyPlan)
+  );
+
+  router.patch(
+    '/me/plans/:planId',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ planId: UuidSchema.required() })),
+    middleware.validateBody(UpdateProviderPlanSchema),
+    middleware.asyncHandler(controller.updateMyPlan)
   );
 
   router.post(

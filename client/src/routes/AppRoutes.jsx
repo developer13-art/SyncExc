@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../layouts/AppLayout.jsx';
 import { LoadingState } from '../components/ui/LoadingState.jsx';
 import { ROUTES } from '../config/routes.config.js';
+import { WorkspaceRouteGuard } from '../app/router.jsx';
 import { NotFoundRoute } from './NotFoundRoute.jsx';
 
 const Dashboard = lazy(() => import('../features/dashboard/DashboardOverview.jsx'));
@@ -20,6 +21,7 @@ const AddSource = lazy(() => import('../features/sources/AddSource.jsx'));
 const Signals = lazy(() => import('../features/signals/SignalsOverview.jsx'));
 const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.jsx'));
 const TraderProfile = lazy(() => import('../features/marketplace/TraderProfile.jsx'));
+const TraderRoutes = lazy(() => import('./TraderRoutes.jsx'));
 const Automation = lazy(() => import('../features/automation/WorkflowsOverview.jsx'));
 const WorkflowTemplates = lazy(() => import('../features/automation/Templates.jsx'));
 const CreateWorkflow = lazy(() => import('../features/automation/CreateWorkflow.jsx'));
@@ -51,6 +53,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/app" element={<AppLayout />}>
+        <Route element={<WorkspaceRouteGuard />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route
           path="dashboard"
@@ -75,6 +78,7 @@ export function AppRoutes() {
         <Route path="signals/*" element={<Fallback><Signals /></Fallback>} />
         <Route path="marketplace/profile" element={<Fallback><TraderProfile /></Fallback>} />
         <Route path="marketplace/*" element={<Fallback><Marketplace /></Fallback>} />
+        <Route path="trader/*" element={<Fallback><TraderRoutes /></Fallback>} />
         <Route path="automation/templates" element={<Fallback><WorkflowTemplates /></Fallback>} />
         <Route path="automation/new" element={<Fallback><CreateWorkflow /></Fallback>} />
         <Route path="automation/:workflowId/edit" element={<Fallback><WorkflowBuilder /></Fallback>} />
@@ -99,6 +103,7 @@ export function AppRoutes() {
         <Route path="settings/workspaces/:workspaceId" element={<Fallback><WorkspaceSettings /></Fallback>} />
         <Route path="settings/*" element={<Fallback><Settings /></Fallback>} />
         <Route path="*" element={<NotFoundRoute />} />
+        </Route>
       </Route>
     </Routes>
   );

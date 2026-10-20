@@ -65,6 +65,42 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async getProviderDashboard(providerId) {
+      const result = await db.query(
+        `
+        SELECT
+          (SELECT count(*)::int FROM marketplace_subscriptions
+           WHERE provider_id = $1 AND status IN ('active', 'trialing')) AS active_subscribers,
+          (SELECT count(*)::int FROM marketplace_published_signals
+           WHERE provider_id = $1) AS total_signals,
+          (SELECT count(*)::int FROM marketplace_published_signals
+           WHERE provider_id = $1 AND status IN ('published', 'updated')) AS active_signals,
+          (SELECT count(*)::int FROM marketplace_provider_plans
+           WHERE provider_id = $1 AND status = 'active') AS active_plans
+        `,
+        [providerId],
+      );
+      return result.rows[0];
+    },
+
+    async listProviderSubscribers(providerId) {
+      const result = await db.query(
+        `
+        SELECT s.id, s.status, s.created_at,
+               u.username, u.display_name,
+               plan.name AS plan_name, plan.pricing
+        FROM marketplace_subscriptions s
+        JOIN users u ON u.id = s.subscriber_user_id
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = s.plan_id
+        WHERE s.provider_id = $1 AND s.status IN ('active', 'trialing')
+          AND u.deleted_at IS NULL
+        ORDER BY s.created_at DESC
+        `,
+        [providerId],
+      );
+      return result.rows;
+    },
+
     async listProviders({ moderationState, limit = 50, cursor = null, search = null, markets = null } = {}) {
       const params = [limit + 1];
       const conditions = ["moderation_state = 'approved'", "visibility = 'public'"];
@@ -364,6 +400,51 @@ export function createMarketplaceQueries({ db }) {
         ]
       );
       return result.rows[0];
+    },
+
+    async findProviderPlanById(planId) {
+      const result = await db.query(
+        `SELECT * FROM marketplace_provider_plans WHERE id = $1`,
+        [planId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async listManagedProviderPlans(providerId) {
+      const result = await db.query(
+        `
+        SELECT * FROM marketplace_provider_plans
+        WHERE provider_id = $1 AND status <> 'archived'
+        ORDER BY created_at DESC
+        `,
+        [providerId],
+      );
+      return result.rows;
+    },
+
+    async insertProviderPlanVersion(client, plan) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_provider_plan_versions (plan_id, version, snapshot)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        `,
+        [plan.id, plan.version, JSON.stringify(plan)],
+      );
+      return result.rows[0];
+    },
+
+    async updateProviderPlanStatus(providerId, planId, status, client = db) {
+      const result = await client.query(
+        `
+        UPDATE marketplace_provider_plans
+        SET status = $3, version = version + 1, updated_at = now()
+        WHERE provider_id = $1 AND id = $2
+        RETURNING *
+        `,
+        [providerId, planId, status],
+      );
+      return result.rows[0] || null;
     },
 
     async listProviderPlans(providerId) {

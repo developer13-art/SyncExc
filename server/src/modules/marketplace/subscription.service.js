@@ -11,6 +11,21 @@ export function createSubscriptionService({ db, queries, billing, events, logger
     if (provider.moderation_state !== 'approved') {
       throw new ConflictError('Provider is not approved', 'PROVIDER_NOT_APPROVED');
     }
+    if (provider.visibility !== 'public') {
+      throw new ConflictError('Provider is not accepting subscribers', 'PROVIDER_NOT_PUBLISHED');
+    }
+    if (planId) {
+      const plan = await queries.findProviderPlanById(planId);
+      if (!plan || plan.provider_id !== providerId || plan.status !== 'active') {
+        throw new NotFoundError('Subscription plan');
+      }
+      if (Number(plan.pricing?.amountMinor) !== 0) {
+        throw new ConflictError(
+          'Paid subscription checkout is not available',
+          'PAID_SUBSCRIPTIONS_UNAVAILABLE',
+        );
+      }
+    }
 
     const existing = await queries.findActiveSubscription(providerId, userId);
     if (existing) throw new ConflictError('Subscription already active', 'SUBSCRIPTION_EXISTS');

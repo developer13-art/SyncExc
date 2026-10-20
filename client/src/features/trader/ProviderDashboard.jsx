@@ -1,77 +1,151 @@
 import { useQuery } from '@tanstack/react-query';
-import api from '../../api/client';
-import { Users, Send, DollarSign, Activity } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { Activity, ArrowRight, Send, Users, UserRound, Layers3 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+
+import { marketplaceApi } from '../../api/index.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { Badge } from '../../components/ui/Badge.jsx';
+import { Button } from '../../components/ui/Button.jsx';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
+import { EmptyState } from '../../components/ui/EmptyState.jsx';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
+import { LoadingState } from '../../components/ui/LoadingState.jsx';
+import { ROUTES } from '../../config/routes.config.js';
+import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 
 export default function ProviderDashboard() {
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['provider-stats'],
-    queryFn: () => api.get('/marketplace/provider/dashboard').then(res => res.data.data),
+  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const dashboardQuery = useQuery({
+    queryKey: ['marketplace', 'provider-dashboard', activeWorkspaceId],
+    queryFn: () => marketplaceApi.getProviderDashboard(),
+    enabled: activeWorkspace?.type === 'trader',
   });
 
-  if (isLoading) return <div className="p-8">Loading dashboard...</div>;
+  if (dashboardQuery.isLoading) return <LoadingState label="Loading Trader dashboard" />;
+  if (dashboardQuery.isError) {
+    return (
+      <ErrorState
+        title="Trader dashboard unavailable"
+        description={getErrorMessage(dashboardQuery.error)}
+        onRetry={dashboardQuery.refetch}
+      />
+    );
+  }
+
+  const dashboard = dashboardQuery.data;
+  if (!dashboard?.provider) {
+    return (
+      <EmptyState
+        icon={UserRound}
+        title="Set up your Trader profile"
+        description="Create a profile for this Trader workspace before publishing signals or managing a subscriber audience."
+        action={
+          <Button asChild>
+            <Link to={ROUTES.app.trader.profile}>Create Trader profile</Link>
+          </Button>
+        }
+      />
+    );
+  }
+
+  const stats = dashboard.stats ?? {};
+  const recentSignals = dashboard.recentSignals ?? [];
+  const metrics = [
+    { label: 'Active subscribers', value: stats.active_subscribers ?? 0, icon: Users },
+    { label: 'Signals published', value: stats.total_signals ?? 0, icon: Send },
+    { label: 'Active signals', value: stats.active_signals ?? 0, icon: Activity },
+    { label: 'Active plans', value: stats.active_plans ?? 0, icon: Layers3 },
+  ];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Provider Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Manage your signals, subscribers, and revenue.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <StatCard title="Active Subscribers" value={stats?.activeSubscribers || 0} icon={Users} trend="+12% this month" />
-        <StatCard title="Signals Published" value={stats?.totalSignals || 0} icon={Send} />
-        <StatCard title="Est. Monthly Revenue" value={`$${stats?.monthlyRevenue || '0.00'}`} icon={DollarSign} trend="+5% this week" />
-        <StatCard title="Win Rate (30d)" value={`${stats?.winRate || 0}%`} icon={Activity} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-card border border-border rounded-xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Revenue Trend</h2>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={stats?.revenueHistory || []}>
-                <XAxis dataKey="date" stroke="#888888" fontSize={12} />
-                <YAxis stroke="#888888" fontSize={12} tickFormatter={(value) => `$${value}`} />
-                <Tooltip />
-                <Area type="monotone" dataKey="amount" stroke="#10b981" fill="#10b981" fillOpacity={0.2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="bg-card border border-border rounded-xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
-          <div className="space-y-4">
-            {stats?.recentActivity?.map((act, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className="w-2 h-2 mt-2 rounded-full bg-primary" />
-                <div>
-                  <p className="text-sm font-medium">{act.title}</p>
-                  <p className="text-xs text-muted-foreground">{act.time}</p>
-                </div>
-              </div>
-            )) || <p className="text-sm text-muted-foreground">No recent activity.</p>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ title, value, icon: Icon, trend }) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-6">
-      <div className="flex justify-between items-start">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold mt-2">{value}</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trader dashboard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Welcome, {dashboard.provider.displayName}. Manage your audience, subscription plans, and published signals.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge variant={dashboard.provider.moderationState === 'approved' ? 'success' : 'warning'}>
+              {dashboard.provider.moderationState?.replaceAll('_', ' ') ?? 'profile pending'}
+            </Badge>
+            <Badge variant={dashboard.provider.visibility === 'public' ? 'info' : 'muted'}>
+              {dashboard.provider.visibility ?? 'private'}
+            </Badge>
+          </div>
         </div>
-        <div className="p-2 bg-primary/10 rounded-lg text-primary">
-          <Icon className="w-5 h-5" />
-        </div>
+        <Button asChild>
+          <Link to={ROUTES.app.trader.publishSignal}>
+            <Send className="h-4 w-4" /> Publish signal
+          </Link>
+        </Button>
+      </header>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map(({ label, value, icon: Icon }) => (
+          <Card key={label}>
+            <CardContent className="flex items-start justify-between gap-3 p-5">
+              <div>
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
+              </div>
+              <Icon className="h-5 w-5 text-primary" />
+            </CardContent>
+          </Card>
+        ))}
       </div>
-      {trend && <p className="text-xs text-emerald-500 mt-2 font-medium">{trend}</p>}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent signals</CardTitle>
+            <CardDescription>Your latest published marketplace signals.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentSignals.length === 0 ? (
+              <EmptyState
+                icon={Activity}
+                title="No signals yet"
+                description="Publish a signal when your profile is approved and public."
+                action={<Button asChild><Link to={ROUTES.app.trader.publishSignal}>Create a signal</Link></Button>}
+              />
+            ) : (
+              <div className="divide-y divide-border">
+                {recentSignals.map((signal) => (
+                  <div key={signal.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {signal.instrument} · {signal.direction}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {signal.marketType} · {signal.entry ? `Entry ${signal.entry}` : 'Entry not specified'}
+                      </p>
+                    </div>
+                    <Badge variant={signal.status === 'published' || signal.status === 'updated' ? 'success' : 'muted'}>
+                      {signal.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button variant="link" asChild className="mt-3 px-0">
+              <Link to={ROUTES.app.trader.signalHistory}>View all signals <ArrowRight className="h-4 w-4" /></Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Trader tools</CardTitle>
+            <CardDescription>Manage the parts of your provider account.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col items-start gap-2">
+            <Button variant="ghost" asChild><Link to={ROUTES.app.trader.subscribers}><Users className="h-4 w-4" /> Subscribers</Link></Button>
+            <Button variant="ghost" asChild><Link to={ROUTES.app.trader.plans}><Layers3 className="h-4 w-4" /> Subscription plans</Link></Button>
+            <Button variant="ghost" asChild><Link to={ROUTES.app.trader.profile}><UserRound className="h-4 w-4" /> Public profile</Link></Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

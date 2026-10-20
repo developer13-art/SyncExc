@@ -74,6 +74,22 @@ export const NAV_SECTIONS = Object.freeze([
   },
 ]);
 
+export const TRADER_NAV_SECTIONS = Object.freeze([
+  {
+    id: 'trader',
+    label: 'Trader workspace',
+    items: [
+      { id: 'trader-dashboard', label: 'Dashboard', path: '/app/trader/dashboard', icon: 'dashboard' },
+      { id: 'trader-publish', label: 'Publish signal', path: '/app/trader/signals/publish', icon: 'signals' },
+      { id: 'trader-history', label: 'Signal history', path: '/app/trader/signals/history', icon: 'terminal' },
+      { id: 'trader-subscribers', label: 'Subscribers', path: '/app/trader/subscribers', icon: 'connections' },
+      { id: 'trader-plans', label: 'Subscription plans', path: '/app/trader/plans', icon: 'billing' },
+      { id: 'trader-revenue', label: 'Revenue & payouts', path: '/app/trader/revenue', icon: 'billing' },
+      { id: 'trader-profile', label: 'Public profile', path: '/app/trader/profile', icon: 'marketplace' },
+    ],
+  },
+]);
+
 export const PUBLIC_LINKS = Object.freeze([
   { label: 'Features', path: '/features' },
   { label: 'Pricing', path: '/pricing' },

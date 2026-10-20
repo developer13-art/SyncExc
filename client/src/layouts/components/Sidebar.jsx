@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '../../lib/utils/cn.util.js';
-import { NAV_SECTIONS } from '../../lib/constants/route.constants.js';
+import { NAV_SECTIONS, TRADER_NAV_SECTIONS } from '../../lib/constants/route.constants.js';
 import {
   uiActions,
   selectMobileNavOpen,
@@ -16,6 +16,7 @@ import {
 } from '../../app/slices/uiSlice.js';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher.jsx';
 import * as Icons from '../../assets/icons/index.js';
+import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 
 function IconByName({ name, className }) {
   const map = {
@@ -46,6 +47,8 @@ export function Sidebar() {
   const location = useLocation();
   const collapsed = useSelector(selectSidebarCollapsed);
   const mobileNavOpen = useSelector(selectMobileNavOpen);
+  const { activeWorkspace } = useWorkspaceContext();
+  const sections = activeWorkspace?.type === 'trader' ? TRADER_NAV_SECTIONS : NAV_SECTIONS;
 
   useEffect(() => {
     if (!mobileNavOpen) return undefined;
@@ -65,7 +68,8 @@ export function Sidebar() {
           !location.pathname.startsWith('/app/marketplace/profile'));
     }
     return location.pathname === item.path ||
-      (item.path !== '/app/dashboard' && location.pathname.startsWith(item.path));
+      (item.path !== '/app/dashboard' && item.path !== '/app/trader/dashboard' &&
+        location.pathname.startsWith(item.path));
   };
 
   return (
@@ -99,7 +103,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.id} className="mb-4">
             <p className={cn('mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground', collapsed && 'md:hidden')}>
               {section.label}

@@ -1,50 +1,83 @@
 import { useQuery } from '@tanstack/react-query';
-import api from '../../api/client';
-import { format } from 'date-fns';
+import { UsersRound } from 'lucide-react';
+
+import { marketplaceApi } from '../../api/index.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { Badge } from '../../components/ui/Badge.jsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
+import { EmptyState } from '../../components/ui/EmptyState.jsx';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
+import { LoadingState } from '../../components/ui/LoadingState.jsx';
+import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
+import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 
 export default function SubscribersList() {
-  const { data: subscribers, isLoading } = useQuery({
-    queryKey: ['provider-subscribers'],
-    queryFn: () => api.get('/marketplace/provider/subscribers').then(res => res.data.data),
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const subscribersQuery = useQuery({
+    queryKey: ['marketplace', 'my-subscribers', activeWorkspaceId],
+    queryFn: () => marketplaceApi.getMySubscribers({ limit: 100 }),
   });
+  const subscribers = subscribersQuery.data?.items ?? [];
 
-  if (isLoading) return <div className="p-8">Loading subscribers...</div>;
+  if (subscribersQuery.isLoading) return <LoadingState label="Loading subscribers" />;
+  if (subscribersQuery.isError) {
+    return (
+      <ErrorState
+        title="Subscribers unavailable"
+        description={getErrorMessage(subscribersQuery.error)}
+        onRetry={subscribersQuery.refetch}
+      />
+    );
+  }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Subscribers</h1>
-        <p className="text-muted-foreground mt-1">Users currently subscribed to your signals.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {subscribers?.map((sub) => (
-          <div key={sub.id} className="bg-card border border-border rounded-xl p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="font-semibold">{sub.user.displayName}</h3>
-                <p className="text-sm text-muted-foreground">@{sub.user.username}</p>
-              </div>
-              <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-xs font-medium rounded-full">Active</span>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Subscribers</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Active users subscribed to this Trader profile. Contact details are not exposed here.
+        </p>
+      </header>
+      <Card>
+        <CardHeader><CardTitle>{subscribers.length} active subscribers</CardTitle></CardHeader>
+        <CardContent>
+          {subscribers.length === 0 ? (
+            <EmptyState
+              icon={UsersRound}
+              title="No active subscribers yet"
+              description="Subscribers will appear here when users subscribe to your active plan."
+            />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {subscribers.map((subscriber) => (
+                <Card key={subscriber.id}>
+                  <CardContent className="p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-foreground">{subscriber.displayName}</p>
+                        <p className="truncate text-sm text-muted-foreground">@{subscriber.username}</p>
+                      </div>
+                      <Badge variant="success">{subscriber.status}</Badge>
+                    </div>
+                    <dl className="mt-4 grid gap-2 text-sm">
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-muted-foreground">Plan</dt>
+                        <dd className="font-medium text-foreground">{subscriber.planName}</dd>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-muted-foreground">Subscribed</dt>
+                        <dd className="text-foreground">
+                          {subscriber.createdAt ? formatRelativeTime(subscriber.createdAt) : '—'}
+                        </dd>
+                      </div>
+                    </dl>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Joined</span>
-                <span>{format(new Date(sub.createdAt), 'MMM d, yyyy')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Plan</span>
-                <span className="font-medium">{sub.planName}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-        {subscribers?.length === 0 && (
-          <div className="col-span-3 text-center py-12 text-muted-foreground">
-            No active subscribers yet.
-          </div>
-        )}
-      </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

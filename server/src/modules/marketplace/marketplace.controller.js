@@ -6,6 +6,8 @@ import { success, created, paginated } from '../../lib/response.js';
 import {
   serializeProvider,
   serializePublishedSignal,
+  serializeProviderPlan,
+  serializeProviderSubscriber,
   serializeCopyConfiguration,
 } from '../../lib/serializers.js';
 
@@ -61,10 +63,74 @@ export function createMarketplaceController(services) {
       return success(res, serializeProvider(provider));
     },
 
+    async listProviderPlans(req, res) {
+      const provider = await providerService.getProvider(req.params.providerId);
+      if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
+      }
+      const plans = await providerService.listProviderPlans(req.params.providerId);
+      return success(res, plans.map(serializeProviderPlan));
+    },
+
     async getMyProvider(req, res) {
       const provider = await providerService.getProviderForUser(req.auth.userId, req.workspace.id);
       if (!provider) return success(res, null);
       return success(res, serializeProvider(provider));
+    },
+
+    async getMyDashboard(req, res) {
+      const result = await providerService.getProviderDashboard({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      if (!result) return success(res, null);
+      return success(res, {
+        provider: serializeProvider(result.provider),
+        stats: result.stats,
+        recentSignals: result.recentSignals.map(serializePublishedSignal),
+      });
+    },
+
+    async listMySubscribers(req, res) {
+      const subscribers = await providerService.listProviderSubscribers({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      if (!subscribers) return paginated(res, [], { nextCursor: null, limit: 50 });
+      return paginated(
+        res,
+        subscribers.map(serializeProviderSubscriber),
+        { nextCursor: null, limit: subscribers.length },
+      );
+    },
+
+    async listMyPlans(req, res) {
+      const plans = await providerService.listManagedProviderPlans({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, (plans || []).map(serializeProviderPlan));
+    },
+
+    async createMyPlan(req, res) {
+      const plan = await providerService.createProviderPlan({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        name: req.body.name,
+        pricing: req.body.pricing,
+        entitlements: req.body.entitlements,
+      });
+      return created(res, serializeProviderPlan(plan));
+    },
+
+    async updateMyPlan(req, res) {
+      const plan = await providerService.updateProviderPlan({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        planId: req.params.planId,
+        status: req.body.status,
+      });
+      return success(res, serializeProviderPlan(plan));
     },
 
     async updateProvider(req, res) {

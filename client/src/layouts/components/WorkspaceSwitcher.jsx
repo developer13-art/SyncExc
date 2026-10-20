@@ -8,11 +8,13 @@ import {
   Store,
   Code2,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { cn } from '../../lib/utils/cn.util.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { ROUTES } from '../../config/routes.config.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { useToast } from '../../hooks/useToast.js';
 
 function WorkspaceIcon({ type }) {
   if (type === 'organization') {
@@ -29,9 +31,23 @@ function WorkspaceIcon({ type }) {
 
 export function WorkspaceSwitcher() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
   const { workspaces, activeWorkspace, switchWorkspace } = useWorkspaceContext();
 
   const label = activeWorkspace?.name ?? 'Select workspace';
+  const selectWorkspace = async (workspace) => {
+    try {
+      await switchWorkspace(workspace.id);
+      if (workspace.type === 'trader') {
+        navigate(ROUTES.app.trader.overview);
+      } else if (location.pathname.startsWith('/app/trader')) {
+        navigate(ROUTES.app.dashboard);
+      }
+    } catch (error) {
+      toast.error('Could not switch workspace', { description: getErrorMessage(error) });
+    }
+  };
 
   return (
     <DropdownMenu.Root>
@@ -71,7 +87,7 @@ export function WorkspaceSwitcher() {
               <DropdownMenu.Item
                 key={workspace.id}
                 disabled={workspace.status !== 'active'}
-                onSelect={() => switchWorkspace(workspace.id)}
+                onSelect={() => selectWorkspace(workspace)}
                 className="flex cursor-pointer items-center justify-between gap-2 rounded-sm px-3 py-2 text-sm outline-none hover:bg-muted data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
               >
                 <span className="flex items-center gap-2 truncate">

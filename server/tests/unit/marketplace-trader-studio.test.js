@@ -2,9 +2,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { createMarketplaceController } from '../../src/modules/marketplace/marketplace.controller.js';
-import { serializeProvider, serializePublishedSignal } from '../../src/lib/serializers.js';
+import {
+  serializeProvider,
+  serializeProviderSubscriber,
+  serializePublishedSignal,
+} from '../../src/lib/serializers.js';
 import { createPublicationService } from '../../src/modules/marketplace/publication.service.js';
 import { createProviderService } from '../../src/modules/marketplace/provider.service.js';
+import { createSubscriptionService } from '../../src/modules/marketplace/subscription.service.js';
 
 function createResponse() {
   return {
@@ -93,6 +98,45 @@ describe('Trader Studio API', () => {
 
     assert.equal(queriedSignals, false);
     assert.deepEqual(response.body.data, []);
+  });
+
+  it('returns an empty dashboard when the active workspace has no Trader profile', async () => {
+    const service = createProviderService({
+      queries: {
+        async findProviderByWorkspaceId() { return null; },
+      },
+    });
+
+    const dashboard = await service.getProviderDashboard({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+    });
+
+    assert.equal(dashboard, null);
+  });
+
+  it('keeps subscriber and plan management scoped to Trader workspace managers', async () => {
+    const service = createProviderService({
+      db: {
+        async query() {
+          return { rows: [{ type: 'trader', role: 'member' }] };
+        },
+      },
+      queries: {
+        async findProviderByWorkspaceId() {
+          return { id: 'provider-1', workspace_id: 'workspace-1' };
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.listProviderSubscribers({ userId: 'member-1', workspaceId: 'workspace-1' }),
+      { code: 'FORBIDDEN' },
+    );
+    await assert.rejects(
+      service.listManagedProviderPlans({ userId: 'member-1', workspaceId: 'workspace-1' }),
+      { code: 'FORBIDDEN' },
+    );
   });
 
   it('includes editable methodology and published signal metadata in client serializers', () => {
@@ -208,5 +252,133 @@ describe('Trader Studio API', () => {
 
     assert.equal(updateClient, transaction);
     assert.equal(versionClient, transaction);
+  });
+
+  it('creates subscription plans in draft status and versions the plan transactionally', async () => {
+    const transaction = {};
+    let planVersionClient;
+    const service = createProviderService({
+      db: {
+        async query() {
+          return { rows: [{ type: 'trader', role: 'owner' }] };
+        },
+        async tx(callback) {
+          return callback(transaction);
+        },
+      },
+      queries: {
+        async findProviderByWorkspaceId() {
+          return { id: 'provider-1', workspace_id: 'workspace-1' };
+        },
+        async insertProviderPlan(client, plan) {
+          assert.equal(client, transaction);
+          assert.equal(plan.providerId, 'provider-1');
+          return {
+            id: 'plan-1',
+            provider_id: 'provider-1',
+            status: 'draft',
+            version: 1,
+            pricing: plan.pricing,
+          };
+        },
+        async insertProviderPlanVersion(client) {
+          planVersionClient = client;
+        },
+      },
+    });
+
+    const plan = await service.createProviderPlan({
+      userId: 'owner-1',
+      workspaceId: 'workspace-1',
+      name: 'Free signals',
+      pricing: { currency: 'USD', amountMinor: 0, billingInterval: 'monthly' },
+      entitlements: { features: ['Signal updates'] },
+    });
+
+    assert.equal(plan.status, 'draft');
+    assert.equal(planVersionClient, transaction);
+  });
+
+  it('does not activate paid plans without marketplace billing', async () => {
+    let transactionStarted = false;
+    const service = createProviderService({
+      db: {
+        async query() {
+          return { rows: [{ type: 'trader', role: 'owner' }] };
+        },
+        async tx(callback) {
+          transactionStarted = true;
+          return callback({});
+        },
+      },
+      queries: {
+        async findProviderByWorkspaceId() {
+          return {
+            id: 'provider-1',
+            moderation_state: 'approved',
+            visibility: 'public',
+          };
+        },
+        async findProviderPlanById() {
+          return {
+            id: 'plan-1',
+            provider_id: 'provider-1',
+            status: 'draft',
+            pricing: { amountMinor: 999 },
+          };
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.updateProviderPlan({
+        userId: 'owner-1',
+        workspaceId: 'workspace-1',
+        planId: 'plan-1',
+        status: 'active',
+      }),
+      { code: 'PAID_PLANS_UNAVAILABLE' },
+    );
+    assert.equal(transactionStarted, false);
+  });
+
+  it('does not start a subscription for a non-public provider or inactive plan', async () => {
+    const service = createSubscriptionService({
+      db: { async query() { return { rows: [] }; } },
+      queries: {
+        async findProviderById() {
+          return { id: 'provider-1', moderation_state: 'approved', visibility: 'private' };
+        },
+        async findProviderPlanById() {
+          return { id: 'plan-1', provider_id: 'provider-1', status: 'draft', pricing: { amountMinor: 0 } };
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.subscribe({ userId: 'subscriber-1', providerId: 'provider-1', planId: 'plan-1' }),
+      { code: 'PROVIDER_NOT_PUBLISHED' },
+    );
+  });
+
+  it('serializes subscriber profiles without exposing their contact data', () => {
+    const subscriber = serializeProviderSubscriber({
+      id: 'subscription-1',
+      username: 'subscriber',
+      display_name: 'Subscriber One',
+      status: 'active',
+      plan_name: 'Free signals',
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      email: 'private@example.test',
+    });
+    assert.deepEqual(Object.keys(subscriber), [
+      'id',
+      'username',
+      'displayName',
+      'status',
+      'planName',
+      'createdAt',
+    ]);
+    assert.equal(subscriber.username, 'subscriber');
   });
 });
