@@ -64,6 +64,17 @@ export function createSourcesController(services) {
       return created(res, result.map(serializeSource));
     },
 
+    async telegramReauthorizeSource(req, res) {
+      const result = await telegramAuthService.reauthorizeSource({
+        loginId: req.body.loginId,
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        sourceId: req.body.sourceId,
+        channelId: req.body.channelId,
+      });
+      return success(res, result);
+    },
+
     async telegramCancelLogin(req, res) {
       const result = await telegramAuthService.cancel({
         loginId: req.body.loginId,

@@ -95,6 +95,11 @@ export function createIngestionService({ db, queries, deduplication, events, sou
       return { message, duplicate: true, reason: dedupResult.reason };
     }
 
+    await db.query(
+      `UPDATE signal_sources SET last_received_at = now(), updated_at = now() WHERE id = $1`,
+      [sourceId],
+    );
+
     // 3. Emit for parsing
     await db.tx(async (tx) => {
       const job = await queries.insertProcessingJob(tx, {

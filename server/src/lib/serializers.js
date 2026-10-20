@@ -481,6 +481,7 @@ export function serializeSignalCandidate(row) {
     status: row.status,
     issues: row.issues || [],
     eligibilityOutcome: row.eligibility_outcome || null,
+    executionStatus: row.execution_status || null,
     createdAt: row.created_at,
   };
 }
@@ -495,6 +496,7 @@ export function serializeSignalMessage(row) {
     providerTimestamp: row.provider_timestamp,
     receivedAt: row.received_at,
     contentType: row.content_type,
+    content: row.content,
     processingStatus: row.processing_status,
   };
 }

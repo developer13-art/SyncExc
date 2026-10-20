@@ -14,6 +14,7 @@ import {
 import { createSignalsController } from './signals.controller.js';
 
 const CandidateListQuerySchema = PaginationSchema.keys({
+  sourceId: UuidSchema.optional(),
   status: Joi.string()
     .valid(
       'received',

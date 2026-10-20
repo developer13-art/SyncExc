@@ -112,48 +112,6 @@ export function createSourceConnectionService({
         `UPDATE signal_sources SET monitoring_enabled = false, monitoring_started_at = NULL, updated_at = now() WHERE id = $1`,
         [sourceId]
       );
-      await tx.query(
-        `
-        UPDATE trading_execution_destination_results r
-        SET status = CASE
-          WHEN r.status = 'pending' THEN 'cancelled'
-          WHEN r.status = 'submitted' THEN 'uncertain'
-          ELSE r.status
-        END,
-        completed_at = CASE WHEN r.status = 'pending' THEN now() ELSE r.completed_at END
-        WHERE r.intent_id IN (
-          SELECT i.id
-          FROM trading_execution_intents i
-          JOIN trading_signal_candidates c ON c.id = i.signal_id
-          WHERE c.source_id = $1 AND i.workspace_id = $2
-        )
-          AND r.status IN ('pending', 'submitted')
-        `,
-        [sourceId, workspaceId]
-      );
-      await tx.query(
-        `
-        UPDATE trading_execution_intents i
-        SET status = 'canceled', completed_at = now()
-        WHERE i.status IN ('created', 'held')
-          AND i.workspace_id = $2
-          AND i.signal_id IN (
-            SELECT c.id FROM trading_signal_candidates c WHERE c.source_id = $1
-          )
-        `,
-        [sourceId, workspaceId]
-      );
-      await tx.query(
-        `
-        INSERT INTO trading_execution_intent_events (intent_id, event_type, actor_id, metadata)
-        SELECT i.id, 'source_disconnected', $3, jsonb_build_object('sourceId', $1, 'workspaceId', $2)
-        FROM trading_execution_intents i
-        JOIN trading_signal_candidates c ON c.id = i.signal_id
-        WHERE c.source_id = $1 AND i.workspace_id = $2 AND i.status = 'dispatched'
-        `,
-        [sourceId, workspaceId, userId]
-      );
-
       await events.publish(
         tx,
         'source.disconnected',
@@ -184,10 +142,9 @@ export function createSourceConnectionService({
       lastValidatedAt: connection.last_validated_at,
       credentialStatus: credential ? 'stored' : 'missing',
       metadata: {
-        botId: connection.metadata?.botId ?? null,
-        botUsername: connection.metadata?.botUsername ?? null,
-        chatId: connection.metadata?.chatId ?? null,
-        chatTitle: connection.metadata?.chatTitle ?? null,
+        connectionType: connection.metadata?.connectionType ?? null,
+        accountName: connection.metadata?.accountName ?? null,
+        selectedSource: connection.metadata?.selectedSource ?? null,
       },
     };
   }

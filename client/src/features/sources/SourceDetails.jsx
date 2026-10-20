@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, PauseCircle, PlayCircle, RefreshCw } from 'lucide-react';
@@ -13,6 +13,7 @@ import { Badge } from '../../components/ui/Badge.jsx';
 import { SourceStatusBadge } from '../../components/domain/source/SourceStatusBadge.jsx';
 import { SourceHealthBadge } from '../../components/domain/source/SourceHealthBadge.jsx';
 import { SourceConnection } from './SourceConnection.jsx';
+import { TelegramActivity } from './TelegramActivity.jsx';
 import { SourceValidation } from './SourceValidation.jsx';
 import { SourceHealth } from './SourceHealth.jsx';
 import { SourceQuality } from './SourceQuality.jsx';
@@ -212,6 +213,8 @@ export default function SourceDetails() {
           </CardContent>
         </Card>
       </div>
+
+      {source.type === 'telegram' ? <TelegramActivity sourceId={source.id} /> : null}
 
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">

@@ -16,6 +16,9 @@ export const sourcesApi = {
 
   telegramCreateSources: (payload) => api.post('/sources/telegram/login/sources', payload),
 
+  telegramReauthorizeSource: (payload) =>
+    api.post('/sources/telegram/login/reauthorize', payload),
+
   telegramCancelLogin: (loginId) => api.delete('/sources/telegram/login', { data: { loginId } }),
 
   getById: (sourceId) => api.get(endpoints.sources.detail(sourceId)),

@@ -9,7 +9,7 @@ import { InfoCallout } from '../../../components/ui/InfoCallout.jsx';
 import { sourcesApi } from '../../../api/index.js';
 import { getErrorMessage } from '../../../api/errors.js';
 
-export function TelegramSourceWizard({ onComplete, onCancel }) {
+export function TelegramSourceWizard({ onComplete, onCancel, reauthorizeSourceId }) {
   const [step, setStep] = useState('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loginId, setLoginId] = useState(null);
@@ -19,6 +19,7 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
   const [delivery, setDelivery] = useState(null);
   const [channels, setChannels] = useState([]);
   const [selectedChannels, setSelectedChannels] = useState([]);
+  const [channelSearch, setChannelSearch] = useState('');
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -91,11 +92,20 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
     setError(null);
     setBusy(true);
     try {
-      const createdSources = await sourcesApi.telegramCreateSources({
-        loginId,
-        channelIds: selectedChannels,
-      });
-      await onComplete(createdSources);
+      if (reauthorizeSourceId) {
+        await sourcesApi.telegramReauthorizeSource({
+          loginId,
+          sourceId: reauthorizeSourceId,
+          channelId: selectedChannels[0],
+        });
+        await onComplete?.();
+      } else {
+        const createdSources = await sourcesApi.telegramCreateSources({
+          loginId,
+          channelIds: selectedChannels,
+        });
+        await onComplete(createdSources);
+      }
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -169,7 +179,7 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
               required
             />
             <p className="text-xs text-muted-foreground">
-              Include your country code. Telegram may send the login code inside its app rather than
+              Include your country code. Telegram chooses whether to deliver the code in its app or
               by SMS.
             </p>
           </div>
@@ -249,9 +259,17 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
       {step === 'channels' ? (
         <div className="flex flex-col gap-4">
           <InfoCallout>
-            Select the channels or groups SyncExc should monitor. Only new messages are collected
-            after you connect them.
+            {reauthorizeSourceId
+              ? 'Select the same Telegram channel or group already connected to this source.'
+              : 'Select only the channels or groups you want SyncExc to monitor. SyncExc will not join chats or monitor unselected chats.'}
           </InfoCallout>
+          <Input
+            type="search"
+            value={channelSearch}
+            onChange={(event) => setChannelSearch(event.target.value)}
+            placeholder="Search your Telegram channels and groups"
+            aria-label="Search Telegram channels and groups"
+          />
           {busy && channels.length === 0 ? (
             <p
               className="rounded-lg border border-border p-4 text-sm text-muted-foreground"
@@ -261,14 +279,30 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
             </p>
           ) : channels.length ? (
             <div className="max-h-96 divide-y divide-border overflow-y-auto rounded-lg border border-border">
-              {channels.map((channel) => (
+              {channels.filter((channel) =>
+                `${channel.title} ${channel.type} ${channel.username || ''}`
+                  .toLowerCase()
+                  .includes(channelSearch.trim().toLowerCase()),
+              ).length ? channels
+                .filter((channel) =>
+                  `${channel.title} ${channel.type} ${channel.username || ''}`
+                    .toLowerCase()
+                    .includes(channelSearch.trim().toLowerCase()),
+                )
+                .map((channel) => (
                 <label
                   key={channel.id}
                   className="flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50"
                 >
                   <Checkbox
                     checked={selectedChannels.includes(channel.id)}
-                    onCheckedChange={() => toggleChannel(channel.id)}
+                    onCheckedChange={() => {
+                      if (reauthorizeSourceId) {
+                        setSelectedChannels([channel.id]);
+                      } else {
+                        toggleChannel(channel.id);
+                      }
+                    }}
                     aria-label={`Select ${channel.title}`}
                   />
                   <span className="min-w-0 flex-1">
@@ -292,7 +326,9 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
                     </a>
                   ) : null}
                 </label>
-              ))}
+              )) : (
+                <p className="p-4 text-sm text-muted-foreground">No chats match your search.</p>
+              )}
             </div>
           ) : (
             <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
@@ -320,8 +356,9 @@ export function TelegramSourceWizard({ onComplete, onCancel }) {
               ) : null}
               <Button onClick={connectChannels} disabled={busy || selectedChannels.length === 0}>
                 {busy ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Connect {selectedChannels.length || ''}{' '}
-                {selectedChannels.length === 1 ? 'chat' : 'chats'}
+                {reauthorizeSourceId
+                  ? 'Restore Telegram connection'
+                  : `Connect ${selectedChannels.length} ${selectedChannels.length === 1 ? 'chat' : 'chats'}`}
               </Button>
             </div>
           </div>

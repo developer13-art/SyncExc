@@ -481,6 +481,17 @@ export function createTelegramAuthService({
             selectedPeer: item.peer,
           },
         });
+        await sourceRegistryService.activateSource({
+          userId,
+          workspaceId,
+          sourceId: source.id,
+        });
+        await sourceRegistryService.setMonitoring({
+          userId,
+          workspaceId,
+          sourceId: source.id,
+          enabled: true,
+        });
         await db.query(
           `
           INSERT INTO telegram_user_message_cursors (source_id, last_message_id)
@@ -507,6 +518,70 @@ export function createTelegramAuthService({
     }
   }
 
+  async function reauthorizeSource({ loginId, userId, workspaceId, sourceId, channelId }) {
+    const login = await getLogin({
+      loginId,
+      userId,
+      workspaceId,
+      requiredStatus: ['verified'],
+    });
+    const client = clientFactory(login.state.sessionString, config);
+    try {
+      await client.connect();
+      if (!(await client.checkAuthorization())) {
+        throw new ConflictError(
+          'Telegram authorization expired. Connect Telegram again.',
+          'TELEGRAM_SESSION_EXPIRED',
+        );
+      }
+      const dialogs = await client.getDialogs({ limit: 500 });
+      const selectedDialog = dialogs.find((dialog) => {
+        const peer = getTelegramPeer(dialog.entity);
+        return peer && `${peer.type}:${peer.id}` === channelId;
+      });
+      if (!selectedDialog) {
+        throw new ValidationError('Select the Telegram chat connected to this source.');
+      }
+      const peer = getTelegramPeer(selectedDialog.entity);
+      const sourceResult = await db.query(
+        `
+        SELECT s.id, i.value AS identifier
+        FROM signal_sources s
+        JOIN signal_source_identifiers i ON i.source_id = s.id AND i.canonical = true
+        WHERE s.id = $1 AND s.workspace_id = $2 AND s.type = 'telegram'
+        LIMIT 1
+        `,
+        [sourceId, workspaceId],
+      );
+      const source = sourceResult.rows[0];
+      if (!source || source.identifier !== `telegram:${channelId}`) {
+        throw new ValidationError('That Telegram chat does not belong to this source.');
+      }
+      await connectionService.authorize({
+        userId,
+        workspaceId,
+        sourceId,
+        credentials: { sessionString: login.state.sessionString, selectedPeer: peer },
+      });
+      const existingSource = await sourceRegistryService.getSourceForWorkspace({
+        sourceId,
+        workspaceId,
+      });
+      if (existingSource.status === 'active') {
+        await sourceRegistryService.setMonitoring({
+          userId,
+          workspaceId,
+          sourceId,
+          enabled: true,
+        });
+      }
+      await db.query('DELETE FROM telegram_auth_sessions WHERE id = $1', [loginId]);
+      return { ok: true };
+    } finally {
+      await client.disconnect().catch(() => {});
+    }
+  }
+
   async function cancel({ loginId, userId, workspaceId }) {
     await db.query(
       `DELETE FROM telegram_auth_sessions WHERE id = $1 AND user_id = $2 AND workspace_id = $3`,
@@ -515,7 +590,7 @@ export function createTelegramAuthService({
     return { ok: true };
   }
 
-  return { sendCode, verifyCode, listChannels, createSources, cancel };
+  return { sendCode, verifyCode, listChannels, createSources, reauthorizeSource, cancel };
 }
 
 export default createTelegramAuthService;

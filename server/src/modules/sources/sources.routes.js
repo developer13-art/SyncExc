@@ -43,6 +43,15 @@ const TelegramCreateSourcesSchema = Joi.object({
     .required(),
 });
 
+const TelegramReauthorizeSchema = Joi.object({
+  loginId: UuidSchema.required(),
+  sourceId: UuidSchema.required(),
+  channelId: Joi.string()
+    .max(64)
+    .pattern(/^(channel|chat):\d+$/)
+    .required(),
+});
+
 const SandboxSchema = Joi.object({
   sampleSize: Joi.number().integer().min(1).max(100).default(10),
 });
@@ -102,6 +111,14 @@ export function createSourcesRoutes(services) {
     middleware.requireWorkspace(),
     middleware.validateBody(TelegramCreateSourcesSchema),
     middleware.asyncHandler(controller.telegramCreateSources),
+  );
+
+  router.post(
+    '/telegram/login/reauthorize',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(TelegramReauthorizeSchema),
+    middleware.asyncHandler(controller.telegramReauthorizeSource),
   );
 
   router.delete(

@@ -313,10 +313,14 @@ export function createSignalsQueries({ db }) {
 
     async listCandidatesForWorkspace(
       workspaceId,
-      { status, query, sort = 'desc', limit = 50, cursor = null } = {}
+      { status, sourceId, query, sort = 'desc', limit = 50, cursor = null } = {}
     ) {
       const params = [workspaceId, limit + 1];
       const conditions = ['s.workspace_id = $1'];
+      if (sourceId) {
+        params.push(sourceId);
+        conditions.push(`c.source_id = $${params.length}`);
+      }
       if (status) {
         params.push(status);
         conditions.push(`c.status = $${params.length}`);
@@ -333,9 +337,16 @@ export function createSignalsQueries({ db }) {
       }
       const result = await db.query(
         `
-        SELECT c.*, s.name AS source_name
+        SELECT c.*, s.name AS source_name, execution.status AS execution_status
         FROM trading_signal_candidates c
         JOIN signal_sources s ON s.id = c.source_id
+        LEFT JOIN LATERAL (
+          SELECT i.status
+          FROM trading_execution_intents i
+          WHERE i.signal_id = c.id
+          ORDER BY i.created_at DESC
+          LIMIT 1
+        ) execution ON true
         WHERE ${conditions.join(' AND ')}
         ORDER BY c.created_at ${sort === 'asc' ? 'ASC' : 'DESC'}
         LIMIT $2

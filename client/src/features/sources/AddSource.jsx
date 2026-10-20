@@ -78,10 +78,7 @@ export default function AddSource() {
     }
     toast.success(
       createdSources.length === 1 ? 'Telegram source connected' : 'Telegram sources connected',
-      {
-        description:
-          'Each source still needs review and monitoring activation before messages are collected.',
-      },
+      { description: 'Monitoring is on for the chats you selected. Trading remains governed by each source’s execution settings.' },
     );
     navigate(ROUTES.app.sources.details(createdSources[0].id), { replace: true });
   };

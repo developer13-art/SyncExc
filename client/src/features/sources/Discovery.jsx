@@ -16,7 +16,6 @@ import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 const PLATFORM_OPTIONS = [
-  { value: 'telegram', label: 'Telegram' },
   { value: 'discord', label: 'Discord' },
   { value: 'webhook', label: 'Webhook' },
   { value: 'api', label: 'External API' },
@@ -45,7 +44,7 @@ export default function Discovery() {
   const { createJob } = useSourceDiscovery();
 
   const [form, setForm] = useState({
-    platforms: ['telegram'],
+    platforms: ['discord'],
     languages: ['en'],
     styles: [],
     keywords: '',
