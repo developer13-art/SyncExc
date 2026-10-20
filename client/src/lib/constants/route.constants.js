@@ -32,6 +32,12 @@ export const NAV_SECTIONS = Object.freeze([
         path: '/app/marketplace',
         icon: 'marketplace',
       },
+      {
+        id: 'trader-studio',
+        label: 'Trader Studio',
+        path: '/app/marketplace/profile',
+        icon: 'marketplace',
+      },
     ],
   },
   {

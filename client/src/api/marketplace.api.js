@@ -60,6 +60,9 @@ export const marketplaceApi = {
   listPublishedSignals: (params) =>
     api.getPaged(endpoints.marketplace.signals, { params }),
 
+  listMySignals: (params) =>
+    api.getPaged(endpoints.marketplace.mySignals, { params }),
+
   publishSignal: (payload) => api.post(endpoints.marketplace.signals, payload),
 
   updateSignal: (signalId, payload) =>

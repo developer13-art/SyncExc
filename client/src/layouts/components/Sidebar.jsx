@@ -58,9 +58,15 @@ export function Sidebar() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [dispatch, mobileNavOpen]);
 
-  const isActive = (path) =>
-    location.pathname === path ||
-    (path !== '/app/dashboard' && location.pathname.startsWith(path));
+  const isActive = (item) => {
+    if (item.id === 'marketplace') {
+      return location.pathname === item.path ||
+        (location.pathname.startsWith(`${item.path}/`) &&
+          !location.pathname.startsWith('/app/marketplace/profile'));
+    }
+    return location.pathname === item.path ||
+      (item.path !== '/app/dashboard' && location.pathname.startsWith(item.path));
+  };
 
   return (
     <aside
@@ -100,7 +106,7 @@ export function Sidebar() {
             </p>
             <ul className="flex flex-col gap-0.5">
               {section.items.map((item) => {
-                const active = isActive(item.path);
+                const active = isActive(item);
                 return (
                   <li key={item.id}>
                     <NavLink

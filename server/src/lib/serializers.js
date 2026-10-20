@@ -524,9 +524,35 @@ export function serializeProvider(row) {
     moderationState: row.moderation_state,
     visibility: row.visibility || 'private',
     biography: row.biography || null,
+    methodology: row.methodology || null,
+    avatarUrl: row.avatar_url || null,
     supportedMarkets: row.supported_markets || [],
     supportedLanguages: row.supported_languages || [],
+    currentVersion: row.current_version,
     createdAt: row.created_at,
+  };
+}
+
+export function serializePublishedSignal(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+    instrument: row.instrument,
+    marketType: row.market_type,
+    direction: row.direction,
+    entry: row.entry,
+    entryRange: row.entry_range || null,
+    stopLoss: row.stop_loss,
+    targets: row.targets || [],
+    leverage: row.leverage,
+    status: row.status,
+    currentVersion: row.current_version,
+    validUntil: row.valid_until,
+    disclosures: row.disclosures || row.metadata?.disclosures || null,
+    sourceEvidence: row.metadata?.sourceEvidence || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -883,6 +909,7 @@ export const serializers = {
   signalMessage: serializeSignalMessage,
   executionIntent: serializeExecutionIntent,
   provider: serializeProvider,
+  publishedSignal: serializePublishedSignal,
   providerPlan: serializeProviderPlan,
   copyConfiguration: serializeCopyConfiguration,
   workflow: serializeWorkflow,

@@ -3,7 +3,11 @@
  */
 
 import { success, created, paginated } from '../../lib/response.js';
-import { serializeProvider, serializeCopyConfiguration } from '../../lib/serializers.js';
+import {
+  serializeProvider,
+  serializePublishedSignal,
+  serializeCopyConfiguration,
+} from '../../lib/serializers.js';
 
 export function createMarketplaceController(services) {
   const {
@@ -99,7 +103,27 @@ export function createMarketplaceController(services) {
         disclosures: req.body.disclosures,
         sourceEvidence: req.body.sourceEvidence,
       });
-      return created(res, signal);
+      return created(res, serializePublishedSignal(signal));
+    },
+
+    async listMySignals(req, res) {
+      const provider = await providerService.getProviderForUser(req.auth.userId, req.workspace.id);
+      if (!provider) {
+        return paginated(res, [], {
+          nextCursor: null,
+          limit: Number(req.query.limit) || 50,
+        });
+      }
+      const { rows, nextCursor } = await publicationService.listSignals({
+        providerId: provider.id,
+        status: req.query.status,
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows.map(serializePublishedSignal), {
+        nextCursor,
+        limit: Number(req.query.limit) || 50,
+      });
     },
 
     async listSignals(req, res) {
@@ -113,7 +137,10 @@ export function createMarketplaceController(services) {
         limit: Number(req.query.limit) || 50,
         cursor: req.query.cursor || null,
       });
-      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+      return paginated(res, rows.map(serializePublishedSignal), {
+        nextCursor,
+        limit: Number(req.query.limit) || 50,
+      });
     },
 
     async cancelSignal(req, res) {
@@ -123,7 +150,7 @@ export function createMarketplaceController(services) {
         signalId: req.params.signalId,
         reason: req.body.reason,
       });
-      return success(res, signal);
+      return success(res, serializePublishedSignal(signal));
     },
 
     /* Follows */

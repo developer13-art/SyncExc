@@ -104,8 +104,8 @@ export function createMarketplaceQueries({ db }) {
       };
     },
 
-    async updateProvider(providerId, fields) {
-      const result = await db.query(
+    async updateProvider(providerId, fields, client = db) {
+      const result = await client.query(
         `
         UPDATE marketplace_provider_profiles
         SET display_name = COALESCE($2, display_name),
@@ -203,22 +203,32 @@ export function createMarketplaceQueries({ db }) {
       const conditions = [];
       if (providerId) {
         params.push(providerId);
-        conditions.push(`provider_id = $${params.length}`);
+        conditions.push(`signal.provider_id = $${params.length}`);
       }
       if (status) {
         params.push(status);
-        conditions.push(`status = $${params.length}`);
+        conditions.push(`signal.status = $${params.length}`);
       }
       if (cursor) {
         params.push(cursor);
-        conditions.push(`created_at < $${params.length}`);
+        conditions.push(`signal.created_at < $${params.length}`);
       }
       const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
       const result = await db.query(
         `
-        SELECT * FROM marketplace_published_signals
+        SELECT signal.*,
+               latest_version.snapshot->'targets' AS targets,
+               latest_version.snapshot->'disclosures' AS disclosures
+        FROM marketplace_published_signals signal
+        LEFT JOIN LATERAL (
+          SELECT snapshot
+          FROM marketplace_published_signal_versions
+          WHERE signal_id = signal.id
+          ORDER BY version DESC
+          LIMIT 1
+        ) latest_version ON true
         ${where}
-        ORDER BY created_at DESC
+        ORDER BY signal.created_at DESC
         LIMIT $1
         `,
         params
@@ -232,8 +242,8 @@ export function createMarketplaceQueries({ db }) {
       };
     },
 
-    async updatePublishedSignal(signalId, fields, bumpVersion = false) {
-      const result = await db.query(
+    async updatePublishedSignal(signalId, fields, bumpVersion = false, client = db) {
+      const result = await client.query(
         `
         UPDATE marketplace_published_signals
         SET instrument = COALESCE($2, instrument),

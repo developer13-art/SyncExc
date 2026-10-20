@@ -70,7 +70,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
       });
 
       // Update status to published
-      await queries.updatePublishedSignal(signal.id, { status: 'published' });
+      const publishedSignal = await queries.updatePublishedSignal(signal.id, { status: 'published' }, false, tx);
 
       await events.publish(
         tx,
@@ -88,7 +88,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
         }
       );
 
-      return signal;
+      return publishedSignal;
     });
   }
 
@@ -108,7 +108,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
     }
 
     return db.tx(async (tx) => {
-      const updated = await queries.updatePublishedSignal(signalId, updates, true);
+      const updated = await queries.updatePublishedSignal(signalId, updates, true, tx);
 
       await queries.insertPublishedSignalVersion(tx, {
         signalId,
@@ -143,7 +143,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
     if (!provider || provider.user_id !== userId || provider.workspace_id !== workspaceId) throw new NotFoundError('Signal');
 
     return db.tx(async (tx) => {
-      const updated = await queries.updatePublishedSignal(signalId, { status: 'cancelled' }, true);
+      const updated = await queries.updatePublishedSignal(signalId, { status: 'cancelled' }, true, tx);
 
       await queries.insertPublishedSignalVersion(tx, {
         signalId,

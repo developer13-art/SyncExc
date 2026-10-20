@@ -105,7 +105,7 @@ export function createProviderService({ db, queries, events, logger }) {
     }
 
     return db.tx(async (tx) => {
-      const updated = await queries.updateProvider(providerId, updates);
+      const updated = await queries.updateProvider(providerId, updates, tx);
 
       await queries.insertProviderProfileVersion(tx, {
         providerId,

@@ -31,6 +31,12 @@ const ProviderQuerySchema = PaginationSchema.keys({
   markets: Joi.string().trim().max(200).optional(),
 });
 
+const MySignalsQuerySchema = PaginationSchema.keys({
+  status: Joi.string()
+    .valid('draft', 'pending_validation', 'pending_review', 'published', 'updated', 'cancelled', 'expired', 'closed', 'rejected', 'withdrawn')
+    .optional(),
+});
+
 const UpdateProviderSchema = Joi.object({
   displayName: Joi.string().trim().min(1).max(120).optional(),
   biography: Joi.string().trim().max(4000).optional().allow(''),
@@ -113,6 +119,14 @@ export function createMarketplaceRoutes(services) {
     middleware.requireWorkspace(),
     middleware.validateBody(PublishSignalRequestSchema),
     middleware.asyncHandler(controller.publishSignal)
+  );
+
+  router.get(
+    '/me/signals',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateQuery(MySignalsQuerySchema),
+    middleware.asyncHandler(controller.listMySignals)
   );
 
   router.post(
