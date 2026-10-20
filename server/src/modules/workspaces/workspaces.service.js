@@ -132,7 +132,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
         actorId: userId,
         eventType: 'workspace.created',
         metadata: { type: 'organization', name },
-      });
+      }, tx);
 
       return workspace;
     });
@@ -237,7 +237,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
         actorId: userId,
         eventType: 'workspace.created',
         metadata: { type, name, visibility: 'private' },
-      });
+      }, tx);
       return workspace;
     });
   }
