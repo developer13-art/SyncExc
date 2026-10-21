@@ -158,7 +158,7 @@ Client/Admin: Static hosting behind CDN
 
 Database: Managed PostgreSQL
 
-Storage: S3-compatible object storage
+Storage: S3-compatible object storage for general files; profile images are stored in PostgreSQL so they persist across Render restarts.
 
 See docs/deployment.md and infrastructure/ for details.
 

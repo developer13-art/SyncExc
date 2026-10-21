@@ -68,6 +68,9 @@ export function createConnectionsModule({ services }) {
   const publicApi = {
     marketData,
     getConnection: (connectionId) => service.getConnection(connectionId),
+    requireConnectionAccess: (params) => service.requireConnectionAccess(params),
+    requireAccountAccess: (params) => service.requireAccountAccess(params),
+    requireVerifiedPermission: (params) => service.requireVerifiedPermission(params),
     getActiveConnectionForAccount: (accountId) => service.getActiveConnectionForAccount(accountId),
     getAdapter: (exchangeCode) => adapterRegistry.get(exchangeCode),
     checkAccountAccess: (params) => service.checkAccountAccess(params),

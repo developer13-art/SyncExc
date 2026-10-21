@@ -1,4 +1,34 @@
+import { randomUUID } from 'node:crypto';
 import { ValidationError } from './errors.js';
+
+export function createDatabaseProfileImageStorage({ db }) {
+  return {
+    async put({ buffer, mimeType, extension }) {
+      const key = `${randomUUID()}.${extension}`;
+      await db.query(
+        `INSERT INTO profile_images (image_key, content_type, image_data) VALUES ($1, $2, $3)`,
+        [key, mimeType, buffer],
+      );
+      return { key, size: buffer.length, driver: 'database' };
+    },
+
+    async get(key) {
+      const result = await db.query(
+        `SELECT image_data FROM profile_images WHERE image_key = $1`,
+        [key],
+      );
+      return result.rows[0]?.image_data ?? null;
+    },
+
+    async delete(key) {
+      const result = await db.query(
+        `DELETE FROM profile_images WHERE image_key = $1`,
+        [key],
+      );
+      return result.rowCount > 0;
+    },
+  };
+}
 
 const IMAGE_TYPES = Object.freeze({
   'image/jpeg': {

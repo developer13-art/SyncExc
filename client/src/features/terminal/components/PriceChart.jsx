@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ComposedChart,
   XAxis,
@@ -72,6 +72,7 @@ export function PriceChart({
   className,
 }) {
   const [range, setRange] = useState(null);
+  const chartRef = useRef(null);
   const data = useMemo(
     () => {
       const rows = candles.map((c, i) => ({
@@ -147,6 +148,12 @@ export function PriceChart({
     }
     shiftRange(event.deltaY > 0 || event.deltaX > 0 ? -1 : 1);
   };
+  useEffect(() => {
+    const chartElement = chartRef.current;
+    if (!chartElement) return undefined;
+    chartElement.addEventListener('wheel', handleChartWheel, { passive: false });
+    return () => chartElement.removeEventListener('wheel', handleChartWheel);
+  });
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
@@ -187,7 +194,7 @@ export function PriceChart({
         height={height}
         className="border-0 bg-transparent p-0 shadow-none"
       >
-        <div onWheel={handleChartWheel} className="h-full w-full" aria-label="Scrollable price chart">
+        <div ref={chartRef} className="h-full w-full" aria-label="Scrollable price chart">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
