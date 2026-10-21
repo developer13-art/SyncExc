@@ -5,7 +5,9 @@
  * Preserves per-account differences rather than forcing a single number.
  */
 
-export function createPortfolioService({ db, queries, logger }) {
+const USD_PEGGED_ASSETS = new Set(['USD', 'USDT', 'USDC', 'BUSD', 'TUSD', 'FDUSD', 'USDP', 'DAI']);
+
+export function createPortfolioService({ db, queries, marketData, logger }) {
   async function getWorkspaceOverview({ workspaceId }) {
     // Total orders by status
     const ordersResult = await db.query(
@@ -119,7 +121,7 @@ export function createPortfolioService({ db, queries, logger }) {
       [workspaceId]
     );
 
-    const accounts = accountsResult.rows.map((account) => ({
+    const accountRows = accountsResult.rows.map((account) => ({
       id: account.id,
       connectionId: account.connection_id,
       label: account.label,
@@ -131,16 +133,65 @@ export function createPortfolioService({ db, queries, logger }) {
         account.connection_status === 'degraded' ? 'degraded' : account.health_status,
       lastSyncedAt: account.last_synced_at,
       balances: account.balances ?? [],
-      equity: account.equity === null ? null : Number(account.equity),
+      equity: account.equity == null ? null : Number(account.equity),
+      equitySource: account.equity == null ? null : 'exchange',
+    }));
+    const accounts = await Promise.all(accountRows.map(async (account) => {
+      if (account.equity !== null) return { ...account, unpricedAssets: [] };
+      if (!Array.isArray(account.balances) || account.balances.length === 0) {
+        return { ...account, unpricedAssets: [] };
+      }
+
+      let estimatedEquity = 0;
+      const unpricedAssets = [];
+      await Promise.all(account.balances.map(async (balance) => {
+        const asset = String(balance.asset || '').toUpperCase();
+        const amount = Number(balance.total);
+        if (!asset || !Number.isFinite(amount) || amount < 0) {
+          if (asset) unpricedAssets.push(asset);
+          return;
+        }
+        if (amount === 0) return;
+        if (USD_PEGGED_ASSETS.has(asset)) {
+          estimatedEquity += amount;
+          return;
+        }
+
+        const symbol = account.exchangeName === 'okx'
+          ? `${asset}-USDT`
+          : `${asset}USDT`;
+        try {
+          if (typeof marketData?.getSpotPrice !== 'function') {
+            throw new Error('Spot price service is unavailable');
+          }
+          const price = await marketData.getSpotPrice({
+            exchangeCode: account.exchangeName,
+            symbol,
+          });
+          estimatedEquity += amount * price;
+        } catch (error) {
+          logger?.warn?.(
+            { accountId: account.id, asset, errorName: error?.name || 'Error' },
+            'Unable to value account balance in USD',
+          );
+          unpricedAssets.push(asset);
+        }
+      }));
+
+      return unpricedAssets.length === 0
+        ? { ...account, equity: estimatedEquity, equitySource: 'estimated', unpricedAssets }
+        : { ...account, unpricedAssets };
     }));
     const connectionCounts = connectionsResult.rows[0] ?? {};
     const valuedAccounts = accounts.filter((account) => account.equity !== null);
 
     return {
       accounts,
-      portfolioValue: valuedAccounts.length
+      portfolioValue: accounts.length > 0 && valuedAccounts.length === accounts.length
         ? valuedAccounts.reduce((total, account) => total + account.equity, 0)
         : null,
+      portfolioValueEstimated: valuedAccounts.some((account) => account.equitySource === 'estimated'),
+      unpricedAssets: [...new Set(accounts.flatMap((account) => account.unpricedAssets))],
       baseCurrency: 'USD',
       activeConnectionCount: connectionCounts.active_count ?? 0,
       totalConnectionCount: connectionCounts.total_count ?? 0,

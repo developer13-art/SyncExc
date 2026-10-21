@@ -31,6 +31,7 @@ const EXCHANGES = {
 };
 
 const CACHE_TTL_MS = 5_000;
+const PRICE_CACHE_TTL_MS = 30_000;
 const MAX_CACHE_ENTRIES = 300;
 
 const asNumber = (value) => {
@@ -374,6 +375,7 @@ function overviewFrom(exchangeCode, ticker, metrics, now) {
 
 export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
   const cache = new Map();
+  const priceCache = new Map();
 
   async function request(url, exchangeCode) {
     const response = await fetchImpl(url, {
@@ -382,6 +384,40 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return checkProviderResponse(exchangeCode, await response.json());
+  }
+
+  async function getSpotPrice({ exchangeCode, symbol }) {
+    const exchange = String(exchangeCode || '').toLowerCase();
+    const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+    if (!EXCHANGES[exchange]) throw new ValidationError('Unsupported exchange');
+    if (!/^[A-Z0-9._-]{3,48}$/.test(normalizedSymbol)) throw new ValidationError('Invalid exchange symbol');
+
+    const key = `${exchange}:${normalizedSymbol}`;
+    const cached = priceCache.get(key);
+    if (cached && now() - cached.cachedAt < PRICE_CACHE_TTL_MS) return cached.price;
+
+    const endpoint = providerData(exchange, {
+      symbol: normalizedSymbol,
+      marketType: 'spot',
+      timeframe: '1h',
+      limit: 25,
+    }).ticker;
+    const ticker = normalizeProviderRows(exchange, endpoint[1], await request(endpoint[0], exchange));
+    const price = overviewFrom(exchange, ticker, {}, now()).lastPrice;
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new AppError(`No valid spot price is available for ${normalizedSymbol}`, {
+        code: 'MARKET_PRICE_UNAVAILABLE',
+        status: 503,
+        expose: true,
+      });
+    }
+
+    priceCache.set(key, { cachedAt: now(), price });
+    if (priceCache.size > MAX_CACHE_ENTRIES) {
+      const oldestKey = priceCache.keys().next().value;
+      if (oldestKey) priceCache.delete(oldestKey);
+    }
+    return price;
   }
 
   async function getMarketData({ exchangeCode, symbol, marketType = 'spot', timeframe = '1h', limit = 120 }) {
@@ -469,7 +505,7 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
     return { ...result, cacheAgeMs: 0 };
   }
 
-  return { getMarketData };
+  return { getMarketData, getSpotPrice };
 }
 
 export default createMarketDataService;

@@ -73,3 +73,30 @@ test('market data service rejects unrecognized exchanges and symbols', async () 
     { code: 'VALIDATION_ERROR' },
   );
 });
+
+test('spot price lookup fetches and caches a normalized exchange ticker', async () => {
+  const requests = [];
+  const marketData = createMarketDataService({
+    fetchImpl: async (url) => {
+      requests.push(String(url));
+      return jsonResponse({
+        retCode: 0,
+        result: { list: [{ lastPrice: '65000.25' }] },
+      });
+    },
+  });
+
+  const firstPrice = await marketData.getSpotPrice({
+    exchangeCode: 'bybit',
+    symbol: 'BTCUSDT',
+  });
+  const secondPrice = await marketData.getSpotPrice({
+    exchangeCode: 'bybit',
+    symbol: 'BTCUSDT',
+  });
+
+  assert.equal(firstPrice, 65000.25);
+  assert.equal(secondPrice, 65000.25);
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].startsWith('https://api.bybit.com/v5/market/tickers?category=spot'));
+});

@@ -49,10 +49,15 @@ export function PortfolioOverview({ overview, isLoading, error, onRetry }) {
                 </span>
               ) : null}
             </div>
-            {overview?.portfolioValue == null ? (
+            {overview?.portfolioValueEstimated ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Asset quantities are listed by account below; a total value is not available because
-                no USD equity valuation has been provided.
+                Estimated from the latest account balances using current exchange spot prices.
+              </p>
+            ) : overview?.portfolioValue == null ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {overview?.unpricedAssets?.length
+                  ? `Unable to value ${overview.unpricedAssets.join(', ')} in USD.`
+                  : 'Asset quantities are listed by account below; no USD equity valuation is available yet.'}
               </p>
             ) : null}
           </div>

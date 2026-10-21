@@ -50,6 +50,7 @@ export function createTerminalModule({ services }) {
   const portfolioService = createPortfolioService({
     db: services.db,
     queries,
+    marketData: services.connections.marketData,
     logger,
   });
 
