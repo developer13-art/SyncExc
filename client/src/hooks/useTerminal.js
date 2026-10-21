@@ -50,9 +50,9 @@ export function useTerminalOrders(workspaceId, params = {}) {
   });
 
   return {
+    ...listQuery,
     orders: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
-    isLoading: listQuery.isLoading,
     submitOrder: submitOrder.mutateAsync,
     cancelOrder: cancelOrder.mutateAsync,
     isSubmitting: submitOrder.isPending,

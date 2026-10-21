@@ -8,6 +8,16 @@
 import { NotFoundError, ConflictError } from '../../lib/errors.js';
 import { ORDER_STATUS } from '@syncexc/shared';
 
+const OPEN_ORDER_STATUSES = [
+  ORDER_STATUS.PENDING_SUBMISSION,
+  ORDER_STATUS.SUBMITTED,
+  ORDER_STATUS.ACKNOWLEDGED,
+  ORDER_STATUS.PARTIALLY_FILLED,
+  ORDER_STATUS.CANCEL_REQUESTED,
+  ORDER_STATUS.UNKNOWN,
+  ORDER_STATUS.RECONCILIATION_REQUIRED,
+];
+
 export function createTerminalService({ db, queries, marketData, events, audit, logger }) {
   async function getMarketData(params) {
     return marketData.getMarketData(params);
@@ -24,20 +34,18 @@ export function createTerminalService({ db, queries, marketData, events, audit, 
   }
 
   async function listOrdersForScope({ workspaceId, statuses, accountId, limit, cursor }) {
+    if (statuses?.length === 1 && statuses[0] === 'open') {
+      statuses = OPEN_ORDER_STATUSES;
+    }
     return queries.listOrders(workspaceId, { statuses, accountId, limit, cursor });
   }
 
   async function listOpenOrders({ workspaceId, accountId }) {
-    const statuses = [
-      ORDER_STATUS.PENDING_SUBMISSION,
-      ORDER_STATUS.SUBMITTED,
-      ORDER_STATUS.ACKNOWLEDGED,
-      ORDER_STATUS.PARTIALLY_FILLED,
-      ORDER_STATUS.CANCEL_REQUESTED,
-      ORDER_STATUS.UNKNOWN,
-      ORDER_STATUS.RECONCILIATION_REQUIRED,
-    ];
-    return queries.listOrders(workspaceId, { statuses, accountId, limit: 200 });
+    return queries.listOrders(workspaceId, {
+      statuses: OPEN_ORDER_STATUSES,
+      accountId,
+      limit: 200,
+    });
   }
 
   async function listTradesForScope({ workspaceId, limit, cursor, instrument }) {
