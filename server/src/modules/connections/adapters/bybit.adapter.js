@@ -208,19 +208,35 @@ export function createBybitAdapter({ config, logger }) {
       exchangeOrderId,
       marketType,
     }) {
-      const query = new URLSearchParams({
+      const params = {
         category: marketType === 'spot' ? 'spot' : 'linear',
         symbol: instrument,
         orderId: exchangeOrderId,
-      }).toString();
+      };
+      const query = new URLSearchParams(params).toString();
       const headers = signedHeaders({ apiKey, apiSecret, params: query });
-      const data = await this.fetchSigned({
+      const realtimeData = await this.fetchSigned({
         url: `${getBaseUrl(environment)}/v5/order/realtime?${query}`,
         method: 'GET',
         headers,
       });
-      if (data.retCode !== 0) throw new Error(`Bybit order fetch error: ${data.retMsg}`);
-      const order = data.result?.list?.[0];
+      if (realtimeData.retCode !== 0) {
+        throw new Error(`Bybit order fetch error: ${realtimeData.retMsg}`);
+      }
+
+      let order = realtimeData.result?.list?.[0];
+      if (!order) {
+        const historyHeaders = signedHeaders({ apiKey, apiSecret, params: query });
+        const historyData = await this.fetchSigned({
+          url: `${getBaseUrl(environment)}/v5/order/history?${query}`,
+          method: 'GET',
+          headers: historyHeaders,
+        });
+        if (historyData.retCode !== 0) {
+          throw new Error(`Bybit order history fetch error: ${historyData.retMsg}`);
+        }
+        order = historyData.result?.list?.[0];
+      }
       if (!order) return null;
       return {
         exchangeOrderId: order.orderId,

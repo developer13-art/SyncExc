@@ -225,6 +225,55 @@ test('fetches Bybit order status from the matching market category', async () =>
   }
 });
 
+test('falls back to Bybit order history when a closed order is absent from realtime orders', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url));
+    const isHistory = String(url).includes('/v5/order/history');
+    return {
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          retCode: 0,
+          result: {
+            list: isHistory
+              ? [{
+                  orderId: 'exchange-order-id',
+                  orderStatus: 'Filled',
+                  cumExecQty: '5000',
+                  leavesQty: '0',
+                  avgPrice: '0.2418',
+                }]
+              : [],
+          },
+        }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    const order = await adapter.fetchOrder({
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'demo',
+      instrument: 'OGUSDT',
+      exchangeOrderId: 'exchange-order-id',
+      marketType: 'futures',
+    });
+
+    assert.deepEqual(requestedUrls.map((url) => new URL(url).pathname), [
+      '/v5/order/realtime',
+      '/v5/order/history',
+    ]);
+    assert.equal(order.status, 'filled');
+    assert.equal(order.filledQuantity, '5000');
+    assert.equal(order.averageFillPrice, '0.2418');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('returns Bybit wallet equity with the account balances', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
