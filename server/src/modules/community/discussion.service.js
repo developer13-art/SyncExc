@@ -22,7 +22,11 @@ export function createDiscussionService({ db, queries, events, realtime, logger 
     return queries.listChannelsForWorkspace(workspaceId);
   }
 
-  async function createThread({ userId, channelId, title }) {
+  async function createThread({ userId, workspaceId, channelId, title }) {
+    const channel = await queries.findChannelById(channelId);
+    if (!channel || channel.workspace_id !== workspaceId || channel.group_id) {
+      throw new NotFoundError('Channel');
+    }
     return db.tx(async (tx) => {
       const thread = await queries.insertDiscussionThread(tx, {
         channelId,
@@ -45,11 +49,16 @@ export function createDiscussionService({ db, queries, events, realtime, logger 
     });
   }
 
-  async function listThreads({ channelId, limit }) {
+  async function listThreads({ workspaceId, channelId, limit }) {
+    const channel = await queries.findChannelById(channelId);
+    if (!channel || channel.workspace_id !== workspaceId || channel.group_id) {
+      throw new NotFoundError('Channel');
+    }
     return queries.listDiscussionThreads(channelId, { limit });
   }
 
-  async function postMessage({ userId, threadId, content }) {
+  async function postMessage({ userId, workspaceId, threadId, content }) {
+    await requireWorkspaceThread(threadId, workspaceId);
     return db.tx(async (tx) => {
       const message = await queries.insertDiscussionMessage(tx, {
         threadId,
@@ -69,8 +78,16 @@ export function createDiscussionService({ db, queries, events, realtime, logger 
     });
   }
 
-  async function listMessages({ threadId, limit }) {
+  async function listMessages({ workspaceId, threadId, limit }) {
+    await requireWorkspaceThread(threadId, workspaceId);
     return queries.listDiscussionMessages(threadId, { limit });
+  }
+
+  async function requireWorkspaceThread(threadId, workspaceId) {
+    const thread = await queries.findDiscussionThreadById(threadId);
+    if (!thread || thread.workspace_id !== workspaceId || thread.group_id) {
+      throw new NotFoundError('Discussion thread');
+    }
   }
 
   return {

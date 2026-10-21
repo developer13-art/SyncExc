@@ -11,6 +11,11 @@ const FeedQuerySchema = PaginationSchema.keys({
   following: Joi.boolean().truthy('true').falsy('false').optional(),
 });
 
+const GroupsQuerySchema = PaginationSchema.keys({
+  filter: Joi.string().valid('all', 'mine', 'public', 'private').optional(),
+  q: Joi.string().trim().max(200).optional().allow(''),
+});
+
 const UpdateProfileSchema = Joi.object({
   displayName: Joi.string().trim().min(1).max(100).optional(),
   handle: Joi.string().trim().lowercase().pattern(/^[a-z0-9_]{3,32}$/).optional(),
@@ -30,10 +35,18 @@ const UpdatePrivacySchema = Joi.object({
   allowRecommendations: Joi.boolean().optional(),
 }).min(1);
 
+const FollowRequestDecisionSchema = Joi.object({
+  approved: Joi.boolean().required(),
+});
+
 const CreatePostSchema = Joi.object({
   destination: Joi.object({
     type: Joi.string().valid('public_feed', 'group', 'workspace_discussion').required(),
-    refId: UuidSchema.optional(),
+    refId: UuidSchema.when('type', {
+      is: Joi.valid('group', 'workspace_discussion'),
+      then: UuidSchema.required(),
+      otherwise: UuidSchema.optional(),
+    }),
   }).required(),
   content: Joi.string().trim().min(1).max(10000).required(),
   topics: Joi.array().items(Joi.string().max(64)).max(10).optional(),
@@ -60,6 +73,10 @@ const CommentSchema = Joi.object({
   parentId: UuidSchema.optional(),
 });
 
+const UpdateCommentSchema = Joi.object({
+  content: Joi.string().trim().min(1).max(5000).required(),
+});
+
 const ReactionSchema = Joi.object({
   targetType: Joi.string().valid('post', 'comment').required(),
   targetId: UuidSchema.required(),
@@ -72,6 +89,28 @@ const CreateGroupSchema = Joi.object({
   description: Joi.string().trim().max(2000).required(),
   type: Joi.string().valid('public', 'private', 'approval_based', 'organization').required(),
   topics: Joi.array().items(Joi.string().max(64)).max(10).optional(),
+});
+
+const UpdateGroupSchema = Joi.object({
+  name: Joi.string().trim().min(1).max(100).optional(),
+  description: Joi.string().trim().max(2000).optional().allow(''),
+  type: Joi.string().valid('public', 'private', 'approval_based', 'organization').optional(),
+}).min(1);
+
+const GroupRequestDecisionSchema = Joi.object({
+  approved: Joi.boolean().required(),
+});
+
+const GroupRoleSchema = Joi.object({
+  role: Joi.string().valid('administrator', 'moderator', 'member', 'read_only').required(),
+});
+
+const GroupInvitationSchema = Joi.object({
+  userId: UuidSchema.required(),
+});
+
+const GroupInvitationResponseSchema = Joi.object({
+  accepted: Joi.boolean().required(),
 });
 
 const CreateChannelSchema = Joi.object({
@@ -127,9 +166,18 @@ const RecommendationFeedbackSchema = Joi.object({
 });
 
 const ModerationDecisionSchema = Joi.object({
-  action: Joi.string().valid('dismiss', 'remove_content', 'add_warning', 'restrict_posting', 'suspend_group', 'refer_to_admin', 'reverse_action').required(),
+  action: Joi.string().valid('dismiss', 'remove_content', 'add_warning', 'refer_to_admin').required(),
   reason: Joi.string().min(10).max(1000).required(),
   notes: Joi.string().max(2000).optional().allow(''),
+});
+
+const AppealSchema = Joi.object({
+  reason: Joi.string().trim().min(10).max(2000).required(),
+});
+
+const AppealDecisionSchema = Joi.object({
+  status: Joi.string().valid('upheld', 'overturned', 'dismissed').required(),
+  resolution: Joi.string().trim().min(10).max(2000).required(),
 });
 
 export function createCommunityRoutes(services) {
@@ -179,6 +227,19 @@ export function createCommunityRoutes(services) {
     '/follows/:userId',
     middleware.requireAuth(),
     middleware.asyncHandler(controller.unfollow)
+  );
+
+  router.get(
+    '/follows/requests',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.listFollowRequests)
+  );
+
+  router.patch(
+    '/follows/requests/:followerId',
+    middleware.requireAuth(),
+    middleware.validateBody(FollowRequestDecisionSchema),
+    middleware.asyncHandler(controller.resolveFollowRequest)
   );
 
   router.get(
@@ -274,6 +335,13 @@ export function createCommunityRoutes(services) {
     middleware.asyncHandler(controller.deleteComment)
   );
 
+  router.patch(
+    '/comments/:commentId',
+    middleware.requireAuth(),
+    middleware.validateBody(UpdateCommentSchema),
+    middleware.asyncHandler(controller.updateComment)
+  );
+
   /* Reactions */
   router.post(
     '/reactions',
@@ -294,7 +362,7 @@ export function createCommunityRoutes(services) {
   router.get(
     '/groups',
     middleware.optionalAuth(),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(GroupsQuerySchema),
     middleware.asyncHandler(controller.listGroups)
   );
 
@@ -303,6 +371,13 @@ export function createCommunityRoutes(services) {
     middleware.requireAuth(),
     middleware.validateBody(CreateGroupSchema),
     middleware.asyncHandler(controller.createGroup)
+  );
+
+  router.patch(
+    '/groups/:groupId',
+    middleware.requireAuth(),
+    middleware.validateBody(UpdateGroupSchema),
+    middleware.asyncHandler(controller.updateGroup)
   );
 
   router.get(
@@ -327,6 +402,53 @@ export function createCommunityRoutes(services) {
     '/groups/:groupId/members',
     middleware.optionalAuth(),
     middleware.asyncHandler(controller.listGroupMembers)
+  );
+
+  router.delete(
+    '/groups/:groupId/members/:userId',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.removeGroupMember)
+  );
+
+  router.put(
+    '/groups/:groupId/members/:userId/role',
+    middleware.requireAuth(),
+    middleware.validateBody(GroupRoleSchema),
+    middleware.asyncHandler(controller.setGroupMemberRole)
+  );
+
+  router.get(
+    '/groups/:groupId/requests',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.listGroupRequests)
+  );
+
+  router.patch(
+    '/groups/:groupId/requests/:userId',
+    middleware.requireAuth(),
+    middleware.validateBody(GroupRequestDecisionSchema),
+    middleware.asyncHandler(controller.resolveGroupRequest)
+  );
+
+  router.post(
+    '/groups/:groupId/invitations',
+    middleware.requireAuth(),
+    middleware.validateBody(GroupInvitationSchema),
+    middleware.asyncHandler(controller.inviteGroupMember)
+  );
+
+  router.post(
+    '/groups/:groupId/invitations/respond',
+    middleware.requireAuth(),
+    middleware.validateBody(GroupInvitationResponseSchema),
+    middleware.asyncHandler(controller.respondToGroupInvitation)
+  );
+
+  router.get(
+    '/groups/:groupId/posts',
+    middleware.optionalAuth(),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listGroupPosts)
   );
 
   /* ---------------------------------------------------------------------------
@@ -380,6 +502,13 @@ export function createCommunityRoutes(services) {
   /* ---------------------------------------------------------------------------
    * Analysis documents
    * ------------------------------------------------------------------------ */
+  router.get(
+    '/analysis',
+    middleware.requireAuth(),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listAnalysis)
+  );
+
   router.post(
     '/analysis',
     middleware.requireAuth(),
@@ -391,6 +520,12 @@ export function createCommunityRoutes(services) {
     '/analysis/:documentId',
     middleware.requireAuth(),
     middleware.asyncHandler(controller.getAnalysis)
+  );
+
+  router.get(
+    '/analysis/:documentId/versions',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.listAnalysisVersions)
   );
 
   router.patch(
@@ -472,18 +607,40 @@ export function createCommunityRoutes(services) {
   router.post(
     '/moderation/cases/:caseId/appeal',
     middleware.requireAuth(),
+    middleware.validateBody(AppealSchema),
     middleware.asyncHandler(controller.submitAppeal)
+  );
+
+  router.post(
+    '/moderation/appeals/:appealId/decide',
+    middleware.requireAuth(),
+    middleware.requireAdmin(),
+    middleware.validateBody(AppealDecisionSchema),
+    middleware.asyncHandler(controller.decideAppeal)
+  );
+
+  router.get(
+    '/moderation/audit',
+    middleware.requireAuth(),
+    middleware.requireAdmin(),
+    middleware.validateQuery(PaginationSchema.keys({
+      resourceType: Joi.string().max(64).optional(),
+      resourceId: UuidSchema.optional(),
+    })),
+    middleware.asyncHandler(controller.listAudit)
   );
 
   router.get(
     '/moderation/cases',
     middleware.requireAuth(),
+    middleware.requireAdmin(),
     middleware.asyncHandler(controller.listModerationCases)
   );
 
   router.post(
     '/moderation/cases/:caseId/decide',
     middleware.requireAuth(),
+    middleware.requireAdmin(),
     middleware.validateBody(ModerationDecisionSchema),
     middleware.asyncHandler(controller.decideModerationCase)
   );

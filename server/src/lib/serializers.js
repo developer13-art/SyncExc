@@ -736,8 +736,12 @@ export function serializeCommunityProfile(row) {
     userId: row.user_id,
     handle: row.handle,
     displayName: row.display_name,
+    bio: row.biography || null,
     biography: row.biography || null,
+    avatarUrl: row.avatar_url || null,
     interests: row.interests || [],
+    skills: row.skills || [],
+    website: row.website || null,
     visibility: row.visibility,
     createdAt: row.created_at,
   };
@@ -748,11 +752,25 @@ export function serializePost(row) {
   return {
     id: row.id,
     authorId: row.author_id,
+    author: row.author_name
+      ? {
+          id: row.author_id,
+          handle: row.author_handle,
+          displayName: row.author_name,
+          avatarUrl: row.author_avatar || null,
+        }
+      : null,
     destinationType: row.destination_type,
     destinationRefId: row.destination_ref_id || null,
     content: row.content,
     topics: row.topics || [],
     engagement: row.engagement || { reactions: 0, comments: 0, shares: 0 },
+    reactionsCount: row.reaction_count ?? row.engagement?.reactions ?? 0,
+    commentsCount: row.engagement?.comments || 0,
+    viewerReacted: Boolean(row.viewer_reaction),
+    viewerBookmarked: Boolean(row.bookmark_id),
+    bookmarkId: row.bookmark_id || null,
+    visibility: row.visibility,
     createdAt: row.created_at,
   };
 }
@@ -764,9 +782,19 @@ export function serializeCommunityGroup(row) {
     name: row.name,
     slug: row.slug,
     type: row.type,
-    visibility: row.visibility,
+    visibility: row.type === 'approval_based'
+      ? 'approval_required'
+      : row.type === 'private' || row.type === 'organization'
+        ? 'private'
+        : 'public',
     ownerId: row.owner_id,
+    description: row.description || null,
+    topics: row.topics || [],
     memberCount: row.member_count || 0,
+    viewerIsMember: row.viewer_is_member ?? false,
+    viewerIsRequested: row.viewer_is_requested ?? false,
+    viewerIsModerator: row.viewer_is_moderator ?? false,
+    viewerRole: row.viewer_role || null,
     createdAt: row.created_at,
   };
 }

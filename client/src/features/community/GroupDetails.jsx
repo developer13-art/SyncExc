@@ -13,7 +13,8 @@ import { PostCard } from './components/PostCard.jsx';
 import { useQuery } from '@tanstack/react-query';
 import { communityApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
-import { useCommunityGroups, useCommunityPosts } from '../../hooks/useCommunity.js';
+import { useCommunityProfile, useCommunityPosts } from '../../hooks/useCommunity.js';
+import { PostComposer } from './components/PostComposer.jsx';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
@@ -23,6 +24,7 @@ export default function GroupDetails() {
   const { groupId } = useParams();
   const dispatch = useDispatch();
   const toast = useToast();
+  const profileQuery = useCommunityProfile();
 
   const groupQuery = useQuery({
     queryKey: queryKeys.community.group(groupId),
@@ -31,6 +33,11 @@ export default function GroupDetails() {
   });
 
   const postsQuery = useCommunityPosts({ groupId });
+  const membersQuery = useQuery({
+    queryKey: [...queryKeys.community.group(groupId), 'members'],
+    queryFn: () => communityApi.listGroupMembers(groupId),
+    enabled: Boolean(groupId),
+  });
 
   useEffect(() => {
     if (groupQuery.data) {
@@ -66,8 +73,8 @@ export default function GroupDetails() {
 
   const handleJoin = async () => {
     try {
-      await communityApi.joinGroup(groupId, {});
-      toast.success('Joined group');
+      const membership = await communityApi.joinGroup(groupId, {});
+      toast.success(membership.state === 'requested' ? 'Join request submitted' : 'Joined group');
       groupQuery.refetch();
     } catch (err) {
       toast.error('Join failed', { description: getErrorMessage(err) });
@@ -139,7 +146,9 @@ export default function GroupDetails() {
                   ) : null}
                 </>
               ) : (
-                <Button onClick={handleJoin}>Join group</Button>
+                <Button onClick={handleJoin} disabled={group.viewerIsRequested}>
+                  {group.viewerIsRequested ? 'Request sent' : 'Join group'}
+                </Button>
               )}
             </div>
           </div>
@@ -153,6 +162,17 @@ export default function GroupDetails() {
           <TabsTrigger value="about">About</TabsTrigger>
         </TabsList>
         <TabsContent value="posts">
+          {group.viewerIsMember ? (
+            <PostComposer
+              user={profileQuery.profile}
+              defaultDestination="public"
+              onSubmit={(values) => postsQuery.createPost({
+                ...values,
+                destination: { type: 'group', refId: groupId },
+                visibility: group.type === 'public' ? 'public' : 'group_members',
+              })}
+            />
+          ) : null}
           {(postsQuery.posts ?? []).length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -168,11 +188,31 @@ export default function GroupDetails() {
           )}
         </TabsContent>
         <TabsContent value="members">
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              Member list is available to group members.
-            </CardContent>
-          </Card>
+          {membersQuery.isLoading ? (
+            <LoadingState label="Loading members" />
+          ) : membersQuery.isError ? (
+            <ErrorState
+              title="Unable to load members"
+              description="The member list is not available to this account."
+              onRetry={membersQuery.refetch}
+            />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {(membersQuery.data?.items ?? []).map((member) => (
+                <Card key={member.user_id}>
+                  <CardContent className="flex items-center gap-3 p-3">
+                    <span className="text-sm font-medium text-foreground">
+                      {member.display_name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">@{member.handle}</span>
+                    {member.role ? (
+                      <Badge variant="muted" className="ml-auto">{member.role}</Badge>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="about">
           <Card>

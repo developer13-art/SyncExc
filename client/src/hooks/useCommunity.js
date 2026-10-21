@@ -91,6 +91,10 @@ export function useCommunityPost(postId) {
     isLoading: detailQuery.isLoading,
     addComment: addComment.mutateAsync,
     addReaction: addReaction.mutateAsync,
+    refetch: async () => {
+      await detailQuery.refetch();
+      await commentsQuery.refetch();
+    },
   };
 }
 

@@ -68,6 +68,8 @@ export const NOTIFICATIONS_CONSUMES = [
   'community.post_published',
   'community.comment_posted',
   'community.follow_created',
+  'community.follow_request_created',
+  'community.follow_request_accepted',
   'community.moderation_action',
 ];
 

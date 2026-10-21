@@ -123,7 +123,11 @@ export function createOrchestratorService({
       }
     }
     // Actor (the person who caused the event) if it's a self-notification
-    if (event.actorId && !recipients.some((r) => r.userId === event.actorId)) {
+    if (
+      event.actorId &&
+      event.eventType !== 'community.follow_request_accepted' &&
+      !recipients.some((r) => r.userId === event.actorId)
+    ) {
       recipients.push({ userId: event.actorId });
     }
     // Post author for comment events
@@ -131,6 +135,20 @@ export function createOrchestratorService({
       if (!recipients.some((r) => r.userId === payload.postAuthorId)) {
         recipients.push({ userId: payload.postAuthorId });
       }
+    }
+    if (
+      ['community.follow_created', 'community.follow_request_created'].includes(event.eventType) &&
+      payload.followeeId &&
+      !recipients.some((recipient) => recipient.userId === payload.followeeId)
+    ) {
+      recipients.push({ userId: payload.followeeId });
+    }
+    if (
+      event.eventType === 'community.follow_request_accepted' &&
+      payload.followerId &&
+      !recipients.some((recipient) => recipient.userId === payload.followerId)
+    ) {
+      recipients.push({ userId: payload.followerId });
     }
 
     return recipients;
@@ -320,10 +338,11 @@ export function createOrchestratorService({
       'platform.incident_created': 'platform.incident_created',
       'platform.incident_updated': 'platform.incident_created',
       'platform.incident_resolved': 'platform.incident_resolved',
-      'community.post_published': 'signals.eligible',
-      'community.comment_posted': 'signals.eligible',
-      'community.follow_created': 'signals.eligible',
-      'community.moderation_action': 'security.account_restricted',
+      'community.post_published': 'community.post_published',
+      'community.comment_posted': 'community.comment_posted',
+      'community.follow_created': 'community.follow_created',
+      'community.follow_request_created': 'community.follow_request_created',
+      'community.moderation_action': 'community.moderation_action',
     };
     return map[eventType] || eventType;
   }

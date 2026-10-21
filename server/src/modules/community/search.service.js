@@ -3,6 +3,11 @@
  */
 
 import { ValidationError } from '../../lib/errors.js';
+import {
+  serializeCommunityGroup,
+  serializeCommunityProfile,
+  serializePost,
+} from '../../lib/serializers.js';
 
 export function createSearchService({ db, queries, logger }) {
   async function search({ userId, query, filters = {}, limit = 50 }) {
@@ -19,13 +24,16 @@ export function createSearchService({ db, queries, logger }) {
     const results = {};
 
     if (types.includes('posts')) {
-      results.posts = await queries.searchPosts({ query: trimmed, userId, limit });
+      results.posts = (await queries.searchPosts({ query: trimmed, userId, limit }))
+        .map(serializePost);
     }
     if (types.includes('profiles')) {
-      results.profiles = await queries.searchProfiles({ query: trimmed, limit });
+      results.profiles = (await queries.searchProfiles({ query: trimmed, userId, limit }))
+        .map(serializeCommunityProfile);
     }
     if (types.includes('groups')) {
-      results.groups = await queries.searchGroups({ query: trimmed, limit });
+      results.groups = (await queries.searchGroups({ query: trimmed, limit }))
+        .map(serializeCommunityGroup);
     }
 
     const resultCount = Object.values(results).reduce((sum, arr) => sum + arr.length, 0);

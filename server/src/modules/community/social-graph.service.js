@@ -24,8 +24,36 @@ export function createSocialGraphService({ db, queries, events, logger }) {
       throw new ConflictError('User does not allow follows', 'FOLLOWS_DISABLED');
     }
 
+    if (await queries.isFollowing(followerId, followeeId)) {
+      return { alreadyFollowing: true };
+    }
+
+    if (['followers', 'private'].includes(followeeProfile.visibility)) {
+      if (await queries.hasPendingFollowRequest(followerId, followeeId)) {
+        return { alreadyRequested: true };
+      }
+      return db.tx(async (tx) => {
+        const request = await queries.insertFollowRequest(tx, { followerId, followeeId });
+        if (!request) return { alreadyRequested: true };
+        await events.publish(
+          tx,
+          'community.follow_request_created',
+          { followerId, followeeId },
+          {
+            actorId: followerId,
+            resourceType: 'community_follow_request',
+            resourceId: request.id,
+          }
+        );
+        return request;
+      });
+    }
+    if (['group_members', 'workspace_members'].includes(followeeProfile.visibility)) {
+      throw new ConflictError('This profile is not available for public follows', 'FOLLOW_CONTEXT_REQUIRED');
+    }
+
     return db.tx(async (tx) => {
-      const follow = await queries.insertFollow(tx, { followerId, followeeId });
+      await queries.insertFollow(tx, { followerId, followeeId });
       if (!follow) return { alreadyFollowing: true };
 
       await events.publish(
@@ -82,6 +110,35 @@ export function createSocialGraphService({ db, queries, events, logger }) {
     return queries.listBlocks(userId);
   }
 
+  async function listFollowRequests(userId) {
+    return queries.listFollowRequests(userId, {});
+  }
+
+  async function resolveFollowRequest({ followeeId, followerId, approved }) {
+    return db.tx(async (tx) => {
+      const request = await queries.resolveFollowRequest(tx, {
+        followerId,
+        followeeId,
+        state: approved ? 'accepted' : 'declined',
+      });
+      if (!request) throw new NotFoundError('Follow request');
+
+      if (!approved) return request;
+      const follow = await queries.insertFollow(tx, { followerId, followeeId });
+      await events.publish(
+        tx,
+        'community.follow_request_accepted',
+        { followerId, followeeId },
+        {
+          actorId: followeeId,
+          resourceType: 'community_follow_request',
+          resourceId: request.id,
+        }
+      );
+      return { ...request, follow };
+    });
+  }
+
   return {
     follow,
     unfollow,
@@ -90,6 +147,8 @@ export function createSocialGraphService({ db, queries, events, logger }) {
     block,
     unblock,
     listBlocks,
+    listFollowRequests,
+    resolveFollowRequest,
   };
 }
 

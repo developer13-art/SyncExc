@@ -73,6 +73,7 @@ export function createCommunityModule({ services }) {
   const reactionService = createReactionService({
     db: services.db,
     queries,
+    postService,
     logger,
   });
 
@@ -101,6 +102,9 @@ export function createCommunityModule({ services }) {
   const bookmarkService = createBookmarkService({
     db: services.db,
     queries,
+    postService,
+    analysisService,
+    groupService,
     logger,
   });
 

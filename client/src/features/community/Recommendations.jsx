@@ -34,11 +34,11 @@ export default function Recommendations() {
 
   const handleFollow = async (recommendation) => {
     try {
-      await communityApi.follow(recommendation.userId, {});
+      await communityApi.follow(recommendation.userId);
       toast.success('Following');
       recommendationsQuery.submitFeedback({
-        userId: recommendation.userId,
-        feedback: 'accepted',
+        recommendationId: recommendation.id,
+        feedback: 'helpful',
       });
     } catch (err) {
       toast.error('Follow failed', { description: getErrorMessage(err) });
@@ -47,7 +47,7 @@ export default function Recommendations() {
 
   const handleDismiss = (recommendation) => {
     recommendationsQuery.submitFeedback({
-      userId: recommendation.userId,
+      recommendationId: recommendation.id,
       feedback: 'dismissed',
     });
   };

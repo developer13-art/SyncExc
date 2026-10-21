@@ -112,10 +112,6 @@ export default function Feed() {
       <PostComposer
         user={profileQuery.profile}
         defaultDestination="public"
-        destinations={[
-          { value: 'public', label: 'Public feed' },
-          { value: 'workspace', label: 'Workspace (private)' },
-        ]}
         onSubmit={handleCreatePost}
       />
 

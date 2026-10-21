@@ -33,7 +33,7 @@ export default function CreateGroup() {
     name: '',
     slug: '',
     description: '',
-    visibility: 'public',
+    type: 'public',
     topics: [],
   });
   const [error, setError] = useState(null);
@@ -58,14 +58,26 @@ export default function CreateGroup() {
       setError('Group name is required');
       return;
     }
+    if (form.description.trim().length === 0) {
+      setError('Group description is required');
+      return;
+    }
+    const slug = (form.slug.trim() || form.name.trim())
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-|-$/g, '');
+    if (slug.length < 3) {
+      setError('Group name or slug must contain at least 3 letters or numbers');
+      return;
+    }
 
     setSubmitting(true);
     try {
       const created = await createGroup({
         name: form.name.trim(),
-        slug: form.slug.trim() || undefined,
-        description: form.description.trim() || undefined,
-        visibility: form.visibility,
+        slug,
+        description: form.description.trim(),
+        type: form.type,
         topics: form.topics,
       });
 
@@ -136,20 +148,21 @@ export default function CreateGroup() {
                 />
               </FormField>
 
-              <FormField label="Visibility" htmlFor="group-visibility" required>
+              <FormField label="Group type" htmlFor="group-type" required>
                 <Select
-                  value={form.visibility}
-                  onValueChange={(v) => setForm({ ...form, visibility: v })}
+                  value={form.type}
+                  onValueChange={(v) => setForm({ ...form, type: v })}
                 >
-                  <SelectTrigger id="group-visibility" className="mt-1.5">
+                  <SelectTrigger id="group-type" className="mt-1.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="public">Public</SelectItem>
                     <SelectItem value="private">Private</SelectItem>
-                    <SelectItem value="approval_required">
+                    <SelectItem value="approval_based">
                       Private (requires approval)
                     </SelectItem>
+                    <SelectItem value="organization">Organization</SelectItem>
                   </SelectContent>
                 </Select>
               </FormField>

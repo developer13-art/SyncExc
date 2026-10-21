@@ -12,7 +12,6 @@ import { PostCard } from './components/PostCard.jsx';
 import { useQuery } from '@tanstack/react-query';
 import { communityApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
-import { useCommunityProviders as _u } from '../../hooks/useMarketplace.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 
@@ -65,7 +64,7 @@ export default function UserProfile() {
   const posts = postsQuery.data?.items ?? [];
 
   const handleFollow = async () => {
-    await communityApi.follow(userId, {});
+    await communityApi.follow(userId);
     profileQuery.refetch();
   };
 
@@ -88,6 +87,7 @@ export default function UserProfile() {
         profile={profile}
         isOwnProfile={false}
         isFollowing={profile.viewerIsFollowing}
+        hasPendingFollowRequest={profile.viewerHasPendingFollowRequest}
         onFollow={handleFollow}
         onUnfollow={handleUnfollow}
       />

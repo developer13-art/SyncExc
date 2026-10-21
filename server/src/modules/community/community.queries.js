@@ -11,8 +11,10 @@ export function createCommunityQueries({ db }) {
     async insertProfile(client, data) {
       const result = await client.query(
         `
-        INSERT INTO community_profiles (user_id, handle, display_name, biography, long_introduction, visibility)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO community_profiles (
+          user_id, handle, display_name, biography, long_introduction, visibility, avatar_url
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
         `,
         [
@@ -22,9 +24,55 @@ export function createCommunityQueries({ db }) {
           data.biography || null,
           data.longIntroduction || null,
           data.visibility || 'public',
+          data.avatarUrl || null,
         ]
       );
       return result.rows[0];
+    },
+
+    async deleteGroupRole(client, groupId, userId) {
+      await client.query(
+        `DELETE FROM community_group_roles WHERE group_id = $1 AND user_id = $2`,
+        [groupId, userId]
+      );
+    },
+
+    async insertGroupInvitation(client, { groupId, invitedUserId, invitedBy }) {
+      const result = await client.query(
+        `
+        INSERT INTO community_group_invitations (group_id, invited_user_id, invited_by)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        `,
+        [groupId, invitedUserId, invitedBy]
+      );
+      return result.rows[0];
+    },
+
+    async findPendingGroupInvitation(groupId, invitedUserId) {
+      const result = await db.query(
+        `
+        SELECT * FROM community_group_invitations
+        WHERE group_id = $1 AND invited_user_id = $2 AND state = 'pending'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [groupId, invitedUserId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateGroupInvitation(client, invitationId, state) {
+      const result = await client.query(
+        `
+        UPDATE community_group_invitations
+        SET state = $2, resolved_at = now()
+        WHERE id = $1 AND state = 'pending'
+        RETURNING *
+        `,
+        [invitationId, state]
+      );
+      return result.rows[0] || null;
     },
 
     async findProfileByUserId(userId) {
@@ -43,8 +91,8 @@ export function createCommunityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async updateProfile(profileId, fields) {
-      const result = await db.query(
+    async updateProfile(profileId, fields, client = db) {
+      const result = await client.query(
         `
         UPDATE community_profiles
         SET display_name = COALESCE($2, display_name),
@@ -56,6 +104,7 @@ export function createCommunityQueries({ db }) {
             skills = COALESCE($8, skills),
             website = COALESCE($9, website),
             visibility = COALESCE($10, visibility),
+            current_version = current_version + 1,
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -135,6 +184,57 @@ export function createCommunityQueries({ db }) {
         RETURNING *
         `,
         [data.followerId, data.followeeId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertFollowRequest(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO community_follow_requests (follower_id, followee_id, state)
+        VALUES ($1, $2, 'pending')
+        ON CONFLICT (follower_id, followee_id) DO UPDATE
+          SET state = 'pending', responded_at = NULL, updated_at = now()
+          WHERE community_follow_requests.state = 'declined'
+        RETURNING *
+        `,
+        [data.followerId, data.followeeId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async hasPendingFollowRequest(followerId, followeeId) {
+      const result = await db.query(
+        `SELECT 1 FROM community_follow_requests WHERE follower_id = $1 AND followee_id = $2 AND state = 'pending'`,
+        [followerId, followeeId]
+      );
+      return result.rowCount > 0;
+    },
+
+    async listFollowRequests(userId, { limit = 100 } = {}) {
+      const result = await db.query(
+        `
+        SELECT fr.*, p.user_id, p.handle, p.display_name, p.avatar_url
+        FROM community_follow_requests fr
+        JOIN community_profiles p ON p.user_id = fr.follower_id
+        WHERE fr.followee_id = $1 AND fr.state = 'pending'
+        ORDER BY fr.created_at ASC
+        LIMIT $2
+        `,
+        [userId, limit]
+      );
+      return result.rows;
+    },
+
+    async resolveFollowRequest(client, { followerId, followeeId, state }) {
+      const result = await client.query(
+        `
+        UPDATE community_follow_requests
+        SET state = $3, responded_at = now(), updated_at = now()
+        WHERE follower_id = $1 AND followee_id = $2 AND state = 'pending'
+        RETURNING *
+        `,
+        [followerId, followeeId, state]
       );
       return result.rows[0] || null;
     },
@@ -272,14 +372,44 @@ export function createCommunityQueries({ db }) {
 
     async findPostById(postId) {
       const result = await db.query(
-        `SELECT * FROM community_posts WHERE id = $1 AND deleted_at IS NULL`,
+        `
+        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
+               prof.avatar_url AS author_avatar
+        FROM community_posts p
+        JOIN community_profiles prof ON prof.user_id = p.author_id
+        WHERE p.id = $1 AND p.deleted_at IS NULL
+        `,
         [postId]
       );
       return result.rows[0] || null;
     },
 
-    async updatePost(postId, fields) {
+    async findPostBookmark(userId, postId) {
+      if (!userId) return null;
       const result = await db.query(
+        `
+        SELECT id FROM community_saved_items
+        WHERE user_id = $1 AND resource_type = 'post' AND resource_id = $2
+        `,
+        [userId, postId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async hasReaction(userId, targetType, targetId) {
+      if (!userId) return false;
+      const result = await db.query(
+        `
+        SELECT 1 FROM community_reactions
+        WHERE user_id = $1 AND target_type = $2 AND target_id = $3
+        `,
+        [userId, targetType, targetId]
+      );
+      return result.rowCount > 0;
+    },
+
+    async updatePost(postId, fields, client = db) {
+      const result = await client.query(
         `
         UPDATE community_posts
         SET content = COALESCE($2, content),
@@ -299,6 +429,23 @@ export function createCommunityQueries({ db }) {
         ]
       );
       return result.rows[0] || null;
+    },
+
+    async adjustPostCommentCount(postId, delta, client = db) {
+      await client.query(
+        `
+        UPDATE community_posts
+        SET engagement = jsonb_set(
+              engagement,
+              '{comments}',
+              to_jsonb(GREATEST(0, COALESCE((engagement->>'comments')::integer, 0) + $2)),
+              true
+            ),
+            updated_at = now()
+        WHERE id = $1
+        `,
+        [postId, delta]
+      );
     },
 
     async softDeletePost(postId) {
@@ -347,13 +494,56 @@ export function createCommunityQueries({ db }) {
       cursor = null,
     } = {}) {
       const params = [limit + 1];
-      const conditions = ['p.deleted_at IS NULL', "p.visibility = 'public'"];
+      const conditions = [
+        'p.deleted_at IS NULL',
+        "p.destination_type = 'public_feed'",
+      ];
+      let viewerParam = null;
+      if (userId) {
+        params.push(userId);
+        viewerParam = `$${params.length}`;
+        conditions.push(`NOT EXISTS (
+          SELECT 1 FROM community_blocks b
+          WHERE (b.blocker_id = ${viewerParam} AND b.blocked_id = p.author_id)
+             OR (b.blocked_id = ${viewerParam} AND b.blocker_id = p.author_id)
+        )`);
+      }
 
       if (followingOnly) {
         params.push(userId);
+        const followingParam = `$${params.length}`;
         conditions.push(
-          `(p.author_id = $${params.length} OR p.author_id IN (SELECT followee_id FROM community_follows WHERE follower_id = $${params.length}))`
+          `(p.visibility = 'public' OR (
+            p.visibility = 'followers' AND (
+              p.author_id = ${followingParam}
+              OR EXISTS (
+                SELECT 1 FROM community_follows f
+                WHERE f.follower_id = ${followingParam} AND f.followee_id = p.author_id
+              )
+            )
+          ))`
         );
+        conditions.push(
+          `(p.author_id = ${followingParam} OR EXISTS (
+            SELECT 1 FROM community_follows f
+            WHERE f.follower_id = ${followingParam} AND f.followee_id = p.author_id
+          ))`
+        );
+      } else {
+        conditions.push("p.visibility = 'public'");
+      }
+
+      if (viewerParam) {
+        conditions.push(`(
+          prof.visibility = 'public'
+          OR (prof.visibility IN ('followers', 'private') AND EXISTS (
+            SELECT 1 FROM community_follows f
+            WHERE f.follower_id = ${viewerParam} AND f.followee_id = p.author_id
+          ))
+          OR (prof.user_id = ${viewerParam})
+        )`);
+      } else {
+        conditions.push(`prof.visibility = 'public'`);
       }
 
       if (cursor) {
@@ -363,7 +553,16 @@ export function createCommunityQueries({ db }) {
 
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name, prof.avatar_url AS author_avatar
+        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
+               prof.avatar_url AS author_avatar,
+               (SELECT count(*)::int FROM community_reactions r
+                WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count,
+               ${viewerParam ? `(SELECT r.reaction_type FROM community_reactions r
+                 WHERE r.user_id = ${viewerParam} AND r.target_type = 'post' AND r.target_id = p.id
+                 LIMIT 1)` : 'NULL'} AS viewer_reaction,
+               ${viewerParam ? `(SELECT s.id FROM community_saved_items s
+                 WHERE s.user_id = ${viewerParam} AND s.resource_type = 'post' AND s.resource_id = p.id
+                 LIMIT 1)` : 'NULL'} AS bookmark_id
         FROM community_posts p
         JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE ${conditions.join(' AND ')}
@@ -390,15 +589,45 @@ export function createCommunityQueries({ db }) {
     }) {
       const params = [authorId, limit + 1];
       const conditions = ['p.author_id = $1', 'p.deleted_at IS NULL'];
+      let viewerParam = null;
 
       if (viewerId !== authorId) {
-        // Apply visibility filtering
-        params.push(viewerId);
+        if (viewerId) {
+          params.push(viewerId);
+          viewerParam = `$${params.length}`;
+        }
+        const viewerReference = viewerParam || 'NULL';
         conditions.push(`(
-          p.visibility = 'public'
-          OR (p.visibility = 'followers' AND EXISTS (SELECT 1 FROM community_follows WHERE follower_id = $${params.length} AND followee_id = $1))
-          OR (p.visibility = 'workspace_members' AND p.destination_type = 'workspace_discussion')
+          prof.visibility = 'public'
+          OR (prof.visibility IN ('followers', 'private') AND EXISTS (
+            SELECT 1 FROM community_follows f
+            WHERE f.follower_id = ${viewerReference} AND f.followee_id = p.author_id
+          ))
         )`);
+        conditions.push(`NOT EXISTS (
+          SELECT 1 FROM community_blocks b
+          WHERE (b.blocker_id = ${viewerReference} AND b.blocked_id = p.author_id)
+             OR (b.blocked_id = ${viewerReference} AND b.blocker_id = p.author_id)
+        )`);
+        conditions.push(`(
+          (p.destination_type = 'public_feed' AND (
+            p.visibility = 'public'
+            OR (p.visibility = 'followers' AND EXISTS (
+              SELECT 1 FROM community_follows
+              WHERE follower_id = ${viewerReference} AND followee_id = $1
+            ))
+          ))
+          OR (p.destination_type = 'group' AND EXISTS (
+            SELECT 1 FROM community_group_memberships gm
+            WHERE gm.group_id = p.destination_ref_id
+              AND gm.user_id = ${viewerReference}
+              AND gm.state = 'active'
+          ))
+        )`);
+      }
+      if (viewerId === authorId && viewerId) {
+        params.push(viewerId);
+        viewerParam = `$${params.length}`;
       }
 
       if (cursor) {
@@ -408,7 +637,76 @@ export function createCommunityQueries({ db }) {
 
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name, prof.avatar_url AS author_avatar
+        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
+               prof.avatar_url AS author_avatar,
+               (SELECT count(*)::int FROM community_reactions r
+                WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count,
+               ${viewerParam ? `(SELECT r.reaction_type FROM community_reactions r
+                 WHERE r.user_id = ${viewerParam} AND r.target_type = 'post' AND r.target_id = p.id
+                 LIMIT 1)` : 'NULL'} AS viewer_reaction,
+               ${viewerParam ? `(SELECT s.id FROM community_saved_items s
+                 WHERE s.user_id = ${viewerParam} AND s.resource_type = 'post' AND s.resource_id = p.id
+                 LIMIT 1)` : 'NULL'} AS bookmark_id
+        FROM community_posts p
+        JOIN community_profiles prof ON prof.user_id = p.author_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY p.created_at DESC
+        LIMIT $2
+        `,
+        params
+      );
+
+      const hasMore = result.rows.length > limit;
+      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const last = rows[rows.length - 1];
+      return {
+        rows,
+        nextCursor: hasMore && last ? last.created_at.toISOString() : null,
+      };
+    },
+
+    async listGroupPosts({
+      groupId,
+      viewerId,
+      allowPublic = false,
+      limit = 50,
+      cursor = null,
+    }) {
+      const params = [groupId, limit + 1, viewerId, allowPublic];
+      const conditions = [
+        'p.destination_type = \'group\'',
+        'p.destination_ref_id = $1',
+        'p.deleted_at IS NULL',
+        `NOT EXISTS (
+          SELECT 1 FROM community_blocks b
+          WHERE (b.blocker_id = $3 AND b.blocked_id = p.author_id)
+             OR (b.blocked_id = $3 AND b.blocker_id = p.author_id)
+        )`,
+        `(
+          ($4::boolean AND p.visibility = 'public')
+          OR EXISTS (
+            SELECT 1 FROM community_group_memberships gm
+            WHERE gm.group_id = $1 AND gm.user_id = $3 AND gm.state = 'active'
+          )
+        )`,
+      ];
+      if (cursor) {
+        params.push(cursor);
+        conditions.push(`p.created_at < $${params.length}`);
+      }
+
+      const result = await db.query(
+        `
+        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
+               prof.avatar_url AS author_avatar,
+               (SELECT count(*)::int FROM community_reactions r
+                WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count,
+               (SELECT r.reaction_type FROM community_reactions r
+                WHERE r.user_id = $3 AND r.target_type = 'post' AND r.target_id = p.id
+                LIMIT 1) AS viewer_reaction,
+               (SELECT s.id FROM community_saved_items s
+                WHERE s.user_id = $3 AND s.resource_type = 'post' AND s.resource_id = p.id
+                LIMIT 1) AS bookmark_id
         FROM community_posts p
         JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE ${conditions.join(' AND ')}
@@ -466,8 +764,8 @@ export function createCommunityQueries({ db }) {
       return result.rows;
     },
 
-    async softDeleteComment(commentId) {
-      const result = await db.query(
+    async softDeleteComment(commentId, client = db) {
+      const result = await client.query(
         `UPDATE community_comments SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
         [commentId]
       );
@@ -558,19 +856,55 @@ export function createCommunityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async listPublicGroups({ limit = 50, cursor = null } = {}) {
-      const params = [limit + 1];
-      const conditions = ["type = 'public'"];
+    async listPublicGroups({
+      userId = null,
+      filter = 'all',
+      query = null,
+      limit = 50,
+      cursor = null,
+    } = {}) {
+      const params = [];
+      let memberCheck = 'false';
+      if (userId) {
+        params.push(userId);
+        memberCheck = `(
+          g.owner_id = $${params.length}
+          OR EXISTS (
+            SELECT 1 FROM community_group_memberships gm
+            WHERE gm.group_id = g.id
+              AND gm.user_id = $${params.length}
+              AND gm.state = 'active'
+          )
+        )`;
+      }
+      const conditions = [];
+      if (filter === 'mine') {
+        conditions.push(memberCheck);
+      } else if (filter === 'public') {
+        conditions.push("g.type IN ('public', 'approval_based')");
+      } else if (filter === 'private') {
+        conditions.push(`g.type IN ('private', 'organization') AND ${memberCheck}`);
+      } else {
+        conditions.push(`(g.type IN ('public', 'approval_based') OR ${memberCheck})`);
+      }
+      if (query) {
+        params.push(`%${query}%`);
+        conditions.push(`(g.name ILIKE $${params.length} OR COALESCE(g.description, '') ILIKE $${params.length})`);
+      }
       if (cursor) {
         params.push(cursor);
-        conditions.push(`created_at < $${params.length}`);
+        conditions.push(`g.created_at < $${params.length}`);
       }
+      params.push(limit + 1);
+      const limitParam = params.length;
       const result = await db.query(
         `
-        SELECT * FROM community_groups
+        SELECT g.*,
+               ${userId ? `(${memberCheck})` : 'false'} AS viewer_is_member
+        FROM community_groups g
         WHERE ${conditions.join(' AND ')}
-        ORDER BY created_at DESC
-        LIMIT $1
+        ORDER BY g.created_at DESC
+        LIMIT $${limitParam}
         `,
         params
       );
@@ -606,8 +940,8 @@ export function createCommunityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async incrementGroupMemberCount(groupId, delta) {
-      await db.query(
+    async incrementGroupMemberCount(groupId, delta, client = db) {
+      await client.query(
         `
         UPDATE community_groups
         SET member_count = GREATEST(0, member_count + $2)
@@ -638,17 +972,91 @@ export function createCommunityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async listGroupMembers(groupId, { limit = 100 } = {}) {
+    async findGroupRole(groupId, userId) {
+      const result = await db.query(
+        `SELECT role FROM community_group_roles WHERE group_id = $1 AND user_id = $2`,
+        [groupId, userId]
+      );
+      return result.rows[0]?.role || null;
+    },
+
+    async setGroupRole(client, { groupId, userId, role }) {
+      const result = await client.query(
+        `
+        INSERT INTO community_group_roles (group_id, user_id, role)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (group_id, user_id) DO UPDATE SET role = EXCLUDED.role
+        RETURNING *
+        `,
+        [groupId, userId, role]
+      );
+      return result.rows[0];
+    },
+
+    async listGroupRequests(groupId, { limit = 100 } = {}) {
       const result = await db.query(
         `
         SELECT m.*, p.handle, p.display_name, p.avatar_url
         FROM community_group_memberships m
         JOIN community_profiles p ON p.user_id = m.user_id
-        WHERE m.group_id = $1 AND m.state = 'active'
+        WHERE m.group_id = $1 AND m.state = 'requested'
         ORDER BY m.created_at ASC
         LIMIT $2
         `,
         [groupId, limit]
+      );
+      return result.rows;
+    },
+
+    async resolveGroupRequest(client, { groupId, userId, state }) {
+      const result = await client.query(
+        `
+        UPDATE community_group_memberships
+        SET state = $3, updated_at = now()
+        WHERE group_id = $1 AND user_id = $2 AND state = 'requested'
+        RETURNING *
+        `,
+        [groupId, userId, state]
+      );
+      return result.rows[0] || null;
+    },
+
+    async changeGroupMemberState(client, { groupId, userId, state }) {
+      const result = await client.query(
+        `
+        UPDATE community_group_memberships
+        SET state = $3, updated_at = now()
+        WHERE group_id = $1 AND user_id = $2 AND state = 'active'
+        RETURNING *
+        `,
+        [groupId, userId, state]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listGroupMembers(groupId, { limit = 100, viewerId = null } = {}) {
+      const params = [groupId, limit];
+      let visibilityClause = '';
+      if (viewerId) {
+        params.push(viewerId);
+        visibilityClause = `AND NOT EXISTS (
+          SELECT 1 FROM community_blocks b
+          WHERE (b.blocker_id = $${params.length} AND b.blocked_id = m.user_id)
+             OR (b.blocked_id = $${params.length} AND b.blocker_id = m.user_id)
+        )`;
+      }
+      const result = await db.query(
+        `
+        SELECT m.*, p.handle, p.display_name, p.avatar_url, r.role
+        FROM community_group_memberships m
+        JOIN community_profiles p ON p.user_id = m.user_id
+        LEFT JOIN community_group_roles r
+          ON r.group_id = m.group_id AND r.user_id = m.user_id
+        WHERE m.group_id = $1 AND m.state = 'active' ${visibilityClause}
+        ORDER BY m.created_at ASC
+        LIMIT $2
+        `,
+        params
       );
       return result.rows;
     },
@@ -669,6 +1077,14 @@ export function createCommunityQueries({ db }) {
       return result.rows[0];
     },
 
+    async findChannelById(channelId) {
+      const result = await db.query(
+        `SELECT * FROM community_channels WHERE id = $1`,
+        [channelId]
+      );
+      return result.rows[0] || null;
+    },
+
     async listChannelsForWorkspace(workspaceId) {
       const result = await db.query(
         `SELECT * FROM community_channels WHERE workspace_id = $1 ORDER BY created_at ASC`,
@@ -687,6 +1103,19 @@ export function createCommunityQueries({ db }) {
         [data.channelId, data.title, data.createdBy]
       );
       return result.rows[0];
+    },
+
+    async findDiscussionThreadById(threadId) {
+      const result = await db.query(
+        `
+        SELECT t.*, c.workspace_id, c.group_id
+        FROM community_discussion_threads t
+        JOIN community_channels c ON c.id = t.channel_id
+        WHERE t.id = $1
+        `,
+        [threadId]
+      );
+      return result.rows[0] || null;
     },
 
     async listDiscussionThreads(channelId, { limit = 50 } = {}) {
@@ -758,10 +1187,83 @@ export function createCommunityQueries({ db }) {
 
     async findAnalysisDocumentById(documentId) {
       const result = await db.query(
-        `SELECT * FROM community_analysis_documents WHERE id = $1`,
+        `
+        SELECT d.*, p.handle AS author_handle, p.display_name AS author_name
+        FROM community_analysis_documents d
+        JOIN community_profiles p ON p.user_id = d.author_id
+        WHERE d.id = $1
+        `,
         [documentId]
       );
       return result.rows[0] || null;
+    },
+
+    async listAnalysisDocuments({ userId, workspaceId, query, limit = 50, cursor = null }) {
+      const params = [userId, workspaceId, limit + 1];
+      const conditions = [
+        `NOT EXISTS (
+          SELECT 1 FROM community_blocks b
+          WHERE (b.blocker_id = $1 AND b.blocked_id = d.author_id)
+             OR (b.blocked_id = $1 AND b.blocker_id = d.author_id)
+        )`,
+        `(
+          d.author_id = $1
+          OR d.visibility = 'public'
+          OR (d.visibility = 'followers' AND EXISTS (
+            SELECT 1 FROM community_follows f
+            WHERE f.follower_id = $1 AND f.followee_id = d.author_id
+          ))
+          OR (d.visibility = 'workspace_members' AND d.workspace_id = $2)
+          OR EXISTS (
+            SELECT 1 FROM community_analysis_permissions ap
+            WHERE ap.document_id = d.id
+              AND (ap.grantee_user_id = $1 OR ap.grantee_workspace_id = $2)
+          )
+        )`,
+      ];
+      if (query) {
+        params.push(`%${query}%`);
+        conditions.push(`(d.title ILIKE $${params.length} OR COALESCE(d.summary, '') ILIKE $${params.length})`);
+      }
+      if (cursor) {
+        params.push(cursor);
+        conditions.push(`d.created_at < $${params.length}`);
+      }
+
+      const result = await db.query(
+        `
+        SELECT d.*, p.handle AS author_handle, p.display_name AS author_name
+        FROM community_analysis_documents d
+        JOIN community_profiles p ON p.user_id = d.author_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY d.created_at DESC
+        LIMIT $3
+        `,
+        params
+      );
+      const hasMore = result.rows.length > limit;
+      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const last = rows[rows.length - 1];
+      return {
+        rows,
+        nextCursor: hasMore && last ? last.created_at.toISOString() : null,
+      };
+    },
+
+    async findAnalysisVersionContent(documentId, version) {
+      const result = await db.query(
+        `SELECT content FROM community_analysis_versions WHERE document_id = $1 AND version = $2`,
+        [documentId, version]
+      );
+      return result.rows[0]?.content ?? null;
+    },
+
+    async listAnalysisSources(documentId) {
+      const result = await db.query(
+        `SELECT * FROM community_analysis_sources WHERE document_id = $1 ORDER BY created_at`,
+        [documentId]
+      );
+      return result.rows;
     },
 
     async insertAnalysisVersion(client, data) {
@@ -909,6 +1411,14 @@ export function createCommunityQueries({ db }) {
       return result.rows;
     },
 
+    async findRecommendationForUser(recommendationId, userId) {
+      const result = await db.query(
+        `SELECT * FROM community_ai_recommendations WHERE id = $1 AND user_id = $2`,
+        [recommendationId, userId]
+      );
+      return result.rows[0] || null;
+    },
+
     async insertRecommendationFeedback(client, data) {
       const result = await client.query(
         `
@@ -928,34 +1438,50 @@ export function createCommunityQueries({ db }) {
     async searchPosts({ query, userId, limit = 50 }) {
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name
+        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
+               prof.avatar_url AS author_avatar,
+               (SELECT count(*)::int FROM community_reactions r
+                WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count
         FROM community_posts p
         JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE p.deleted_at IS NULL
+          AND p.destination_type = 'public_feed'
           AND p.visibility = 'public'
+          AND prof.visibility = 'public'
+          AND NOT EXISTS (
+            SELECT 1 FROM community_blocks b
+            WHERE (b.blocker_id = $2 AND b.blocked_id = p.author_id)
+               OR (b.blocked_id = $2 AND b.blocker_id = p.author_id)
+          )
           AND to_tsvector('english', p.content) @@ plainto_tsquery('english', $1)
         ORDER BY p.created_at DESC
-        LIMIT $2
+        LIMIT $3
         `,
-        [query, limit]
+        [query, userId, limit]
       );
       return result.rows;
     },
 
-    async searchProfiles({ query, limit = 50 }) {
+    async searchProfiles({ query, userId, limit = 50 }) {
       const result = await db.query(
         `
         SELECT p.* FROM community_profiles p
         WHERE p.visibility = 'public'
+          AND p.user_id <> $2
+          AND NOT EXISTS (
+            SELECT 1 FROM community_blocks b
+            WHERE (b.blocker_id = $2 AND b.blocked_id = p.user_id)
+               OR (b.blocked_id = $2 AND b.blocker_id = p.user_id)
+          )
           AND (
-            p.display_name ILIKE $1 OR
-            p.handle ILIKE $1 OR
-            p.biography ILIKE $1
+            p.display_name ILIKE $3 OR
+            p.handle ILIKE $3 OR
+            p.biography ILIKE $3
           )
         ORDER BY p.created_at DESC
-        LIMIT $2
+        LIMIT $4
         `,
-        [`%${query}%`, limit]
+        [query, userId, `%${query}%`, limit]
       );
       return result.rows;
     },
@@ -964,7 +1490,7 @@ export function createCommunityQueries({ db }) {
       const result = await db.query(
         `
         SELECT * FROM community_groups
-        WHERE type = 'public'
+        WHERE type IN ('public', 'approval_based')
           AND (name ILIKE $1 OR description ILIKE $1)
         ORDER BY member_count DESC, created_at DESC
         LIMIT $2
@@ -1016,17 +1542,24 @@ export function createCommunityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async updateModerationCase(caseId, fields) {
-      const result = await db.query(
+    async updateModerationCase(caseId, fields, client = db, expectedStates = null) {
+      const result = await client.query(
         `
         UPDATE community_moderation_cases
         SET state = COALESCE($2, state),
             assigned_to = COALESCE($3, assigned_to),
             resolved_at = COALESCE($4, resolved_at)
         WHERE id = $1
+          AND ($5::text[] IS NULL OR state = ANY($5::text[]))
         RETURNING *
         `,
-        [caseId, fields.state ?? null, fields.assignedTo ?? null, fields.resolvedAt ?? null]
+        [
+          caseId,
+          fields.state ?? null,
+          fields.assignedTo ?? null,
+          fields.resolvedAt ?? null,
+          expectedStates,
+        ]
       );
       return result.rows[0] || null;
     },
@@ -1078,11 +1611,41 @@ export function createCommunityQueries({ db }) {
         `
         INSERT INTO community_moderation_appeals (case_id, appellant_id, reason)
         VALUES ($1, $2, $3)
+        ON CONFLICT (case_id, appellant_id) WHERE status = 'pending' DO NOTHING
         RETURNING *
         `,
         [data.caseId, data.appellantId, data.reason]
       );
       return result.rows[0];
+    },
+
+    async findPendingModerationAppeal(caseId, appellantId) {
+      const result = await db.query(
+        `SELECT id FROM community_moderation_appeals WHERE case_id = $1 AND appellant_id = $2 AND status = 'pending'`,
+        [caseId, appellantId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateModerationAppeal(appealId, fields, client = db) {
+      const result = await client.query(
+        `
+        UPDATE community_moderation_appeals
+        SET status = $2, resolved_at = now(), resolution = $3
+        WHERE id = $1 AND status = 'pending'
+        RETURNING *
+        `,
+        [appealId, fields.status, fields.resolution]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findModerationAppealById(appealId) {
+      const result = await db.query(
+        `SELECT * FROM community_moderation_appeals WHERE id = $1`,
+        [appealId]
+      );
+      return result.rows[0] || null;
     },
 
     /* =========================================================================
@@ -1107,6 +1670,40 @@ export function createCommunityQueries({ db }) {
           data.outcome || 'success',
         ]
       );
+    },
+
+    async listAuditEvents({ limit = 50, cursor = null, resourceType = null, resourceId = null } = {}) {
+      const params = [limit + 1];
+      const conditions = [];
+      if (resourceType) {
+        params.push(resourceType);
+        conditions.push(`resource_type = $${params.length}`);
+      }
+      if (resourceId) {
+        params.push(resourceId);
+        conditions.push(`resource_id = $${params.length}`);
+      }
+      if (cursor) {
+        params.push(cursor);
+        conditions.push(`occurred_at < $${params.length}`);
+      }
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+      const result = await db.query(
+        `
+        SELECT * FROM community_audit_events
+        ${where}
+        ORDER BY occurred_at DESC
+        LIMIT $1
+        `,
+        params
+      );
+      const hasMore = result.rows.length > limit;
+      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const last = rows[rows.length - 1];
+      return {
+        rows,
+        nextCursor: hasMore && last ? last.occurred_at.toISOString() : null,
+      };
     },
   };
 }

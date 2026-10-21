@@ -122,6 +122,10 @@ export function createIdentityQueries({ db }) {
           `UPDATE marketplace_provider_profiles SET avatar_url = $2 WHERE user_id = $1`,
           [userId, avatarUrl],
         );
+        await client.query(
+          `UPDATE community_profiles SET avatar_url = $2, updated_at = now() WHERE user_id = $1`,
+          [userId, avatarUrl],
+        );
       }
       return result.rows[0] || null;
     },

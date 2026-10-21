@@ -24,13 +24,12 @@ export function createCommunityController(services) {
   return {
     /* Profile */
     async getMyProfile(req, res) {
-      const profile = await profileService.getProfileByUserId(req.auth.userId);
-      if (!profile) return success(res, null);
+      await profileService.ensureProfileForUser(req.auth.userId);
       const result = await profileService.getProfileWithPrivacy({
         userId: req.auth.userId,
         viewerId: req.auth.userId,
       });
-      return success(res, result);
+      return success(res, serializeProfileResult(result));
     },
 
     async getProfile(req, res) {
@@ -47,7 +46,7 @@ export function createCommunityController(services) {
         userId: profile.user_id,
         viewerId: req.auth?.userId || null,
       });
-      return success(res, result);
+      return success(res, serializeProfileResult(result));
     },
 
     async updateProfile(req, res) {
@@ -97,6 +96,20 @@ export function createCommunityController(services) {
       return success(res, following);
     },
 
+    async listFollowRequests(req, res) {
+      const requests = await socialGraphService.listFollowRequests(req.auth.userId);
+      return success(res, requests);
+    },
+
+    async resolveFollowRequest(req, res) {
+      const result = await socialGraphService.resolveFollowRequest({
+        followeeId: req.auth.userId,
+        followerId: req.params.followerId,
+        approved: req.body.approved,
+      });
+      return success(res, result);
+    },
+
     async block(req, res) {
       const result = await socialGraphService.block({
         blockerId: req.auth.userId,
@@ -135,6 +148,7 @@ export function createCommunityController(services) {
     async createPost(req, res) {
       const post = await postService.createPost({
         userId: req.auth.userId,
+        workspaceId: req.workspace?.id || null,
         destinationType: req.body.destination?.type || 'public_feed',
         destinationRefId: req.body.destination?.refId || null,
         content: req.body.content,
@@ -150,6 +164,7 @@ export function createCommunityController(services) {
       const result = await postService.getPost({
         postId: req.params.postId,
         viewerId: req.auth?.userId || null,
+        workspaceId: req.workspace?.id || null,
       });
       return success(res, {
         ...serializePost(result.post),
@@ -192,6 +207,11 @@ export function createCommunityController(services) {
 
     /* Comments */
     async createComment(req, res) {
+      await postService.getPost({
+        postId: req.params.postId,
+        viewerId: req.auth.userId,
+        workspaceId: req.workspace?.id || null,
+      });
       const comment = await commentService.createComment({
         userId: req.auth.userId,
         postId: req.params.postId,
@@ -202,11 +222,25 @@ export function createCommunityController(services) {
     },
 
     async listComments(req, res) {
+      await postService.getPost({
+        postId: req.params.postId,
+        viewerId: req.auth?.userId || null,
+        workspaceId: req.workspace?.id || null,
+      });
       const comments = await commentService.listComments({
         postId: req.params.postId,
         limit: Number(req.query.limit) || 200,
       });
       return success(res, comments);
+    },
+
+    async updateComment(req, res) {
+      const comment = await commentService.updateComment({
+        userId: req.auth.userId,
+        commentId: req.params.commentId,
+        content: req.body.content,
+      });
+      return success(res, comment);
     },
 
     async deleteComment(req, res) {
@@ -240,6 +274,9 @@ export function createCommunityController(services) {
     /* Groups */
     async listGroups(req, res) {
       const { rows, nextCursor } = await groupService.listPublicGroups({
+        userId: req.auth?.userId || null,
+        filter: req.query.filter || 'all',
+        query: req.query.q || null,
         limit: Number(req.query.limit) || 50,
         cursor: req.query.cursor || null,
       });
@@ -260,6 +297,15 @@ export function createCommunityController(services) {
         topics: req.body.topics,
       });
       return created(res, serializeCommunityGroup(group));
+    },
+
+    async updateGroup(req, res) {
+      const group = await groupService.updateGroup({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        updates: req.body,
+      });
+      return success(res, serializeCommunityGroup(group));
     },
 
     async getGroup(req, res) {
@@ -295,6 +341,75 @@ export function createCommunityController(services) {
       return success(res, members);
     },
 
+    async listGroupPosts(req, res) {
+      const { rows, nextCursor } = await groupService.listGroupPosts({
+        groupId: req.params.groupId,
+        viewerId: req.auth?.userId || null,
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows.map(serializePost), {
+        nextCursor,
+        limit: Number(req.query.limit) || 50,
+      });
+    },
+
+    async removeGroupMember(req, res) {
+      const result = await groupService.removeMember({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        targetUserId: req.params.userId,
+      });
+      return success(res, result);
+    },
+
+    async setGroupMemberRole(req, res) {
+      const role = await groupService.setMemberRole({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        targetUserId: req.params.userId,
+        role: req.body.role,
+      });
+      return success(res, role);
+    },
+
+    async listGroupRequests(req, res) {
+      const requests = await groupService.listJoinRequests({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        limit: Number(req.query.limit) || 100,
+      });
+      return success(res, requests);
+    },
+
+    async resolveGroupRequest(req, res) {
+      const membership = await groupService.resolveJoinRequest({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        targetUserId: req.params.userId,
+        approved: req.body.approved,
+      });
+      return success(res, membership);
+    },
+
+    async inviteGroupMember(req, res) {
+      const invitation = await groupService.inviteMember({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        targetUserId: req.body.userId,
+      });
+      return created(res, invitation);
+    },
+
+    async respondToGroupInvitation(req, res) {
+      const invitation = await groupService.respondToInvitation({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        accepted: req.body.accepted,
+      });
+      return success(res, invitation);
+    },
+
     /* Discussions */
     async listChannels(req, res) {
       const channels = await discussionService.listChannels({
@@ -316,6 +431,7 @@ export function createCommunityController(services) {
     async createThread(req, res) {
       const thread = await discussionService.createThread({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         channelId: req.params.channelId,
         title: req.body.title,
       });
@@ -324,6 +440,7 @@ export function createCommunityController(services) {
 
     async listThreads(req, res) {
       const threads = await discussionService.listThreads({
+        workspaceId: req.workspace.id,
         channelId: req.params.channelId,
         limit: Number(req.query.limit) || 50,
       });
@@ -333,6 +450,7 @@ export function createCommunityController(services) {
     async postMessage(req, res) {
       const message = await discussionService.postMessage({
         userId: req.auth.userId,
+        workspaceId: req.workspace.id,
         threadId: req.params.threadId,
         content: req.body.content,
       });
@@ -341,6 +459,7 @@ export function createCommunityController(services) {
 
     async listMessages(req, res) {
       const messages = await discussionService.listMessages({
+        workspaceId: req.workspace.id,
         threadId: req.params.threadId,
         limit: Number(req.query.limit) || 200,
       });
@@ -362,6 +481,20 @@ export function createCommunityController(services) {
       return created(res, document);
     },
 
+    async listAnalysis(req, res) {
+      const { rows, nextCursor } = await analysisService.listDocuments({
+        userId: req.auth.userId,
+        workspaceId: req.workspace?.id || null,
+        query: req.query.q,
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows.map(serializeAnalysisDocument), {
+        nextCursor,
+        limit: Number(req.query.limit) || 50,
+      });
+    },
+
     async getAnalysis(req, res) {
       const document = await analysisService.getDocument({
         documentId: req.params.documentId,
@@ -379,8 +512,18 @@ export function createCommunityController(services) {
         title: req.body.title,
         summary: req.body.summary,
         tags: req.body.tags,
+        workspaceId: req.workspace?.id || null,
       });
       return success(res, document);
+    },
+
+    async listAnalysisVersions(req, res) {
+      const versions = await analysisService.listVersions({
+        documentId: req.params.documentId,
+        viewerId: req.auth.userId,
+        workspaceId: req.workspace?.id || null,
+      });
+      return success(res, versions);
     },
 
     async grantAnalysisPermission(req, res) {
@@ -398,6 +541,7 @@ export function createCommunityController(services) {
     async listBookmarks(req, res) {
       const bookmarks = await bookmarkService.listBookmarks({
         userId: req.auth.userId,
+        workspaceId: req.workspace?.id || null,
         limit: Number(req.query.limit) || 100,
       });
       return success(res, bookmarks);
@@ -410,6 +554,7 @@ export function createCommunityController(services) {
         resourceId: req.body.resourceId,
         collection: req.body.collection,
         note: req.body.note,
+        workspaceId: req.workspace?.id || null,
       });
       return created(res, bookmark);
     },
@@ -453,7 +598,11 @@ export function createCommunityController(services) {
       const result = await searchService.search({
         userId: req.auth.userId,
         query: req.query.q,
-        filters: req.query.types ? { types: req.query.types.split(',') } : {},
+        filters: req.query.types
+          ? { types: req.query.types.split(',') }
+          : req.query.type
+            ? { types: [req.query.type] }
+            : {},
         limit: Number(req.query.limit) || 50,
       });
       return success(res, result);
@@ -499,6 +648,59 @@ export function createCommunityController(services) {
       });
       return success(res, result);
     },
+
+    async decideAppeal(req, res) {
+      const result = await moderationService.decideAppeal({
+        appealId: req.params.appealId,
+        actorId: req.auth.userId,
+        status: req.body.status,
+        resolution: req.body.resolution,
+      });
+      return success(res, result);
+    },
+
+    async listAudit(req, res) {
+      const { rows, nextCursor } = await moderationService.listAudit({
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+        resourceType: req.query.resourceType || null,
+        resourceId: req.query.resourceId || null,
+      });
+      return paginated(res, rows, {
+        nextCursor,
+        limit: Number(req.query.limit) || 50,
+      });
+    },
+  };
+
+  function serializeProfileResult(result) {
+    return {
+      ...serializeCommunityProfile(result.profile),
+      followersCount: result.followersCount,
+      followingCount: result.followingCount,
+      viewerIsFollowing: result.isFollowing,
+      viewerHasPendingFollowRequest: result.viewerHasPendingFollowRequest,
+      ...(result.privacy ? { privacy: result.privacy } : {}),
+    };
+  }
+}
+
+function serializeAnalysisDocument(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    summary: row.summary || null,
+    content: row.content || null,
+    tags: row.tags || [],
+    visibility: row.visibility,
+    version: row.version ?? row.current_version,
+    authorId: row.author_id,
+    author: row.author_name
+      ? { id: row.author_id, handle: row.author_handle, displayName: row.author_name }
+      : null,
+    sources: row.sources || [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

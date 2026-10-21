@@ -2,7 +2,7 @@
  * SyncExc Server — Community profile service
  */
 
-import { NotFoundError, ConflictError } from '../../lib/errors.js';
+import { NotFoundError, ConflictError, AuthorizationError } from '../../lib/errors.js';
 
 export function createProfileService({ db, queries, events, logger }) {
   async function ensureProfileForUser(userId, { displayName, handle } = {}) {
@@ -11,7 +11,7 @@ export function createProfileService({ db, queries, events, logger }) {
 
     // Derive a handle from the user's email if not provided
     const userResult = await db.query(
-      `SELECT username, display_name FROM users WHERE id = $1`,
+      `SELECT username, display_name, avatar_url FROM users WHERE id = $1`,
       [userId]
     );
     const user = userResult.rows[0];
@@ -25,6 +25,7 @@ export function createProfileService({ db, queries, events, logger }) {
         userId,
         handle: resolvedHandle,
         displayName: displayName || user.display_name,
+        avatarUrl: user.avatar_url,
       });
 
       await queries.insertProfileVersion(tx, {
@@ -67,17 +68,51 @@ export function createProfileService({ db, queries, events, logger }) {
     if (!profile) throw new NotFoundError('Profile');
     const privacy = await queries.getProfilePrivacy(profile.id);
 
+    const isOwner = viewerId === userId;
+    let isFollowing = false;
+    let isBlocked = false;
+    if (viewerId && !isOwner) {
+      isBlocked =
+        (await queries.isBlocked(viewerId, userId)) ||
+        (await queries.isBlocked(userId, viewerId));
+      if (isBlocked) throw new AuthorizationError('Profile is not available');
+      isFollowing = await queries.isFollowing(viewerId, userId);
+    }
+
+    if (
+      !isOwner &&
+      ['group_members', 'workspace_members'].includes(profile.visibility)
+    ) {
+      throw new AuthorizationError('Profile is not available');
+    }
+
+    const viewerHasPendingFollowRequest = viewerId
+      ? await queries.hasPendingFollowRequest(viewerId, userId)
+      : false;
+    const canSeeFullProfile =
+      isOwner || profile.visibility === 'public' || isFollowing;
+    const visibleProfile = canSeeFullProfile
+      ? profile
+      : {
+          ...profile,
+          biography: null,
+          long_introduction: null,
+          interests: [],
+          skills: [],
+          website: null,
+        };
     const followersCount = await queries.countFollowers(userId);
     const followingCount = await queries.countFollowing(userId);
 
-    let isFollowing = false;
-    let isBlocked = false;
-    if (viewerId) {
-      isFollowing = await queries.isFollowing(viewerId, userId);
-      isBlocked = await queries.isBlocked(viewerId, userId);
-    }
-
-    return { profile, privacy, followersCount, followingCount, isFollowing, isBlocked };
+    return {
+      profile: visibleProfile,
+      privacy,
+      followersCount,
+      followingCount,
+      isFollowing,
+      isBlocked,
+      viewerHasPendingFollowRequest,
+    };
   }
 
   async function updateProfile({ userId, updates }) {
@@ -92,7 +127,7 @@ export function createProfileService({ db, queries, events, logger }) {
     }
 
     return db.tx(async (tx) => {
-      const updated = await queries.updateProfile(profile.id, updates);
+      const updated = await queries.updateProfile(profile.id, updates, tx);
 
       await queries.insertProfileVersion(tx, {
         profileId: profile.id,

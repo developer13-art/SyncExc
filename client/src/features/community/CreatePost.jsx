@@ -65,10 +65,6 @@ export default function CreatePost() {
             <PostComposer
               user={profileQuery.profile}
               defaultDestination="public"
-              destinations={[
-                { value: 'public', label: 'Public feed' },
-                { value: 'workspace', label: 'Workspace (private)' },
-              ]}
               onSubmit={handleSubmit}
               onCancel={() => navigate(ROUTES.app.community.feed)}
             />

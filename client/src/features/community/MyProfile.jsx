@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
@@ -10,6 +11,7 @@ import { FormField } from '../../components/forms/FormField.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ProfileHeader } from './components/ProfileHeader.jsx';
 import { PostCard } from './components/PostCard.jsx';
+import { communityApi } from '../../api/index.js';
 import { useCommunityProfile, useCommunityPosts } from '../../hooks/useCommunity.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
@@ -18,12 +20,17 @@ import { ROUTES } from '../../config/routes.config.js';
 
 export default function MyProfile() {
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
   const toast = useToast();
   const profileQuery = useCommunityProfile();
   const postsQuery = useCommunityPosts({ authorId: profileQuery.profile?.userId });
+  const followRequestsQuery = useQuery({
+    queryKey: ['community', 'follow-requests'],
+    queryFn: () => communityApi.listFollowRequests(),
+  });
 
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ displayName: '', bio: '', website: '', location: '' });
+  const [form, setForm] = useState({ displayName: '', bio: '', website: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -42,7 +49,6 @@ export default function MyProfile() {
         displayName: profileQuery.profile.displayName ?? '',
         bio: profileQuery.profile.bio ?? '',
         website: profileQuery.profile.website ?? '',
-        location: profileQuery.profile.location ?? '',
       });
     }
   }, [profileQuery.profile]);
@@ -61,6 +67,17 @@ export default function MyProfile() {
       toast.error('Save failed', { description: getErrorMessage(err) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleFollowRequest = async (followerId, approved) => {
+    try {
+      await communityApi.resolveFollowRequest(followerId, approved);
+      await queryClient.invalidateQueries({ queryKey: ['community', 'follow-requests'] });
+      await queryClient.invalidateQueries({ queryKey: ['community', 'profile'] });
+      toast.success(approved ? 'Follow request accepted' : 'Follow request declined');
+    } catch (err) {
+      toast.error('Could not update follow request', { description: getErrorMessage(err) });
     }
   };
 
@@ -101,13 +118,6 @@ export default function MyProfile() {
                 onChange={(e) => setForm({ ...form, website: e.target.value })}
               />
             </FormField>
-            <FormField label="Location" htmlFor="profile-location">
-              <Input
-                id="profile-location"
-                value={form.location}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
-              />
-            </FormField>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setEditing(false)} disabled={saving}>
                 Cancel
@@ -116,6 +126,27 @@ export default function MyProfile() {
                 {saving ? 'Saving…' : 'Save profile'}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {(followRequestsQuery.data ?? []).length > 0 ? (
+        <Card>
+          <CardHeader><CardTitle>Follow requests</CardTitle></CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {followRequestsQuery.data.map((request) => (
+              <div key={request.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border p-3">
+                <span className="flex-1 text-sm font-medium">
+                  {request.display_name} @{request.handle}
+                </span>
+                <Button size="sm" onClick={() => handleFollowRequest(request.user_id, true)}>
+                  Accept
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handleFollowRequest(request.user_id, false)}>
+                  Decline
+                </Button>
+              </div>
+            ))}
           </CardContent>
         </Card>
       ) : null}

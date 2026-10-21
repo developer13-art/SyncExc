@@ -6,22 +6,32 @@ const { endpoints } = apiConfig;
 export const communityApi = {
   getMyProfile: () => api.get(endpoints.community.profilesMe),
 
-  updateMyProfile: (payload) => api.patch(endpoints.community.profilesMe, payload),
+  updateMyProfile: ({ bio, ...payload }) =>
+    api.patch(endpoints.community.profilesMe, {
+      ...payload,
+      ...(bio !== undefined ? { biography: bio } : {}),
+    }),
 
   getProfile: (userId) => api.get(endpoints.community.profile(userId)),
 
   getProfilePosts: (userId, params) =>
     api.getPaged(endpoints.community.profilePosts(userId), { params }),
 
-  follow: (userId, payload) => api.post(endpoints.community.follows, { userId, ...payload }),
+  follow: (userId) => api.post(endpoints.community.follows(userId), {}),
 
   unfollow: (userId) => api.delete(endpoints.community.unfollow(userId)),
 
-  block: (userId, payload) => api.post(endpoints.community.blocks, { userId, ...payload }),
+  block: (userId) => api.post(endpoints.community.blocks(userId), {}),
 
   unblock: (userId) => api.delete(endpoints.community.unblock(userId)),
 
-  listFollowing: (params) => api.getPaged(endpoints.community.following, { params }),
+  listFollowing: (userId, params) =>
+    api.getPaged(endpoints.community.following(userId), { params }),
+
+  listFollowRequests: () => api.get(endpoints.community.followRequests),
+
+  resolveFollowRequest: (followerId, approved) =>
+    api.patch(endpoints.community.followRequest(followerId), { approved }),
 
   getFeed: (params) => api.getPaged(endpoints.community.feed, { params }),
 
@@ -29,16 +39,26 @@ export const communityApi = {
     const query = { ...params };
     const authorId = query.authorId;
     delete query.authorId;
-    delete query.groupId;
     if (authorId) {
       return api.getPaged(endpoints.community.profilePosts(authorId), { params: query });
+    }
+    if (query.groupId) {
+      const groupId = query.groupId;
+      delete query.groupId;
+      return api.getPaged(endpoints.community.groupPosts(groupId), { params: query });
     }
     return api.getPaged(endpoints.community.posts, {
       params: { ...query, following: false },
     });
   },
 
-  createPost: (payload) => api.post(endpoints.community.posts, payload),
+  createPost: ({ destination, ...payload }) =>
+    api.post(endpoints.community.posts, {
+      ...payload,
+      destination: typeof destination === 'string'
+        ? { type: destination === 'workspace' ? 'workspace_discussion' : 'public_feed' }
+        : destination,
+    }),
 
   getPost: (postId) => api.get(endpoints.community.post(postId)),
 
@@ -57,13 +77,24 @@ export const communityApi = {
 
   deleteComment: (commentId) => api.delete(endpoints.community.comment(commentId)),
 
-  addReaction: (payload) => api.post(endpoints.community.reactions, payload),
+  addReaction: (payload) =>
+    api.post(endpoints.community.reactions, {
+      targetType: payload.targetType ?? 'post',
+      targetId: payload.targetId ?? payload.postId,
+      reactionType: payload.reactionType ?? payload.type ?? 'like',
+    }),
 
-  removeReaction: (reactionId) => api.delete(endpoints.community.reaction(reactionId)),
+  removeReaction: ({ targetType, targetId }) =>
+    api.delete(endpoints.community.reaction(targetType, targetId)),
 
   listSavedItems: (params) => api.getPaged(endpoints.community.savedItems, { params }),
 
-  saveItem: (payload) => api.post(endpoints.community.savedItems, payload),
+  saveItem: ({ postId, ...payload }) =>
+    api.post(endpoints.community.savedItems, {
+      resourceType: 'post',
+      resourceId: postId,
+      ...payload,
+    }),
 
   removeSavedItem: (itemId) => api.delete(endpoints.community.savedItem(itemId)),
 
@@ -73,29 +104,50 @@ export const communityApi = {
 
   getGroup: (groupId) => api.get(endpoints.community.group(groupId)),
 
+  listGroupMembers: (groupId, params) =>
+    api.getPaged(endpoints.community.groupMembers(groupId), { params }),
+
   updateGroup: (groupId, payload) => api.patch(endpoints.community.group(groupId), payload),
 
   joinGroup: (groupId, payload) =>
     api.post(endpoints.community.joinGroup(groupId), payload),
 
-  leaveGroup: (groupId) => api.delete(endpoints.community.joinGroup(groupId)),
+  leaveGroup: (groupId) => api.post(endpoints.community.leaveGroup(groupId), {}),
 
   inviteToGroup: (groupId, payload) =>
     api.post(endpoints.community.groupInvitations(groupId), payload),
 
+  respondToGroupInvitation: (groupId, accepted) =>
+    api.post(endpoints.community.groupInvitationResponse(groupId), { accepted }),
+
   removeGroupMember: (groupId, userId) =>
-    api.post(endpoints.community.removeGroupMember(groupId, userId)),
+    api.delete(endpoints.community.groupMember(groupId, userId)),
 
-  listGroupThreads: (groupId, params) =>
-    api.getPaged(endpoints.community.groupThreads(groupId), { params }),
+  listGroupRequests: (groupId) =>
+    api.getPaged(endpoints.community.groupRequests(groupId)),
 
-  createDiscussion: (payload) => api.post(endpoints.community.discussions, payload),
+  resolveGroupRequest: (groupId, userId, approved) =>
+    api.patch(endpoints.community.groupRequest(groupId, userId), { approved }),
+
+  setGroupMemberRole: (groupId, userId, role) =>
+    api.put(endpoints.community.groupMemberRole(groupId, userId), { role }),
+
+  listDiscussionChannels: () => api.get(endpoints.community.discussionChannels),
+
+  createDiscussionChannel: (payload) =>
+    api.post(endpoints.community.discussionChannels, payload),
+
+  listDiscussionThreads: (channelId, params) =>
+    api.get(endpoints.community.discussionChannelThreads(channelId), { params }),
+
+  createDiscussionThread: (channelId, payload) =>
+    api.post(endpoints.community.discussionChannelThreads(channelId), payload),
 
   listDiscussionMessages: (threadId, params) =>
-    api.getPaged(endpoints.community.discussionMessages(threadId), { params }),
+    api.getPaged(endpoints.community.discussionThreadMessages(threadId), { params }),
 
   createDiscussionMessage: (threadId, payload) =>
-    api.post(endpoints.community.discussionMessages(threadId), payload),
+    api.post(endpoints.community.discussionThreadMessages(threadId), payload),
 
   listAnalysis: (params) => api.getPaged(endpoints.community.analysis, { params }),
 
@@ -109,17 +161,17 @@ export const communityApi = {
   shareAnalysis: (documentId, payload) =>
     api.post(endpoints.community.shareAnalysis(documentId), payload),
 
-  publishAnalysis: (documentId, payload) =>
-    api.post(endpoints.community.publishAnalysis(documentId), payload),
+  listAnalysisVersions: (documentId) =>
+    api.get(endpoints.community.analysisVersions(documentId)),
 
   getRecommendationsPeople: (params) =>
-    api.get(endpoints.community.recommendationsPeople, { params }),
+    api.get(endpoints.community.recommendations, { params: { ...params, type: 'people' } }),
 
   getRecommendationsGroups: (params) =>
-    api.get(endpoints.community.recommendationsGroups, { params }),
+    api.get(endpoints.community.recommendations, { params: { ...params, type: 'groups' } }),
 
-  submitRecommendationFeedback: (payload) =>
-    api.post(endpoints.community.recommendationFeedback, payload),
+  submitRecommendationFeedback: ({ recommendationId, feedback }) =>
+    api.post(endpoints.community.recommendationFeedback(recommendationId), { feedback }),
 
   search: (params) => api.get(endpoints.community.search, { params }),
 
@@ -134,14 +186,17 @@ export const communityApi = {
 
   submitReport: (payload) => api.post(endpoints.community.reports, payload),
 
-  getModerationCase: (caseId) =>
-    api.get(endpoints.community.moderationCases(caseId)),
+  listModerationCases: (params) =>
+    api.getPaged(endpoints.community.moderationCases, { params }),
 
   applyModerationAction: (caseId, payload) =>
     api.post(endpoints.community.moderationActions(caseId), payload),
 
   submitModerationAppeal: (caseId, payload) =>
     api.post(endpoints.community.moderationAppeals(caseId), payload),
+
+  decideModerationAppeal: (appealId, payload) =>
+    api.post(endpoints.community.moderationAppealDecision(appealId), payload),
 
   getAudit: (params) => api.getPaged(endpoints.community.audit, { params }),
 };

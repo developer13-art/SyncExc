@@ -38,7 +38,23 @@ const WorkflowBuilder = lazy(() => import('../features/automation/WorkflowBuilde
 const Simulation = lazy(() => import('../features/simulation/Environments.jsx'));
 const CreateEnvironment = lazy(() => import('../features/simulation/CreateEnvironment.jsx'));
 const Developer = lazy(() => import('../features/developer/ApplicationsOverview.jsx'));
-const Community = lazy(() => import('../features/community/Feed.jsx'));
+const CommunityFeed = lazy(() => import('../features/community/Feed.jsx'));
+const CommunityDiscover = lazy(() => import('../features/community/Discover.jsx'));
+const CommunityMyProfile = lazy(() => import('../features/community/MyProfile.jsx'));
+const CommunityUserProfile = lazy(() => import('../features/community/UserProfile.jsx'));
+const CommunityCreatePost = lazy(() => import('../features/community/CreatePost.jsx'));
+const CommunityPostDetails = lazy(() => import('../features/community/PostDetails.jsx'));
+const CommunityGroups = lazy(() => import('../features/community/Groups.jsx'));
+const CommunityCreateGroup = lazy(() => import('../features/community/CreateGroup.jsx'));
+const CommunityGroupDetails = lazy(() => import('../features/community/GroupDetails.jsx'));
+const CommunityGroupSettings = lazy(() => import('../features/community/GroupSettings.jsx'));
+const CommunityAnalysis = lazy(() => import('../features/community/AnalysisDocuments.jsx'));
+const CommunityCreateAnalysis = lazy(() => import('../features/community/CreateAnalysis.jsx'));
+const CommunityAnalysisDetails = lazy(() => import('../features/community/AnalysisDetails.jsx'));
+const CommunityAnalysisVersions = lazy(() => import('../features/community/AnalysisVersions.jsx'));
+const CommunitySaved = lazy(() => import('../features/community/Saved.jsx'));
+const CommunityRecommendations = lazy(() => import('../features/community/Recommendations.jsx'));
+const CommunityDiscussions = lazy(() => import('../features/community/Discussions.jsx'));
 const Referral = lazy(() => import('../features/referral/ReferralDashboard.jsx'));
 const Billing = lazy(() => import('../features/billing/Plans.jsx'));
 const Support = lazy(() => import('../features/support/SupportCenter.jsx'));
@@ -110,7 +126,25 @@ export function AppRoutes() {
         <Route path="simulation/environments/new" element={<Fallback><CreateEnvironment /></Fallback>} />
         <Route path="simulation/*" element={<Fallback><Simulation /></Fallback>} />
         <Route path="developer/*" element={<Fallback><Developer /></Fallback>} />
-        <Route path="community/*" element={<Fallback><Community /></Fallback>} />
+        <Route path="community" element={<Fallback><CommunityFeed /></Fallback>} />
+        <Route path="community/feed" element={<Fallback><CommunityFeed /></Fallback>} />
+        <Route path="community/discover" element={<Fallback><CommunityDiscover /></Fallback>} />
+        <Route path="community/profile" element={<Fallback><CommunityMyProfile /></Fallback>} />
+        <Route path="community/profile/:userId" element={<Fallback><CommunityUserProfile /></Fallback>} />
+        <Route path="community/posts/new" element={<Fallback><CommunityCreatePost /></Fallback>} />
+        <Route path="community/posts/:postId" element={<Fallback><CommunityPostDetails /></Fallback>} />
+        <Route path="community/groups/new" element={<Fallback><CommunityCreateGroup /></Fallback>} />
+        <Route path="community/groups/:groupId/settings" element={<Fallback><CommunityGroupSettings /></Fallback>} />
+        <Route path="community/groups/:groupId" element={<Fallback><CommunityGroupDetails /></Fallback>} />
+        <Route path="community/groups" element={<Fallback><CommunityGroups /></Fallback>} />
+        <Route path="community/analysis/new" element={<Fallback><CommunityCreateAnalysis /></Fallback>} />
+        <Route path="community/analysis/:documentId/versions" element={<Fallback><CommunityAnalysisVersions /></Fallback>} />
+        <Route path="community/analysis/:documentId" element={<Fallback><CommunityAnalysisDetails /></Fallback>} />
+        <Route path="community/analysis" element={<Fallback><CommunityAnalysis /></Fallback>} />
+        <Route path="community/saved" element={<Fallback><CommunitySaved /></Fallback>} />
+        <Route path="community/recommendations" element={<Fallback><CommunityRecommendations /></Fallback>} />
+        <Route path="community/discussions" element={<Fallback><CommunityDiscussions /></Fallback>} />
+        <Route path="community/*" element={<Fallback><CommunityFeed /></Fallback>} />
         <Route path="referral/*" element={<Fallback><Referral /></Fallback>} />
         <Route path="billing/*" element={<Fallback><Billing /></Fallback>} />
         <Route path="support/*" element={<Fallback><Support /></Fallback>} />

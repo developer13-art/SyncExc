@@ -12,6 +12,8 @@
  * trading history as recommendation signals.
  */
 
+import { NotFoundError } from '../../lib/errors.js';
+
 const MIN_CONFIDENCE = 0.4;
 const MAX_RECOMMENDATIONS_PER_TYPE = 20;
 
@@ -34,6 +36,11 @@ export function createRecommendationService({ db, queries, ai, searchService, lo
       FROM community_profiles p
       WHERE p.user_id <> $1
         AND p.visibility = 'public'
+        AND COALESCE((
+          SELECT privacy.allow_recommendations
+          FROM community_profile_privacy privacy
+          WHERE privacy.profile_id = p.id
+        ), true) = true
         AND p.interests && $2::text[]
       LIMIT 100
       `,
@@ -45,7 +52,9 @@ export function createRecommendationService({ db, queries, ai, searchService, lo
     for (const candidate of candidates.rows) {
       const isFollowing = await queries.isFollowing(userId, candidate.user_id);
       if (isFollowing) continue;
-      const isBlocked = await queries.isBlocked(userId, candidate.user_id);
+      const isBlocked =
+        (await queries.isBlocked(userId, candidate.user_id)) ||
+        (await queries.isBlocked(candidate.user_id, userId));
       if (isBlocked) continue;
 
       filtered.push(candidate);
@@ -155,7 +164,37 @@ export function createRecommendationService({ db, queries, ai, searchService, lo
   }
 
   async function listRecommendations({ userId, type, limit }) {
-    return queries.listActiveRecommendations(userId, { type, limit });
+    const recommendations = await queries.listActiveRecommendations(userId, { type, limit });
+    const hydrated = await Promise.all(recommendations.map(async (recommendation) => {
+      const target = recommendation.target_ref || {};
+      if (recommendation.recommendation_type === 'people' && target.userId) {
+        const profile = await queries.findProfileByUserId(target.userId);
+        if (!profile || profile.visibility !== 'public') return null;
+        return {
+          id: recommendation.id,
+          userId: profile.user_id,
+          handle: profile.handle,
+          displayName: profile.display_name,
+          avatarUrl: profile.avatar_url,
+          bio: profile.biography,
+          reason: recommendation.explanation,
+          score: recommendation.score,
+        };
+      }
+      if (recommendation.recommendation_type === 'groups' && target.groupId) {
+        const group = await queries.findGroupById(target.groupId);
+        if (!group || group.type !== 'public') return null;
+        return {
+          ...group,
+          id: group.id,
+          recommendationId: recommendation.id,
+          visibility: 'public',
+          reason: recommendation.explanation,
+        };
+      }
+      return null;
+    }));
+    return hydrated.filter(Boolean);
   }
 
   async function submitFeedback({ userId, recommendationId, feedback }) {
@@ -163,6 +202,8 @@ export function createRecommendationService({ db, queries, ai, searchService, lo
     if (!validFeedback.includes(feedback)) {
       throw new Error(`Invalid feedback: ${feedback}`);
     }
+    const recommendation = await queries.findRecommendationForUser(recommendationId, userId);
+    if (!recommendation) throw new NotFoundError('Recommendation');
 
     return db.tx(async (tx) => {
       return queries.insertRecommendationFeedback(tx, {

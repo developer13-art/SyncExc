@@ -69,41 +69,90 @@ export function createAnalysisService({ db, queries, events, logger }) {
     if (!document) throw new NotFoundError('Document');
 
     // Owner always has access
-    if (document.author_id === viewerId) return document;
+    const isOwner = document.author_id === viewerId;
 
     // Check explicit permission
-    const permission = await queries.findAnalysisPermission(documentId, viewerId, workspaceId);
-    if (permission) return document;
+    const permission = isOwner
+      ? null
+      : await queries.findAnalysisPermission(documentId, viewerId, workspaceId);
 
     // Public documents
-    if (document.visibility === 'public') return document;
+    let allowed = isOwner || Boolean(permission) || document.visibility === 'public';
 
-    // Workspace-scoped
-    if (document.visibility === 'workspace_members' && document.workspace_id === workspaceId) {
-      return document;
+    if (!allowed && document.visibility === 'followers' && viewerId) {
+      allowed = await queries.isFollowing(viewerId, document.author_id);
     }
 
-    throw new AuthorizationError('No access to this document');
+    if (
+      !allowed &&
+      document.visibility === 'workspace_members' &&
+      document.workspace_id &&
+      document.workspace_id === workspaceId
+    ) {
+      allowed = true;
+    }
+
+    if (!isOwner && viewerId) {
+      const blocked =
+        (await queries.isBlocked(viewerId, document.author_id)) ||
+        (await queries.isBlocked(document.author_id, viewerId));
+      if (blocked) allowed = false;
+    }
+    if (!allowed) throw new AuthorizationError('No access to this document');
+
+    const content = await queries.findAnalysisVersionContent(
+      documentId,
+      document.current_version
+    );
+    const sources = await queries.listAnalysisSources(documentId);
+    return {
+      ...document,
+      content,
+      version: document.current_version,
+      sources: sources.map((source) => ({
+        type: source.source_type,
+        ref: source.source_ref,
+        label: source.source_ref || source.source_type,
+        provenance: source.provenance,
+      })),
+    };
   }
 
-  async function updateDocument({ userId, documentId, content, title, summary, tags }) {
+  async function listDocuments({ userId, workspaceId, query, limit, cursor }) {
+    return queries.listAnalysisDocuments({ userId, workspaceId, query, limit, cursor });
+  }
+
+  async function updateDocument({
+    userId,
+    documentId,
+    content,
+    title,
+    summary,
+    tags,
+    workspaceId = null,
+  }) {
     const document = await queries.findAnalysisDocumentById(documentId);
     if (!document) throw new NotFoundError('Document');
     if (document.author_id !== userId) {
-      const permission = await queries.findAnalysisPermission(documentId, userId, null);
+      const permission = await queries.findAnalysisPermission(documentId, userId, workspaceId);
       if (!permission || !['edit', 'manage_sharing'].includes(permission.permission)) {
         throw new AuthorizationError('Not permitted to edit');
       }
     }
 
     return db.tx(async (tx) => {
-      const nextVersion = (document.current_version || 1) + 1;
+      const hasContentUpdate = content !== undefined;
+      const nextVersion = hasContentUpdate
+        ? (document.current_version || 1) + 1
+        : document.current_version || 1;
 
-      await queries.insertAnalysisVersion(tx, {
-        documentId,
-        version: nextVersion,
-        content: content || '',
-      });
+      if (hasContentUpdate) {
+        await queries.insertAnalysisVersion(tx, {
+          documentId,
+          version: nextVersion,
+          content,
+        });
+      }
 
       const updated = await tx.query(
         `
@@ -150,6 +199,7 @@ export function createAnalysisService({ db, queries, events, logger }) {
 
   return {
     createDocument,
+    listDocuments,
     getDocument,
     updateDocument,
     grantPermission,

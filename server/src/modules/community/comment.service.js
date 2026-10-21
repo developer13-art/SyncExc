@@ -34,9 +34,7 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
       });
 
       // Update post engagement count
-      const engagement = post.engagement || { reactions: 0, comments: 0, shares: 0 };
-      engagement.comments = (engagement.comments || 0) + 1;
-      await queries.updatePost(postId, { engagement });
+      await queries.adjustPostCommentCount(postId, 1, tx);
 
       await events.publish(
         tx,
@@ -67,7 +65,33 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
   }
 
   async function listComments({ postId, limit }) {
-    return queries.listCommentsForPost(postId, { limit });
+    const rows = await queries.listCommentsForPost(postId, { limit });
+    const commentsById = new Map();
+    const roots = [];
+    for (const row of rows) {
+      commentsById.set(row.id, {
+        id: row.id,
+        postId: row.post_id,
+        parentId: row.parent_id,
+        author: {
+          id: row.author_id,
+          handle: row.author_handle,
+          displayName: row.author_name,
+          avatarUrl: row.author_avatar,
+        },
+        content: row.content,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        replies: [],
+      });
+    }
+    for (const row of rows) {
+      const comment = commentsById.get(row.id);
+      const parent = row.parent_id ? commentsById.get(row.parent_id) : null;
+      if (parent) parent.replies.push(comment);
+      else roots.push(comment);
+    }
+    return roots;
   }
 
   async function updateComment({ userId, commentId, content }) {
@@ -103,7 +127,13 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
     if (!comment) throw new NotFoundError('Comment');
     if (!asAdmin && comment.author_id !== userId) throw new AuthorizationError('Not the author');
 
-    const ok = await queries.softDeleteComment(commentId);
+    const ok = await db.tx(async (tx) => {
+      const deleted = await queries.softDeleteComment(commentId, tx);
+      if (deleted) {
+        await queries.adjustPostCommentCount(comment.post_id, -1, tx);
+      }
+      return deleted;
+    });
     return { ok };
   }
 

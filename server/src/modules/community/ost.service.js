@@ -7,6 +7,7 @@ import { NotFoundError, ConflictError, AuthorizationError } from '../../lib/erro
 export function createPostService({ db, queries, events, realtime, logger }) {
   async function createPost({
     userId,
+    workspaceId = null,
     destinationType,
     destinationRefId,
     content,
@@ -28,6 +29,12 @@ export function createPostService({ db, queries, events, realtime, logger }) {
       if (!membership || membership.state !== 'active') {
         throw new AuthorizationError('Not a member of this group', 'NOT_MEMBER');
       }
+    }
+    if (
+      destinationType === 'workspace_discussion' &&
+      (!workspaceId || destinationRefId !== workspaceId)
+    ) {
+      throw new AuthorizationError('Posts must target the active workspace', 'WORKSPACE_REQUIRED');
     }
 
     return db.tx(async (tx) => {
@@ -98,7 +105,7 @@ export function createPostService({ db, queries, events, realtime, logger }) {
         content,
         topics,
         allowComments,
-      });
+      }, tx);
 
       await queries.insertPostVersion(tx, {
         postId,
@@ -119,22 +126,81 @@ export function createPostService({ db, queries, events, realtime, logger }) {
     return { ok };
   }
 
-  async function getPost({ postId, viewerId = null }) {
+  async function getPost({ postId, viewerId = null, workspaceId = null }) {
     const post = await queries.findPostById(postId);
     if (!post) throw new NotFoundError('Post');
 
-    // Visibility check
-    if (post.visibility !== 'public' && post.author_id !== viewerId) {
+    const isAuthor = viewerId === post.author_id;
+    if (!isAuthor) {
+      if (viewerId) {
+        const blocked =
+          (await queries.isBlocked(viewerId, post.author_id)) ||
+          (await queries.isBlocked(post.author_id, viewerId));
+        if (blocked) throw new AuthorizationError('Post is not available');
+      }
+
+      const authorProfile = await queries.findProfileByUserId(post.author_id);
+      if (!authorProfile) throw new NotFoundError('Profile');
+      if (['group_members', 'workspace_members'].includes(authorProfile.visibility)) {
+        throw new AuthorizationError('Post is not available');
+      }
+      if (['followers', 'private'].includes(authorProfile.visibility)) {
+        const followsAuthor = viewerId
+          ? await queries.isFollowing(viewerId, post.author_id)
+          : false;
+        if (!followsAuthor) throw new AuthorizationError('Post is not available');
+      }
+
+      if (post.destination_type === 'group') {
+        const group = await queries.findGroupById(post.destination_ref_id);
+        const membership = viewerId
+          ? await queries.findGroupMembership(post.destination_ref_id, viewerId)
+          : null;
+        const isMember = membership?.state === 'active';
+        if (group?.type !== 'public' && !isMember) {
+          throw new AuthorizationError('Post is not available');
+        }
+        if (post.visibility === 'public' && group?.type === 'public') {
+          // Public posts in public groups can be read without membership.
+        } else if (!isMember) {
+          throw new AuthorizationError('Post is not available');
+        }
+      } else if (
+        post.destination_type === 'workspace_discussion' &&
+        post.visibility === 'workspace_members' &&
+        post.destination_ref_id === workspaceId
+      ) {
+        // The active workspace was validated by the request middleware.
+      } else if (post.destination_type !== 'public_feed') {
+        throw new AuthorizationError('Post is not available');
+      }
+
       if (post.visibility === 'followers') {
-        const isFollowing = await queries.isFollowing(viewerId, post.author_id);
-        if (!isFollowing) throw new AuthorizationError('Not permitted');
+        const isFollowing = viewerId
+          ? await queries.isFollowing(viewerId, post.author_id)
+          : false;
+        if (!isFollowing) throw new AuthorizationError('Post is not available');
+      } else if (post.visibility !== 'public' && post.visibility !== 'group_members') {
+        throw new AuthorizationError('Post is not available');
+      } else if (post.visibility === 'group_members' && post.destination_type !== 'group') {
+        throw new AuthorizationError('Post is not available');
       }
     }
 
     const attachments = await queries.listPostAttachments(postId);
     const reactionsCount = await queries.countReactions('post', postId);
+    const viewerReaction = await queries.hasReaction(viewerId, 'post', postId);
+    const bookmark = await queries.findPostBookmark(viewerId, postId);
 
-    return { post, attachments, reactionsCount };
+    return {
+      post: {
+        ...post,
+        viewer_reaction: viewerReaction ? post.viewer_reaction || 'like' : null,
+        bookmark_id: bookmark?.id || null,
+      },
+      attachments,
+      reactionsCount,
+    };
   }
 
   async function listFeed({ userId, followingOnly, limit, cursor }) {

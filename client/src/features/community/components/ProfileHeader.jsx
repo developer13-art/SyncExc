@@ -12,6 +12,7 @@ export function ProfileHeader({
   profile,
   isOwnProfile,
   isFollowing,
+  hasPendingFollowRequest,
   onFollow,
   onUnfollow,
   className,
@@ -97,6 +98,8 @@ export function ProfileHeader({
                   <Settings className="h-4 w-4" /> Edit profile
                 </Link>
               </Button>
+            ) : hasPendingFollowRequest ? (
+              <Button variant="outline" disabled>Requested</Button>
             ) : isFollowing ? (
               <Button variant="outline" onClick={onUnfollow}>
                 Unfollow

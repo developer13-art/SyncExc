@@ -5,6 +5,7 @@
 export const COMMUNITY_EMITS = [
   'community.profile_updated',
   'community.follow_created',
+  'community.follow_request_accepted',
   'community.post_published',
   'community.comment_posted',
   'community.group_created',

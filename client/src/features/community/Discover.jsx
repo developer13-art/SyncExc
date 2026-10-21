@@ -10,7 +10,10 @@ import { SearchInput } from '../../components/forms/SearchInput.jsx';
 import { PostCard } from './components/PostCard.jsx';
 import { GroupCard } from './components/GroupCard.jsx';
 import { RecommendationCard } from './components/RecommendationCard.jsx';
-import { useCommunitySearch, useCommunityGroups, useCommunityRecommendations } from '../../hooks/useCommunity.js';
+import { useCommunitySearch, useCommunityGroups } from '../../hooks/useCommunity.js';
+import { communityApi } from '../../api/index.js';
+import { useToast } from '../../hooks/useToast.js';
+import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 
@@ -22,6 +25,7 @@ const DISCOVER_TABS = [
 
 export default function Discover() {
   const dispatch = useDispatch();
+  const toast = useToast();
   const [tab, setTab] = useState('posts');
   const [query, setQuery] = useState('');
 
@@ -35,16 +39,26 @@ export default function Discover() {
     );
   }, [dispatch]);
 
-  const searchQuery = useCommunitySearch({ q: query || undefined, type: tab });
+  const searchQuery = useCommunitySearch({
+    q: query || undefined,
+    type: tab === 'people' ? 'profiles' : tab,
+  });
   const groupsQuery = useCommunityGroups({ q: query || undefined });
-  const recommendationsQuery = useCommunityRecommendations({});
-
   const isLoading =
     tab === 'posts'
       ? searchQuery.isLoading
       : tab === 'groups'
         ? groupsQuery.isLoading
-        : recommendationsQuery.isLoading;
+        : searchQuery.isLoading;
+
+  const handleFollow = async (profile) => {
+    try {
+      await communityApi.follow(profile.userId);
+      toast.success('Following');
+    } catch (error) {
+      toast.error('Follow failed', { description: getErrorMessage(error) });
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,20 +95,26 @@ export default function Discover() {
             description="We could not complete your search."
             onRetry={searchQuery.refetch}
           />
-        ) : (searchQuery.data?.items ?? []).length === 0 ? (
+        ) : (searchQuery.data?.results?.posts ?? []).length === 0 ? (
           <EmptyState
             title="No posts found"
             description="Try a different search query."
           />
         ) : (
           <div className="flex flex-col gap-3">
-            {searchQuery.data.items.map((post) => (
+            {searchQuery.data.results.posts.map((post) => (
               <PostCard key={post.id} post={post} />
             ))}
           </div>
         )
       ) : tab === 'groups' ? (
-        (groupsQuery.groups ?? []).length === 0 ? (
+        groupsQuery.isError ? (
+          <ErrorState
+            title="Group search failed"
+            description="We could not load matching groups."
+            onRetry={groupsQuery.refetch}
+          />
+        ) : (groupsQuery.groups ?? []).length === 0 ? (
           <EmptyState title="No groups found" description="Try a different search query." />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -103,19 +123,22 @@ export default function Discover() {
             ))}
           </div>
         )
+      ) : searchQuery.isError ? (
+        <ErrorState
+          title="Profile search failed"
+          description="We could not complete your search."
+          onRetry={searchQuery.refetch}
+        />
+      ) : (searchQuery.data?.results?.profiles ?? []).length === 0 ? (
+        <EmptyState title="No profiles found" description="Try a different search query." />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {(recommendationsQuery.people ?? []).map((rec) => (
+          {(searchQuery.data?.results?.profiles ?? []).map((rec) => (
             <RecommendationCard
               key={rec.userId}
-              recommendation={rec}
+              recommendation={{ ...rec, reason: 'Public community profile' }}
               actionLabel="Follow"
-              onDismiss={(r) =>
-                recommendationsQuery.submitFeedback({
-                  userId: r.userId,
-                  feedback: 'dismissed',
-                })
-              }
+              onAction={handleFollow}
             />
           ))}
         </div>
