@@ -48,8 +48,8 @@ export function createTerminalService({ db, queries, marketData, events, audit, 
     });
   }
 
-  async function listTradesForScope({ workspaceId, limit, cursor, instrument }) {
-    return queries.listTradesForScope(workspaceId, { limit, cursor, instrument });
+  async function listTradesForScope({ workspaceId, limit, cursor, accountId, instrument }) {
+    return queries.listTradesForScope(workspaceId, { limit, cursor, accountId, instrument });
   }
 
   async function listPositions({ workspaceId, accountId, instrument }) {

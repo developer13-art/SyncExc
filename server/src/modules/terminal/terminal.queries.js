@@ -180,23 +180,32 @@ export function createTerminalQueries({ db }) {
       return result.rows;
     },
 
-    async listTradesForScope(workspaceId, { limit = 50, cursor = null, instrument = null } = {}) {
-      const params = [workspaceId, limit + 1];
-      const conditions = ['workspace_id = $1'];
+    async listTradesForScope(
+      workspaceId,
+      { limit = 50, cursor = null, accountId = null, instrument = null } = {},
+    ) {
+      const params = [workspaceId];
+      const conditions = ['f.workspace_id = $1'];
+      if (accountId) {
+        params.push(accountId);
+        conditions.push(`o.account_id = $${params.length}`);
+      }
       if (instrument) {
         params.push(instrument);
-        conditions.push(`instrument = $${params.length}`);
+        conditions.push(`f.instrument = $${params.length}`);
       }
       if (cursor) {
         params.push(cursor);
-        conditions.push(`executed_at < $${params.length}`);
+        conditions.push(`f.executed_at < $${params.length}`);
       }
+      params.push(limit + 1);
       const result = await db.query(
         `
-        SELECT * FROM trading_fills
+        SELECT f.* FROM trading_fills f
+        JOIN trading_orders o ON o.id = f.order_id
         WHERE ${conditions.join(' AND ')}
-        ORDER BY executed_at DESC
-        LIMIT $2
+        ORDER BY f.executed_at DESC
+        LIMIT $${params.length}
         `,
         params
       );

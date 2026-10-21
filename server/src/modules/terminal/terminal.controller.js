@@ -114,6 +114,7 @@ export function createTerminalController({ service, orderSubmissionService, port
         workspaceId: req.workspace.id,
         limit: Number(req.query.limit) || 50,
         cursor: req.query.cursor || null,
+        accountId: req.query.accountId || null,
         instrument: req.query.instrument || null,
       });
       return paginated(res, rows.map(serializeFill), {

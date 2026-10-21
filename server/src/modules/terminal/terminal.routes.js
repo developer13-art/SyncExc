@@ -16,6 +16,11 @@ const OrdersQuerySchema = PaginationSchema.keys({
   accountId: UuidSchema.optional(),
 });
 
+const TradesQuerySchema = PaginationSchema.keys({
+  accountId: UuidSchema.optional(),
+  instrument: Joi.string().max(48).optional(),
+});
+
 const MarketDataParamsSchema = Joi.object({
   exchangeCode: Joi.string().valid('binance', 'bybit', 'bitget', 'okx').required(),
   symbol: Joi.string().pattern(/^[A-Za-z0-9._-]{3,48}$/).required(),
@@ -132,7 +137,7 @@ export function createTerminalRoutes({ service, orderSubmissionService, portfoli
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.requirePermission('trading.monitor'),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(TradesQuerySchema),
     middleware.asyncHandler(controller.listTrades)
   );
 
