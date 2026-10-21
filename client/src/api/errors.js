@@ -89,7 +89,12 @@ function extractServerError(data) {
     message: error.message ?? error.error ?? null,
     code: error.code ?? null,
     details: error.details ?? error.errors ?? null,
-    correlationId: error.correlationId ?? error.correlation_id ?? data.correlationId ?? null,
+    correlationId:
+      error.correlationId ??
+      error.correlation_id ??
+      data.correlationId ??
+      data.meta?.requestId ??
+      null,
   };
 }
 
@@ -234,7 +239,9 @@ export function isRateLimitError(error) {
 
 export function getErrorMessage(error) {
   if (error instanceof ApiError) {
-    return error.message;
+    return error.correlationId
+      ? `${error.message} (Reference: ${error.correlationId})`
+      : error.message;
   }
   if (error instanceof Error) {
     return error.message;

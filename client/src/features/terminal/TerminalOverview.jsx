@@ -454,6 +454,7 @@ export default function TerminalOverview() {
 
                   <PriceChart
                     candles={marketData?.candles ?? []}
+                    currentPrice={marketData?.overview?.lastPrice}
                     indicators={indicators}
                     levels={levels}
                     isLoading={marketDataQuery.isLoading}

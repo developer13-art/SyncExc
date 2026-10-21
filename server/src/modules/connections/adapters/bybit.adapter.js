@@ -138,6 +138,9 @@ export function createBybitAdapter({ config, logger }) {
     },
 
     async placeOrder({ apiKey, apiSecret, accountType = 'unified', environment, order }) {
+      if (!['market', 'limit'].includes(order.type)) {
+        throw new Error(`Bybit does not support ${order.type} orders through this adapter`);
+      }
       const path = '/v5/order/create';
       const body = {
         category: order.marketType === 'spot' ? 'spot' : 'linear',
@@ -149,7 +152,11 @@ export function createBybitAdapter({ config, logger }) {
       if (order.price) body.price = order.price;
       if (order.clientOrderId) body.orderLinkId = order.clientOrderId;
       if (order.reduceOnly) body.reduceOnly = true;
-      if (order.timeInForce) body.timeInForce = order.timeInForce;
+      if (order.type === 'market') {
+        body.timeInForce = 'IOC';
+      } else if (order.timeInForce) {
+        body.timeInForce = order.timeInForce;
+      }
 
       const headers = signedHeaders({ apiKey, apiSecret, params: body, method: 'POST' });
       const data = await this.fetchSigned({

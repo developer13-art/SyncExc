@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ComposedChart,
   XAxis,
@@ -13,6 +13,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 
+import { Button } from '../../../components/ui/Button.jsx';
 import { ChartContainer } from '../../../components/charts/ChartContainer.jsx';
 import { formatPrice } from '../../../lib/formatters/currency.formatter.js';
 import { formatQuantity } from '../../../lib/formatters/number.formatter.js';
@@ -66,9 +67,11 @@ export function PriceChart({
   isLoading,
   error,
   onRetry,
+  currentPrice,
   height = 320,
   className,
 }) {
+  const [range, setRange] = useState(null);
   const data = useMemo(
     () => {
       const rows = candles.map((c, i) => ({
@@ -81,6 +84,17 @@ export function PriceChart({
         volume: Number(c.volume ?? 0),
         range: [Number(c.low), Number(c.high)],
       }));
+      const livePrice = Number(currentPrice);
+      if (rows.length && Number.isFinite(livePrice) && livePrice > 0) {
+        const last = rows.length - 1;
+        rows[last] = {
+          ...rows[last],
+          close: livePrice,
+          high: Math.max(rows[last].high, livePrice),
+          low: Math.min(rows[last].low, livePrice),
+          range: [Math.min(rows[last].low, livePrice), Math.max(rows[last].high, livePrice)],
+        };
+      }
       const closes = rows.map((candle) => candle.close);
       return rows.map((candle, index) => {
         const middle = movingAverage(closes, index, 20);
@@ -98,11 +112,69 @@ export function PriceChart({
         };
       });
     },
-    [candles],
+    [candles, currentPrice],
   );
+  const endIndex = Math.min(range?.endIndex ?? data.length - 1, data.length - 1);
+  const startIndex = Math.min(
+    endIndex,
+    Math.max(range?.startIndex ?? Math.max(0, endIndex - Math.min(59, data.length - 1)), 0),
+  );
+  const visibleCount = Math.max(endIndex - startIndex + 1, 1);
+  const shiftRange = (direction) => {
+    const nextStart = Math.min(
+      Math.max(startIndex + direction * Math.max(1, Math.floor(visibleCount / 5)), 0),
+      Math.max(data.length - visibleCount, 0),
+    );
+    setRange({ startIndex: nextStart, endIndex: nextStart + visibleCount - 1 });
+  };
+  const zoomRange = (direction) => {
+    const nextCount = Math.min(
+      Math.max(visibleCount + direction * 10, 20),
+      data.length,
+    );
+    const nextEnd = Math.min(Math.max(endIndex, nextCount - 1), data.length - 1);
+    setRange({
+      startIndex: Math.max(0, nextEnd - nextCount + 1),
+      endIndex: nextEnd,
+    });
+  };
+  const handleChartWheel = (event) => {
+    if (data.length < 2) return;
+    event.preventDefault();
+    if (event.shiftKey) {
+      zoomRange(event.deltaY > 0 ? 1 : -1);
+      return;
+    }
+    shiftRange(event.deltaY > 0 || event.deltaX > 0 ? -1 : 1);
+  };
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
+      {data.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-2">
+          <p className="text-2xs text-muted-foreground">
+            {Number.isFinite(Number(currentPrice)) && Number(currentPrice) > 0
+              ? `Live price ${formatPrice(Number(currentPrice), { minimumPrecision: 2, maximumPrecision: 8 })}`
+              : 'Latest candle close'}
+            {' · '}Candles {startIndex + 1}–{endIndex + 1} of {data.length}
+            {' · '}Scroll to pan, Shift+scroll to zoom
+          </p>
+          <div className="flex items-center gap-1">
+            <Button type="button" size="sm" variant="ghost" onClick={() => shiftRange(-1)} aria-label="Scroll chart to older candles">←</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => zoomRange(-1)} aria-label="Zoom chart in">−</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => zoomRange(1)} aria-label="Zoom chart out">+</Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setRange({ startIndex: Math.max(0, data.length - 60), endIndex: data.length - 1 })}
+            >
+              Latest
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => shiftRange(1)} aria-label="Scroll chart to newer candles">→</Button>
+          </div>
+        </div>
+      ) : null}
       <ChartContainer
         title={null}
         subtitle={null}
@@ -115,8 +187,9 @@ export function PriceChart({
         height={height}
         className="border-0 bg-transparent p-0 shadow-none"
       >
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+        <div onWheel={handleChartWheel} className="h-full w-full" aria-label="Scrollable price chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
             <XAxis dataKey="x" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
             <YAxis
@@ -160,6 +233,14 @@ export function PriceChart({
                 label={{ value: level.label || 'Level', fill: 'hsl(var(--warning))', fontSize: 10 }}
               />
             ))}
+            {Number.isFinite(Number(currentPrice)) && Number(currentPrice) > 0 ? (
+              <ReferenceLine
+                y={Number(currentPrice)}
+                stroke="hsl(var(--success))"
+                strokeDasharray="4 3"
+                label={{ value: 'Live', fill: 'hsl(var(--success))', fontSize: 10, position: 'right' }}
+              />
+            ) : null}
             <Bar dataKey="range" shape={<CandleShape />} isAnimationActive={false} />
             {indicators.includes('sma20') && (
               <Line type="monotone" dataKey="sma20" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} connectNulls />
@@ -173,9 +254,22 @@ export function PriceChart({
                 <Line type="monotone" dataKey="bollingerLower" stroke="hsl(var(--muted-foreground))" strokeWidth={1} strokeDasharray="4 4" dot={false} connectNulls />
               </>
             )}
-            <Brush dataKey="x" height={18} stroke="hsl(var(--primary))" travellerWidth={8} />
-          </ComposedChart>
-        </ResponsiveContainer>
+            <Brush
+              dataKey="x"
+              height={18}
+              stroke="hsl(var(--primary))"
+              travellerWidth={8}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              onChange={(nextRange) => {
+                if (nextRange?.startIndex !== undefined && nextRange?.endIndex !== undefined) {
+                  setRange({ startIndex: nextRange.startIndex, endIndex: nextRange.endIndex });
+                }
+              }}
+            />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       </ChartContainer>
       {data.length > 0 && (
         <>

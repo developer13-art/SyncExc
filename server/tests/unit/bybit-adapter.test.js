@@ -141,6 +141,48 @@ test('signs Bybit GET requests using the exact URL query string', async () => {
   }
 });
 
+test('uses IOC for Bybit market orders and preserves limit time-in-force', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestBodies = [];
+  globalThis.fetch = async (_url, options) => {
+    requestBodies.push(JSON.parse(options.body));
+    return {
+      ok: true,
+      text: async () =>
+        JSON.stringify({ retCode: 0, result: { orderId: 'order-id', orderLinkId: 'client-id' } }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    const credentials = {
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'testnet',
+    };
+    const baseOrder = {
+      instrument: 'BTCUSDT',
+      marketType: 'futures',
+      side: 'buy',
+      quantity: '0.01',
+    };
+
+    await adapter.placeOrder({ ...credentials, order: { ...baseOrder, type: 'market', timeInForce: 'GTC' } });
+    await adapter.placeOrder({
+      ...credentials,
+      order: { ...baseOrder, type: 'limit', price: '50000', timeInForce: 'GTC' },
+    });
+
+    assert.equal(requestBodies[0].orderType, 'Market');
+    assert.equal(requestBodies[0].timeInForce, 'IOC');
+    assert.equal(requestBodies[1].orderType, 'Limit');
+    assert.equal(requestBodies[1].timeInForce, 'GTC');
+    assert.equal(requestBodies[1].price, '50000');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('returns Bybit wallet equity with the account balances', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
