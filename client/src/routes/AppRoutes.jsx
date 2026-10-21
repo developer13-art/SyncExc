@@ -17,6 +17,7 @@ const Sync = lazy(() => import('../features/synchronization/SyncOverview.jsx'));
 const CreateSyncGroup = lazy(() => import('../features/synchronization/CreateSyncGroup.jsx'));
 const Risk = lazy(() => import('../features/risk/RiskOverview.jsx'));
 const Sources = lazy(() => import('../features/sources/SourcesOverview.jsx'));
+const SourceDetails = lazy(() => import('../features/sources/SourceDetails.jsx'));
 const AddSource = lazy(() => import('../features/sources/AddSource.jsx'));
 const Signals = lazy(() => import('../features/signals/SignalsOverview.jsx'));
 const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.jsx'));
@@ -88,6 +89,7 @@ export function AppRoutes() {
         <Route path="synchronization/*" element={<Fallback><Sync /></Fallback>} />
         <Route path="risk/*" element={<Fallback><Risk /></Fallback>} />
         <Route path="sources/new" element={<Fallback><AddSource /></Fallback>} />
+        <Route path="sources/:sourceId" element={<Fallback><SourceDetails /></Fallback>} />
         <Route path="sources/*" element={<Fallback><Sources /></Fallback>} />
         <Route path="signals/*" element={<Fallback><Signals /></Fallback>} />
         <Route path="marketplace/profile" element={<Fallback><TraderProfile /></Fallback>} />
