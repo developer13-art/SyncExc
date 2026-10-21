@@ -290,14 +290,16 @@ export default function TerminalOverview() {
     );
   }
 
+  const change24h = Number(marketData?.overview?.priceChangePercent);
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2">
         <AccountSelector
           accounts={accounts}
           value={selectedAccountId}
           onChange={setSelectedAccountId}
-          className="w-full max-w-xs"
+          className="h-9 w-full min-w-[220px] border-0 bg-muted/40 sm:w-auto"
         />
         <InstrumentSelector
           instruments={instruments}
@@ -306,232 +308,282 @@ export default function TerminalOverview() {
           isLoading={marketsQuery.isLoading}
           isError={marketsQuery.isError}
           onRetry={marketsQuery.refetch}
-          className="w-full max-w-xs"
+          className="h-9 w-full min-w-[220px] border-0 bg-muted/40 sm:w-auto"
         />
+        <div className="ml-auto flex items-center gap-2 px-2 text-xs">
+          <span
+            className={`h-2 w-2 rounded-full ${
+              marketData?.freshness?.state === 'stale' ? 'bg-warning' : 'bg-success'
+            }`}
+          />
+          <span className="text-muted-foreground">
+            {marketDataQuery.isFetching && marketData ? 'Updating market data' : 'Market data'}
+          </span>
+          {marketData?.freshness?.state === 'stale' && (
+            <span className="rounded-full bg-warning/15 px-2 py-1 text-warning">Stale</span>
+          )}
+          {marketDataQuery.isError && (
+            <span className="text-destructive">Unavailable</span>
+          )}
+        </div>
       </div>
 
-      <Tabs defaultValue="trade">
-        <TabsList>
-          <TabsTrigger value="trade">Trade</TabsTrigger>
-          <TabsTrigger value="orders">Open Orders</TabsTrigger>
-          <TabsTrigger value="positions">Positions</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
-          <TabsTrigger value="executions">Executions</TabsTrigger>
-        </TabsList>
+      <Card className="overflow-hidden">
+        <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 p-4">
+          <div className="min-w-[180px]">
+            <p className="text-xs text-muted-foreground">
+              {selectedInstrument?.baseAsset ?? 'Market'} / {selectedInstrument?.quoteAsset ?? ''}
+              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-2xs uppercase">
+                {selectedInstrument?.marketType ?? 'spot'}
+              </span>
+            </p>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+              <span className="text-2xl font-semibold tracking-tight text-foreground">
+                {formatMarketValue(marketData?.overview?.lastPrice, 8)}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {selectedInstrument?.quoteAsset ?? ''}
+              </span>
+            </div>
+          </div>
+          <div className={`text-sm font-semibold ${change24h >= 0 ? 'text-success' : 'text-destructive'}`}>
+            {Number.isFinite(change24h) ? `${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%` : '—'}
+            <p className="mt-1 text-2xs font-normal text-muted-foreground">24h change</p>
+          </div>
+          {[
+            ['24h high', marketData?.overview?.highPrice24h],
+            ['24h low', marketData?.overview?.lowPrice24h],
+            ['24h volume', marketData?.overview?.quoteVolume24h],
+            ['Mark price', marketData?.overview?.markPrice],
+            ['Funding rate', marketData?.overview?.fundingRate == null
+              ? null
+              : `${(Number(marketData.overview.fundingRate) * 100).toFixed(4)}%`],
+          ].map(([label, value]) => (
+            <div key={label} className="min-w-[100px] text-xs">
+              <p className="text-2xs text-muted-foreground">{label}</p>
+              <p className="mt-1 font-medium text-foreground">
+                {typeof value === 'string' ? value : formatMarketValue(value, 6)}
+              </p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
-        <TabsContent value="trade">
-          <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-            <div className="flex flex-col gap-5">
-              <Card>
-                <CardContent className="space-y-3 p-0">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-medium text-foreground">
-                          {activeConnection?.exchangeName ?? activeConnection?.exchange ?? 'Exchange'} market data
-                        </span>
-                        <span className="text-muted-foreground">
-                          {marketDataQuery.isFetching && marketData ? 'Refreshing…' : ''}
-                        </span>
-                        {marketData?.freshness?.state === 'stale' && (
-                          <span className="rounded bg-warning/15 px-2 py-0.5 text-warning">
-                            Stale data
-                          </span>
-                        )}
-                        {marketDataQuery.isError && (
-                          <span className="text-destructive">Market data unavailable</span>
-                        )}
-                      </div>
-                      <p className="mt-1 truncate text-2xs text-muted-foreground">
-                        {marketData?.source ?? 'No exchange data loaded'}
-                        {marketData?.retrievedAt
-                          ? ` · Retrieved ${new Date(marketData.retrievedAt).toLocaleTimeString()}`
-                          : ''}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1" aria-label="Chart timeframe">
-                      {TIMEFRAMES.map((option) => (
-                        <Button
-                          key={option}
-                          type="button"
-                          size="sm"
-                          variant={timeframe === option ? 'secondary' : 'ghost'}
-                          aria-pressed={timeframe === option}
-                          onClick={() => setTimeframe(option)}
-                        >
-                          {option}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-4">
-                    <div className="flex flex-wrap items-center gap-2" aria-label="Technical indicators">
-                      {[
-                        ['sma20', 'SMA 20'],
-                        ['sma50', 'SMA 50'],
-                        ['bollinger', 'Bollinger'],
-                      ].map(([key, label]) => (
-                        <Button
-                          key={key}
-                          type="button"
-                          size="sm"
-                          variant={indicators.includes(key) ? 'secondary' : 'ghost'}
-                          aria-pressed={indicators.includes(key)}
-                          onClick={() => toggleIndicator(key)}
-                        >
-                          {label}
-                        </Button>
-                      ))}
-                    </div>
-                    <form
-                      className="flex items-center gap-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const price = Number(levelInput);
-                        if (Number.isFinite(price) && price > 0) {
-                          setLevels((current) => [
-                            ...current,
-                            { id: `${Date.now()}-${current.length}`, price, label: 'User level' },
-                          ]);
-                          setLevelInput('');
-                        }
-                      }}
-                    >
-                      <label className="sr-only" htmlFor="terminal-price-level">Horizontal price level</label>
-                      <input
-                        id="terminal-price-level"
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={levelInput}
-                        onChange={(event) => setLevelInput(event.target.value)}
-                        placeholder="Price level"
-                        className="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
-                      />
-                      <Button type="submit" size="sm" variant="outline">Add level</Button>
-                    </form>
-                  </div>
-                  {levels.length > 0 && (
-                    <div className="flex flex-wrap gap-2 px-4 text-xs">
-                      {levels.map((level) => (
-                        <button
-                          key={level.id}
-                          type="button"
-                          onClick={() => setLevels((current) => current.filter((item) => item.id !== level.id))}
-                          className="rounded border border-warning/40 px-2 py-1 text-warning hover:bg-warning/10"
-                          aria-label={`Remove price level ${level.price}`}
-                          title="Remove price level"
-                        >
-                          {formatMarketValue(level.price)} ×
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3 px-4 text-xs sm:grid-cols-4 xl:grid-cols-7">
-                    {[
-                      ['Last', marketData?.overview?.lastPrice],
-                      ['Mark', marketData?.overview?.markPrice],
-                      ['Index', marketData?.overview?.indexPrice],
-                      ['Funding', marketData?.overview?.fundingRate == null
-                        ? null
-                        : `${(Number(marketData.overview.fundingRate) * 100).toFixed(4)}%`],
-                      ['Open interest', marketData?.overview?.openInterest],
-                      ['24h change', marketData?.overview?.priceChangePercent == null
-                        ? null
-                        : `${Number(marketData.overview.priceChangePercent).toFixed(2)}%`],
-                      ['24h volume', marketData?.overview?.quoteVolume24h],
-                    ].map(([label, value]) => (
-                      <div key={label} className="min-w-0">
-                        <p className="text-2xs text-muted-foreground">{label}</p>
-                        <p className="truncate font-medium text-foreground">
-                          {typeof value === 'string' ? value : formatMarketValue(value, 4)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <PriceChart
-                    candles={marketData?.candles ?? []}
-                    currentPrice={marketData?.overview?.lastPrice}
-                    indicators={indicators}
-                    levels={levels}
-                    isLoading={marketDataQuery.isLoading}
-                    error={marketDataQuery.isError ? 'Exchange market data is temporarily unavailable.' : undefined}
-                    onRetry={marketDataQuery.refetch}
-                    className="border-0 shadow-none"
-                  />
-                </CardContent>
-              </Card>
-
-              <div className="grid gap-5 md:grid-cols-2">
-                <Card>
-                  <CardContent className="p-0">
-                    <OrderBook
-                      bids={marketData?.orderBook?.bids ?? []}
-                      asks={marketData?.orderBook?.asks ?? []}
-                      baseAsset={selectedInstrument?.baseAsset}
-                      quoteAsset={selectedInstrument?.quoteAsset}
-                    />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-0">
-                    <RecentTrades
-                      trades={marketData?.recentTrades ?? []}
-                      baseAsset={selectedInstrument?.baseAsset}
-                      quoteAsset={selectedInstrument?.quoteAsset}
-                    />
-                  </CardContent>
-                </Card>
+      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_250px]">
+          <Card className="min-w-0 overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {selectedInstrument?.symbol ?? 'Price chart'}
+                </p>
+                <p className="truncate text-2xs text-muted-foreground">
+                  {marketData?.source ?? activeConnection?.exchangeName ?? 'Exchange market data'}
+                  {marketData?.retrievedAt
+                    ? ` · ${new Date(marketData.retrievedAt).toLocaleTimeString()}`
+                    : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-0.5" aria-label="Chart timeframe">
+                {TIMEFRAMES.map((option) => (
+                  <Button
+                    key={option}
+                    type="button"
+                    size="sm"
+                    variant={timeframe === option ? 'secondary' : 'ghost'}
+                    aria-pressed={timeframe === option}
+                    onClick={() => setTimeframe(option)}
+                    className="h-7 px-2 text-xs"
+                  >
+                    {option}
+                  </Button>
+                ))}
               </div>
             </div>
 
-            <Card>
-              <CardContent className="p-5">
-                {selectedInstrument && activeConnection ? (
-                  <OrderForm
-                    instrument={selectedInstrument}
-                    account={accounts.find((a) => a.id === selectedAccountId)}
-                    marketType={selectedInstrument.marketType ?? 'spot'}
-                    defaultOrderType={tradingPreferences?.defaultOrderType ?? 'limit'}
-                    availableBalance={
-                      connectionDetailQuery.balances?.find(
-                        (b) => b.asset === selectedInstrument.baseAsset,
-                      )?.available ?? 0
-                    }
-                    availableMargin={
-                      connectionDetailQuery.balances?.find(
-                        (b) => b.asset === selectedInstrument.quoteAsset,
-                      )?.available ?? 0
-                    }
-                    maxLeverage={1}
-                    onSubmit={handleSubmitOrder}
-                  />
-                ) : (
-                  <EmptyState
-                    title="Select an instrument"
-                    description="Choose an account and instrument to begin trading."
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+              <div className="flex flex-wrap items-center gap-1" aria-label="Technical indicators">
+                {[
+                  ['sma20', 'SMA 20'],
+                  ['sma50', 'SMA 50'],
+                  ['bollinger', 'Bollinger'],
+                ].map(([key, label]) => (
+                  <Button
+                    key={key}
+                    type="button"
                     size="sm"
-                    className="border-0 bg-transparent py-6"
-                  />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+                    variant={indicators.includes(key) ? 'secondary' : 'ghost'}
+                    aria-pressed={indicators.includes(key)}
+                    onClick={() => toggleIndicator(key)}
+                    className="h-7 px-2 text-2xs"
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <form
+                className="flex items-center gap-1"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const price = Number(levelInput);
+                  if (Number.isFinite(price) && price > 0) {
+                    setLevels((current) => [
+                      ...current,
+                      { id: `${Date.now()}-${current.length}`, price, label: 'User level' },
+                    ]);
+                    setLevelInput('');
+                  }
+                }}
+              >
+                <label className="sr-only" htmlFor="terminal-price-level">Horizontal price level</label>
+                <input
+                  id="terminal-price-level"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={levelInput}
+                  onChange={(event) => setLevelInput(event.target.value)}
+                  placeholder="Price level"
+                  className="h-7 w-24 rounded-md border border-input bg-background px-2 text-2xs"
+                />
+                <Button type="submit" size="sm" variant="outline" className="h-7 px-2 text-2xs">
+                  Add
+                </Button>
+              </form>
+            </div>
+            {levels.length > 0 && (
+              <div className="flex flex-wrap gap-2 border-b border-border px-3 py-2 text-xs">
+                {levels.map((level) => (
+                  <button
+                    key={level.id}
+                    type="button"
+                    onClick={() => setLevels((current) => current.filter((item) => item.id !== level.id))}
+                    className="rounded border border-warning/40 px-2 py-1 text-warning hover:bg-warning/10"
+                    aria-label={`Remove price level ${level.price}`}
+                    title="Remove price level"
+                  >
+                    {formatMarketValue(level.price)} ×
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="p-2">
+              <PriceChart
+                candles={marketData?.candles ?? []}
+                currentPrice={marketData?.overview?.lastPrice}
+                indicators={indicators}
+                levels={levels}
+                isLoading={marketDataQuery.isLoading}
+                error={marketDataQuery.isError ? 'Exchange market data is temporarily unavailable.' : undefined}
+                onRetry={marketDataQuery.refetch}
+                height={430}
+                className="border-0 shadow-none"
+              />
+            </div>
+          </Card>
 
-        <TabsContent value="orders">
-          <OpenOrders workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
-        </TabsContent>
-        <TabsContent value="positions">
+          <Card className="min-w-0 overflow-hidden">
+            <div className="border-b border-border px-3 py-3">
+              <p className="text-sm font-semibold text-foreground">Order book</p>
+              <p className="text-2xs text-muted-foreground">
+                {selectedInstrument?.quoteAsset ?? 'Quote'} / {selectedInstrument?.baseAsset ?? 'Base'}
+              </p>
+            </div>
+            <div className="max-h-[430px] overflow-y-auto">
+              <OrderBook
+                bids={marketData?.orderBook?.bids ?? []}
+                asks={marketData?.orderBook?.asks ?? []}
+                baseAsset={selectedInstrument?.baseAsset}
+                quoteAsset={selectedInstrument?.quoteAsset}
+              />
+            </div>
+            <div className="border-t border-border px-3 py-3">
+              <p className="mb-2 text-sm font-semibold text-foreground">Recent trades</p>
+              <div className="max-h-48 overflow-y-auto">
+                <RecentTrades
+                  trades={marketData?.recentTrades ?? []}
+                  baseAsset={selectedInstrument?.baseAsset}
+                  quoteAsset={selectedInstrument?.quoteAsset}
+                />
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <Card className="min-w-0 overflow-hidden">
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-sm font-semibold text-foreground">Place order</p>
+            <p className="text-2xs text-muted-foreground">
+              {activeConnection?.exchangeName ?? activeConnection?.exchange ?? 'Exchange'}
+              {' · '}
+              {accounts.find((account) => account.id === selectedAccountId)?.environment ?? 'Account'}
+            </p>
+          </div>
+          <CardContent className="p-4">
+            {selectedInstrument && activeConnection ? (
+              <OrderForm
+                instrument={selectedInstrument}
+                account={accounts.find((a) => a.id === selectedAccountId)}
+                marketType={selectedInstrument.marketType ?? 'spot'}
+                defaultOrderType={tradingPreferences?.defaultOrderType ?? 'limit'}
+                availableBalance={
+                  connectionDetailQuery.balances?.find(
+                    (b) => b.asset === selectedInstrument.baseAsset,
+                  )?.available ?? 0
+                }
+                availableMargin={
+                  connectionDetailQuery.balances?.find(
+                    (b) => b.asset === selectedInstrument.quoteAsset,
+                  )?.available ?? 0
+                }
+                maxLeverage={1}
+                onSubmit={handleSubmitOrder}
+              />
+            ) : (
+              <EmptyState
+                title="Select an instrument"
+                description="Choose an account and instrument to begin trading."
+                size="sm"
+                className="border-0 bg-transparent py-6"
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="positions">
+        <div className="overflow-x-auto border-b border-border">
+          <TabsList className="h-10 min-w-max rounded-none bg-transparent p-0">
+            <TabsTrigger value="positions" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+              Positions
+            </TabsTrigger>
+            <TabsTrigger value="orders" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+              Open Orders
+            </TabsTrigger>
+            <TabsTrigger value="history" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+              Order History
+            </TabsTrigger>
+            <TabsTrigger value="trades" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+              Trade History
+            </TabsTrigger>
+            <TabsTrigger value="executions" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none">
+              Executions
+            </TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="positions" className="mt-3">
           <Positions workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
         </TabsContent>
-        <TabsContent value="history">
+        <TabsContent value="orders" className="mt-3">
+          <OpenOrders workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
+        </TabsContent>
+        <TabsContent value="history" className="mt-3">
+          <OpenOrders workspaceId={activeWorkspaceId} accountId={selectedAccountId} status="all" />
+        </TabsContent>
+        <TabsContent value="trades" className="mt-3">
           <TradeHistory workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
         </TabsContent>
-        <TabsContent value="executions">
+        <TabsContent value="executions" className="mt-3">
           <ExecutionStatus workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
         </TabsContent>
       </Tabs>

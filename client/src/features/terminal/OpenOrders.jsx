@@ -15,13 +15,13 @@ import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { cn } from '../../lib/utils/cn.util.js';
 
-export function OpenOrders({ workspaceId, accountId }) {
+export function OpenOrders({ workspaceId, accountId, status = 'open' }) {
   const toast = useToast();
   const [cancelTarget, setCancelTarget] = useState(null);
 
   const ordersQuery = useTerminalOrders(workspaceId, {
     accountId: accountId ?? undefined,
-    status: 'open',
+    ...(status === 'open' ? { status } : {}),
   });
 
   const orders = ordersQuery.data?.items ?? [];
@@ -124,14 +124,16 @@ export function OpenOrders({ workspaceId, accountId }) {
           <Button variant="ghost" size="sm" asChild>
             <Link to={ROUTES.app.terminal.order(row.id)}>View</Link>
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setCancelTarget(row)}
-            disabled={row.status === 'filled' || row.status === 'cancelled'}
-          >
-            Cancel
-          </Button>
+          {status === 'open' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCancelTarget(row)}
+              disabled={row.status === 'filled' || row.status === 'cancelled'}
+            >
+              Cancel
+            </Button>
+          )}
         </div>
       ),
     },
@@ -154,8 +156,12 @@ export function OpenOrders({ workspaceId, accountId }) {
         columns={columns}
         rows={orders}
         isLoading={ordersQuery.isLoading}
-        emptyTitle="No open orders"
-        emptyDescription="Orders you submit will appear here while open."
+        emptyTitle={status === 'open' ? 'No open orders' : 'No order history'}
+        emptyDescription={
+          status === 'open'
+            ? 'Orders you submit will appear here while open.'
+            : 'Orders for this account will appear here.'
+        }
       />
 
       <ConfirmDialog
