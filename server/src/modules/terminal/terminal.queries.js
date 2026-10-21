@@ -264,6 +264,25 @@ export function createTerminalQueries({ db }) {
       return result.rows[0];
     },
 
+    async clearMissingPositions(client, accountId, positions) {
+      const instruments = positions.map((position) => position.instrument);
+      const sides = positions.map((position) => position.side);
+      await client.query(
+        `
+        UPDATE trading_positions
+        SET quantity = 0, updated_at = now()
+        WHERE account_id = $1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM unnest($2::text[], $3::text[]) AS live_position(instrument, side)
+            WHERE live_position.instrument = trading_positions.instrument
+              AND live_position.side = trading_positions.side
+          )
+        `,
+        [accountId, instruments, sides],
+      );
+    },
+
     async listPositions(workspaceId, { accountId = null, instrument = null } = {}) {
       const params = [workspaceId];
       const conditions = ['workspace_id = $1', 'quantity > 0'];

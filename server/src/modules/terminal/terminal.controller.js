@@ -109,6 +109,14 @@ export function createTerminalController({ service, orderSubmissionService, port
       return success(res, positions.map(serializePosition));
     },
 
+    async syncPositions(req, res) {
+      const positions = await service.syncAccountState({
+        workspaceId: req.workspace.id,
+        accountId: req.body.accountId,
+      });
+      return success(res, positions.map(serializePosition));
+    },
+
     async listTrades(req, res) {
       const { rows, nextCursor } = await service.listTradesForScope({
         workspaceId: req.workspace.id,

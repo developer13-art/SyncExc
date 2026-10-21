@@ -18,7 +18,16 @@ const OPEN_ORDER_STATUSES = [
   ORDER_STATUS.RECONCILIATION_REQUIRED,
 ];
 
-export function createTerminalService({ db, queries, marketData, events, audit, logger }) {
+export function createTerminalService({
+  db,
+  queries,
+  marketData,
+  connections,
+  executionService,
+  events,
+  audit,
+  logger,
+}) {
   async function getMarketData(params) {
     return marketData.getMarketData(params);
   }
@@ -54,6 +63,86 @@ export function createTerminalService({ db, queries, marketData, events, audit, 
 
   async function listPositions({ workspaceId, accountId, instrument }) {
     return queries.listPositions(workspaceId, { accountId, instrument });
+  }
+
+  async function syncAccountState({ workspaceId, accountId }) {
+    const account = await connections.requireAccountAccess({
+      accountId,
+      workspaceId,
+      operation: 'view_balances',
+    });
+    if (account.status !== 'active') {
+      throw new ConflictError('The selected account is not active', 'ACCOUNT_NOT_ACTIVE');
+    }
+
+    const connection = await connections.getConnection(account.connection_id);
+    if (!connection || connection.status !== 'active') {
+      throw new ConflictError('The selected connection is not active', 'CONNECTION_NOT_ACTIVE');
+    }
+    const adapter = await connections.getAdapter(connection.exchange_code);
+    const credentials = await connections.loadCredentials(connection.id);
+    const adapterContext = {
+      ...credentials,
+      accountType: account.account_type,
+      environment: connection.environment,
+    };
+    if (typeof adapter.fetchPositions !== 'function') {
+      throw new Error(`The ${connection.exchange_code} adapter does not support position syncing`);
+    }
+    const positions = await adapter.fetchPositions(adapterContext);
+    if (!Array.isArray(positions)) {
+      throw new Error(`The ${connection.exchange_code} adapter returned invalid position data`);
+    }
+
+    await db.tx(async (tx) => {
+      for (const position of positions) {
+        const stored = await queries.upsertPosition(tx, {
+          workspaceId,
+          connectionId: connection.id,
+          accountId,
+          instrument: position.instrument,
+          side: position.side,
+          quantity: position.quantity,
+          entryPrice: position.entryPrice,
+          markPrice: position.markPrice,
+          unrealizedPnl: position.unrealizedPnl,
+          leverage: position.leverage,
+          liquidationPrice: position.liquidationPrice,
+          marginMode: position.marginMode,
+          positionMode: position.positionMode,
+        });
+        await queries.insertPositionSnapshot(tx, {
+          positionId: stored.id,
+          quantity: position.quantity,
+          entryPrice: position.entryPrice,
+          markPrice: position.markPrice,
+          unrealizedPnl: position.unrealizedPnl,
+        });
+      }
+      await queries.clearMissingPositions(tx, accountId, positions);
+    });
+
+    const activeOrders = await queries.listOrders(workspaceId, {
+      accountId,
+      statuses: OPEN_ORDER_STATUSES,
+      limit: 200,
+    });
+    for (const order of activeOrders.rows) {
+      if (!order.exchange_order_id || typeof adapter.fetchOrder !== 'function') continue;
+      const exchangeOrder = await adapter.fetchOrder({
+        ...adapterContext,
+        instrument: order.instrument,
+        exchangeOrderId: order.exchange_order_id,
+        marketType: order.market_type,
+      });
+      if (!exchangeOrder) continue;
+      await executionService.handleExecutionUpdate({
+        connectionId: connection.id,
+        update: exchangeOrder,
+      });
+    }
+
+    return queries.listPositions(workspaceId, { accountId });
   }
 
   async function getExecutionRequest(executionRequestId, workspaceId) {
@@ -102,6 +191,7 @@ export function createTerminalService({ db, queries, marketData, events, audit, 
     listOpenOrders,
     listTradesForScope,
     listPositions,
+    syncAccountState,
     getExecutionRequest,
     getPreferences,
     updatePreferences,

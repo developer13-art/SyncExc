@@ -25,6 +25,14 @@ export function OpenOrders({ workspaceId, accountId }) {
   });
 
   const orders = ordersQuery.data?.items ?? [];
+  const handleSync = async () => {
+    try {
+      await ordersQuery.syncAccountState(accountId);
+      toast.success('Orders and positions synced from exchange');
+    } catch (error) {
+      toast.error('Exchange sync failed', { description: getErrorMessage(error) });
+    }
+  };
 
   const handleCancel = async () => {
     if (!cancelTarget) {
@@ -133,12 +141,12 @@ export function OpenOrders({ workspaceId, accountId }) {
     <>
       <div className="mb-3 flex justify-end">
         <IconButton
-          label="Refresh"
-          onClick={() => ordersQuery.refetch()}
-          disabled={ordersQuery.isLoading}
+          label="Sync orders and positions from exchange"
+          onClick={handleSync}
+          disabled={ordersQuery.isLoading || ordersQuery.isSyncingAccountState || !accountId}
           className="border border-border"
         >
-          <RefreshCw className={cn('h-4 w-4', ordersQuery.isFetching && 'animate-spin')} />
+          <RefreshCw className={cn('h-4 w-4', (ordersQuery.isFetching || ordersQuery.isSyncingAccountState) && 'animate-spin')} />
         </IconButton>
       </div>
 

@@ -18,7 +18,14 @@ export function createExecutionService({ db, queries, events, realtime, logger }
    * any new fills.
    */
   async function handleExecutionUpdate({ connectionId, update }) {
-    const { exchangeOrderId, status, filledQuantity, averageFillPrice, fills = [] } = update;
+    const {
+      exchangeOrderId,
+      status,
+      filledQuantity,
+      remainingQuantity,
+      averageFillPrice,
+      fills = [],
+    } = update;
     if (!exchangeOrderId) return;
 
     const result = await db.query(
@@ -35,6 +42,7 @@ export function createExecutionService({ db, queries, events, realtime, logger }
       await queries.updateOrder(order.id, {
         status: newStatus,
         filledQuantity: filledQuantity ?? order.filled_quantity,
+        remainingQuantity: remainingQuantity ?? order.remaining_quantity,
         averageFillPrice: averageFillPrice ?? order.average_fill_price,
       });
 
@@ -92,6 +100,7 @@ export function createExecutionService({ db, queries, events, realtime, logger }
           orderId: order.id,
           status: newStatus,
           filledQuantity,
+          remainingQuantity,
           averageFillPrice,
         },
         { resourceType: 'order', resourceId: order.id }

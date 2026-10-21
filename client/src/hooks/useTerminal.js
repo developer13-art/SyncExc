@@ -49,24 +49,56 @@ export function useTerminalOrders(workspaceId, params = {}) {
     },
   });
 
+  const syncAccountState = useMutation({
+    mutationFn: (accountId) => terminalApi.syncAccountState(workspaceId, accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.orders(workspaceId, {}),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.positions(workspaceId, {}),
+      });
+    },
+  });
+
   return {
     ...listQuery,
     orders: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     submitOrder: submitOrder.mutateAsync,
     cancelOrder: cancelOrder.mutateAsync,
+    syncAccountState: syncAccountState.mutateAsync,
     isSubmitting: submitOrder.isPending,
+    isSyncingAccountState: syncAccountState.isPending,
   };
 }
 
 export function useTerminalPositions(workspaceId, params = {}) {
-  return useQuery({
+  const queryClient = useQueryClient();
+  const positionsQuery = useQuery({
     queryKey: queryKeys.terminal.positions(workspaceId, params),
     queryFn: () => terminalApi.listPositions(workspaceId, params),
     enabled: Boolean(workspaceId),
     staleTime: 10_000,
     refetchInterval: 15_000,
   });
+  const syncAccountState = useMutation({
+    mutationFn: (accountId) => terminalApi.syncAccountState(workspaceId, accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.positions(workspaceId, {}),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.orders(workspaceId, {}),
+      });
+    },
+  });
+
+  return {
+    ...positionsQuery,
+    syncAccountState: syncAccountState.mutateAsync,
+    isSyncingAccountState: syncAccountState.isPending,
+  };
 }
 
 export function useTerminalBalances(workspaceId, params = {}) {

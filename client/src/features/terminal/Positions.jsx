@@ -6,15 +6,26 @@ import { PnLIndicator } from '../../components/domain/trade/PnLIndicator.jsx';
 import { useTerminalPositions } from '../../hooks/useTerminal.js';
 import { formatQuantity } from '../../lib/formatters/number.formatter.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { useToast } from '../../hooks/useToast.js';
 import { cn } from '../../lib/utils/cn.util.js';
 
 export function Positions({ workspaceId, accountId }) {
+  const toast = useToast();
   const positionsQuery = useTerminalPositions(workspaceId, {
     accountId: accountId ?? undefined,
     status: 'open',
   });
 
   const positions = positionsQuery.data ?? [];
+  const handleSync = async () => {
+    try {
+      await positionsQuery.syncAccountState(accountId);
+      toast.success('Positions and orders synced from exchange');
+    } catch (error) {
+      toast.error('Exchange sync failed', { description: getErrorMessage(error) });
+    }
+  };
 
   const columns = [
     {
@@ -100,12 +111,12 @@ export function Positions({ workspaceId, accountId }) {
     <>
       <div className="mb-3 flex justify-end">
         <IconButton
-          label="Refresh"
-          onClick={() => positionsQuery.refetch()}
-          disabled={positionsQuery.isLoading}
+          label="Sync positions from exchange"
+          onClick={handleSync}
+          disabled={positionsQuery.isLoading || positionsQuery.isSyncingAccountState || !accountId}
           className="border border-border"
         >
-          <RefreshCw className={cn('h-4 w-4', positionsQuery.isFetching && 'animate-spin')} />
+          <RefreshCw className={cn('h-4 w-4', (positionsQuery.isFetching || positionsQuery.isSyncingAccountState) && 'animate-spin')} />
         </IconButton>
       </div>
 

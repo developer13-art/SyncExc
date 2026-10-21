@@ -206,9 +206,10 @@ export function createBybitAdapter({ config, logger }) {
       environment,
       instrument,
       exchangeOrderId,
+      marketType,
     }) {
       const query = new URLSearchParams({
-        category: 'linear',
+        category: marketType === 'spot' ? 'spot' : 'linear',
         symbol: instrument,
         orderId: exchangeOrderId,
       }).toString();

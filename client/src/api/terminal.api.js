@@ -45,6 +45,9 @@ export const terminalApi = {
   listPositions: (workspaceId, params) =>
     api.get(endpoints.terminal.positions(workspaceId), { params }),
 
+  syncAccountState: (workspaceId, accountId) =>
+    api.post(`${endpoints.terminal.positions(workspaceId)}/sync`, { accountId }),
+
   listBalances: (workspaceId, params) =>
     api.get(endpoints.terminal.balances(workspaceId), { params }),
 
