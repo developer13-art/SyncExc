@@ -81,7 +81,7 @@ export function SourceCard({ source, onPause, onRevalidate, onRemove, className 
 
       <Link to={linkTo} className="block border-t border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <SourceHealthBadge status={source.health?.status} />
+          <SourceHealthBadge status={source.healthState} />
           {source.language ? (
             <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground">
               {source.language}

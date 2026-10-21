@@ -45,7 +45,7 @@ export function UserMenu() {
           )}
           aria-label="Account menu"
         >
-          <Avatar size="sm" fallback={initials} />
+          <Avatar size="sm" src={user.avatarUrl} fallback={initials} />
           <span className="hidden max-w-32 truncate text-sm font-medium text-foreground md:inline">
             {user.displayName ?? user.username ?? user.email}
           </span>

@@ -39,7 +39,17 @@ export function createSourcesQueries({ db }) {
 
     async findSourceById(sourceId) {
       const result = await db.query(
-        `SELECT * FROM signal_sources WHERE id = $1`,
+        `
+        SELECT s.*,
+               (SELECT COUNT(*)::integer
+                FROM signal_messages sm
+                WHERE sm.source_id = s.id) AS message_count,
+               (SELECT MAX(sm.provider_timestamp)
+                FROM signal_messages sm
+                WHERE sm.source_id = s.id) AS last_event_at
+        FROM signal_sources s
+        WHERE s.id = $1
+        `,
         [sourceId]
       );
       return result.rows[0] || null;
@@ -58,9 +68,16 @@ export function createSourcesQueries({ db }) {
       }
       const result = await db.query(
         `
-        SELECT * FROM signal_sources
+        SELECT s.*,
+               (SELECT COUNT(*)::integer
+                FROM signal_messages sm
+                WHERE sm.source_id = s.id) AS message_count,
+               (SELECT MAX(sm.provider_timestamp)
+                FROM signal_messages sm
+                WHERE sm.source_id = s.id) AS last_event_at
+        FROM signal_sources s
         WHERE ${conditions.join(' AND ')}
-        ORDER BY created_at DESC
+        ORDER BY s.created_at DESC
         `,
         params
       );

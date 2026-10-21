@@ -89,6 +89,13 @@ export function AuthProvider({ children }) {
     [dispatch, queryClient],
   );
 
+  const refreshUser = useCallback(async () => {
+    const currentUser = await identityApi.getCurrentUser();
+    queryClient.setQueryData(queryKeys.auth.me, currentUser);
+    dispatch(authActions.userUpdated(currentUser));
+    return currentUser;
+  }, [dispatch, queryClient]);
+
   const logout = useCallback(async () => {
     try {
       await identityApi.logout();
@@ -119,10 +126,11 @@ export function AuthProvider({ children }) {
       login,
       register,
       verifyMfa,
+      refreshUser,
       logout,
       logoutAll,
     }),
-    [user, isAuthenticated, isBootstrapping, login, register, verifyMfa, logout, logoutAll],
+    [user, isAuthenticated, isBootstrapping, login, register, verifyMfa, refreshUser, logout, logoutAll],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

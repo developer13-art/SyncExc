@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/Ta
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
+import { Alert } from '../../components/ui/Alert.jsx';
 import { SourceStatusBadge } from '../../components/domain/source/SourceStatusBadge.jsx';
 import { SourceHealthBadge } from '../../components/domain/source/SourceHealthBadge.jsx';
 import { SourceConnection } from './SourceConnection.jsx';
@@ -125,7 +126,12 @@ export default function SourceDetails() {
               {source.name}
             </h1>
             <SourceStatusBadge status={source.status} />
-            <SourceHealthBadge status={health?.status} />
+            <SourceHealthBadge status={health?.snapshot?.state ?? source.healthState} />
+            {source.type === 'telegram' ? (
+              <Badge variant={source.monitoringEnabled ? 'success' : 'warning'}>
+                Monitoring {source.monitoringEnabled ? 'on' : 'off'}
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {source.platform}
@@ -153,6 +159,19 @@ export default function SourceDetails() {
           >
             <RefreshCw className="h-4 w-4" />
           </IconButton>
+          {source.type === 'telegram' ? (
+            <Button
+              variant={source.monitoringEnabled ? 'outline' : 'default'}
+              disabled={monitoringBusy || (!source.monitoringEnabled && source.status !== 'active')}
+              onClick={handleMonitoring}
+            >
+              {monitoringBusy
+                ? 'Updating…'
+                : source.monitoringEnabled
+                  ? 'Stop monitoring'
+                  : 'Start monitoring'}
+            </Button>
+          ) : null}
           {!isActive ? (
             <Button onClick={handleEnable}>
               <PlayCircle className="h-4 w-4" /> Enable
@@ -168,6 +187,12 @@ export default function SourceDetails() {
           )}
         </div>
       </div>
+
+      {source.type === 'telegram' && source.lastMonitorError ? (
+        <Alert variant="warning" title="Telegram monitoring needs attention">
+          <p className="text-sm">{source.lastMonitorError}</p>
+        </Alert>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -220,27 +245,6 @@ export default function SourceDetails() {
           monitoringEnabled={source.monitoringEnabled}
         />
       ) : null}
-
-      <Card>
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-          <div>
-            <p className="font-medium text-foreground">
-              Monitoring {source.monitoringEnabled ? 'is on' : 'is off'}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Only this source is monitored after you explicitly start it. Pausing the source or
-              disconnecting its account stops collection.
-            </p>
-          </div>
-          <Button
-            variant={source.monitoringEnabled ? 'outline' : 'default'}
-            disabled={monitoringBusy || (!source.monitoringEnabled && source.status !== 'active')}
-            onClick={handleMonitoring}
-          >
-            {monitoringBusy ? 'Updating…' : source.monitoringEnabled ? 'Stop monitoring' : 'Start monitoring'}
-          </Button>
-        </CardContent>
-      </Card>
 
       <Tabs defaultValue="connection">
         <TabsList>

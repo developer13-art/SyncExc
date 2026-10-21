@@ -27,7 +27,7 @@ export function SourceCard({ source, href, className }) {
         </div>
 
         <div className="mt-2 flex flex-wrap gap-1.5">
-          <SourceHealthBadge status={source.health?.status} />
+          <SourceHealthBadge status={source.healthState} />
           {source.category ? (
             <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-2xs text-muted-foreground">
               {source.category}
