@@ -52,7 +52,7 @@ export function createEvaluationService({
       workspaceId,
       syncGroupId: operationPayload.syncGroupId,
       accountId: operationPayload.accountId,
-      instrument: operationPayload.instrument,
+      instrumentScopeRef: operationPayload.instrumentScopeRef,
     });
 
     if (policies.length === 0) {

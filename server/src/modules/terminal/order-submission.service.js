@@ -153,6 +153,7 @@ export function createOrderSubmissionService({
         connectionId,
         accountId,
         instrument: instrumentId,
+        instrumentScopeRef: instrument.id,
         marketType,
         side,
         type,

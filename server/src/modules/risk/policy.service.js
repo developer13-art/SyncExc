@@ -111,7 +111,7 @@ export function createPolicyService({ db, queries, events, logger }) {
     workspaceId,
     syncGroupId,
     accountId,
-    instrument,
+    instrumentScopeRef,
   }) {
     const scopes = [
       { scope: 'platform', scopeRef: null },
@@ -119,7 +119,9 @@ export function createPolicyService({ db, queries, events, logger }) {
     ];
     if (syncGroupId) scopes.push({ scope: 'sync_group', scopeRef: syncGroupId });
     if (accountId) scopes.push({ scope: 'exchange_account', scopeRef: accountId });
-    if (instrument) scopes.push({ scope: 'instrument', scopeRef: instrument });
+    if (isUuid(instrumentScopeRef)) {
+      scopes.push({ scope: 'instrument', scopeRef: instrumentScopeRef });
+    }
 
     const applicable = [];
     for (const { scope, scopeRef } of scopes) {
@@ -144,6 +146,11 @@ export function createPolicyService({ db, queries, events, logger }) {
     suspendPolicy,
     getApplicablePolicies,
   };
+}
+
+function isUuid(value) {
+  return typeof value === 'string' &&
+    /^[\da-f]{8}-[\da-f]{4}-[1-8][\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(value);
 }
 
 export default createPolicyService;
