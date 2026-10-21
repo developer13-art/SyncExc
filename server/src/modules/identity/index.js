@@ -38,6 +38,7 @@ export function createIdentityModule({ services }) {
     events: services.events,
     audit: services.audit,
     idempotency: services.idempotency,
+    profileImages: services.profileImages,
     logger,
   });
 

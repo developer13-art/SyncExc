@@ -214,7 +214,12 @@ export default function SourceDetails() {
         </Card>
       </div>
 
-      {source.type === 'telegram' ? <TelegramActivity sourceId={source.id} /> : null}
+      {source.type === 'telegram' ? (
+        <TelegramActivity
+          sourceId={source.id}
+          monitoringEnabled={source.monitoringEnabled}
+        />
+      ) : null}
 
       <Card>
         <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">

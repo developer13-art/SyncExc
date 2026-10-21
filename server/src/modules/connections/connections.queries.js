@@ -379,7 +379,7 @@ export function createConnectionsQueries({ db }) {
           minimum_quantity, minimum_notional, contract_multiplier, trading_status
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        ON CONFLICT (exchange_code, exchange_symbol)
+        ON CONFLICT (exchange_code, exchange_symbol, market_type)
         DO UPDATE SET normalized_symbol = EXCLUDED.normalized_symbol,
                       market_type = EXCLUDED.market_type,
                       base_asset = EXCLUDED.base_asset,
@@ -413,14 +413,14 @@ export function createConnectionsQueries({ db }) {
       return result.rows[0];
     },
 
-    async findInstrument(exchangeCode, exchangeSymbol) {
+    async findInstrument(exchangeCode, exchangeSymbol, marketType) {
       const result = await db.query(
         `
         SELECT * FROM exchange_instruments
-        WHERE exchange_code = $1 AND exchange_symbol = $2
+        WHERE exchange_code = $1 AND exchange_symbol = $2 AND market_type = $3
         LIMIT 1
         `,
-        [exchangeCode, exchangeSymbol]
+        [exchangeCode, exchangeSymbol, marketType]
       );
       return result.rows[0] || null;
     },

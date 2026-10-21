@@ -11,6 +11,7 @@ import { initJobs } from './jobs/index.js';
 import { initRealtime } from './realtime/index.js';
 import { initMetrics } from './lib/metrics.js';
 import { initStorage } from './lib/storage.js';
+import { createProfileImageService } from './lib/profile-images.js';
 import { initMailer } from './lib/mailer.js';
 import { initPush } from './lib/push.js';
 import { initAI } from './lib/ai.js';
@@ -35,6 +36,11 @@ export async function bootstrap() {
   try {
     services.metrics = initMetrics();
     services.storage = await initStorage();
+    services.profileImages = createProfileImageService({
+      storage: services.storage,
+      baseUrl: config.server.baseUrl,
+      apiPrefix: config.server.apiPrefix,
+    });
     services.mailer = await initMailer();
     services.push = await initPush();
     services.ai = await initAI();

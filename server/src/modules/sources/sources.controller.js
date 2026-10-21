@@ -129,6 +129,15 @@ export function createSourcesController(services) {
       return success(res, connection);
     },
 
+    async listTelegramMessages(req, res) {
+      const messages = await connectionService.listTelegramMessages({
+        workspaceId: req.workspace.id,
+        sourceId: req.params.sourceId,
+        limit: Number(req.query.limit) || 8,
+      });
+      return success(res, messages);
+    },
+
     async update(req, res) {
       const source = await sourceRegistryService.updateSource({
         userId: req.auth.userId,

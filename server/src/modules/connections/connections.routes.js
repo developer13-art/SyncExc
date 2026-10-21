@@ -38,7 +38,9 @@ export function createConnectionsRoutes({ service, middleware }) {
 
   router.get(
     '/exchanges/:exchangeCode/instruments',
-    middleware.optionalAuth(),
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('trading.monitor'),
     middleware.validateQuery(Joi.object({
       marketType: Joi.string().valid('spot', 'futures', 'perpetual').optional(),
     })),

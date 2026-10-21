@@ -248,6 +248,30 @@ export function createIdentityController({ service }) {
       return success(res, serializeUser(user));
     },
 
+    async uploadAvatar(req, res) {
+      const user = await service.updateAvatar({
+        userId: req.auth.userId,
+        file: req.file
+          ? { buffer: req.file.buffer, mimeType: req.file.mimetype }
+          : null,
+      });
+      return success(res, serializeUser(user));
+    },
+
+    async removeAvatar(req, res) {
+      const user = await service.removeAvatar({ userId: req.auth.userId });
+      return success(res, serializeUser(user));
+    },
+
+    async getProfileImage(req, res) {
+      const image = await service.getProfileImage(req.params.key);
+      if (!image) return res.status(404).end();
+      res.setHeader('Content-Type', image.mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(image.buffer);
+    },
+
     async getUserPreferences(req, res) {
       return success(res, await service.getUserPreferences(req.auth.userId));
     },

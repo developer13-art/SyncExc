@@ -38,6 +38,7 @@ export function createMarketplaceModule({ services }) {
     db: services.db,
     queries,
     events: services.events,
+    profileImages: services.profileImages,
     logger,
   });
 

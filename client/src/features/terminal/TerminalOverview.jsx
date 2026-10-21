@@ -110,7 +110,6 @@ export default function TerminalOverview() {
 
   const marketsQuery = useTerminalMarkets(activeWorkspaceId, {
     exchangeCode: activeConnection?.exchange,
-    marketType: tradingPreferences?.defaultMarketType ?? 'spot',
   });
 
   const ordersQuery = useTerminalOrders(activeWorkspaceId, {
@@ -127,12 +126,13 @@ export default function TerminalOverview() {
     }
     const preferredMarketType = tradingPreferences?.defaultMarketType ?? 'spot';
     const currentSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;
-    if (!currentSymbol || !instruments.some((item) =>
+    if (currentSymbol && instruments.some((item) =>
       (item.exchangeSymbol ?? item.symbol) === currentSymbol &&
-      (item.marketType ?? preferredMarketType) === preferredMarketType
-    )) {
-      setSelectedInstrument(instruments[0]);
-    }
+      (item.marketType ?? preferredMarketType) === (selectedInstrument?.marketType ?? preferredMarketType)
+    )) return;
+    setSelectedInstrument(
+      instruments.find((item) => item.marketType === preferredMarketType) ?? instruments[0],
+    );
   }, [instruments, selectedInstrument, tradingPreferences?.defaultMarketType]);
 
   const selectedSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;

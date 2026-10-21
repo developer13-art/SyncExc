@@ -113,6 +113,13 @@ export default function ProviderProfile() {
       </div>
 
       <Card>
+        {provider.coverImageUrl ? (
+          <img
+            src={provider.coverImageUrl}
+            alt=""
+            className="h-48 w-full rounded-t-xl object-cover"
+          />
+        ) : null}
         <CardContent className="p-6 pt-6">
           <div className="flex flex-wrap items-start gap-5">
             <Avatar src={provider.avatarUrl} fallback={initials} size="xl" />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
@@ -55,6 +55,8 @@ export default function TraderProfile() {
     supportedLanguages: 'en',
   });
   const [saving, setSaving] = useState(false);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverInput = useRef(null);
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Trader Studio'));
@@ -172,6 +174,22 @@ export default function TraderProfile() {
       toast.error('Visibility could not be changed', { description: getErrorMessage(err) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const uploadCover = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !provider) return;
+    setCoverBusy(true);
+    try {
+      await marketplaceApi.uploadProviderCover(provider.id, file);
+      await queryClient.invalidateQueries({ queryKey: profileKey(activeWorkspaceId) });
+      toast.success('Trader cover photo updated');
+    } catch (err) {
+      toast.error('Cover photo upload failed', { description: getErrorMessage(err) });
+    } finally {
+      setCoverBusy(false);
     }
   };
 
@@ -452,6 +470,47 @@ export default function TraderProfile() {
 
       {activeTab === 'profile' ? (
       <section className="flex flex-col gap-6">
+      {provider ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Trader cover photo</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {provider.coverImageUrl ? (
+              <img
+                src={provider.coverImageUrl}
+                alt="Trader profile cover"
+                className="h-40 w-full rounded-lg border border-border object-cover"
+              />
+            ) : (
+              <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+                No cover photo uploaded
+              </div>
+            )}
+            <input
+              ref={coverInput}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              aria-label="Choose a trader cover photo"
+              onChange={uploadCover}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                JPEG, PNG, or WebP. Maximum file size: 5 MB.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={coverBusy}
+                onClick={() => coverInput.current?.click()}
+              >
+                {coverBusy ? 'Uploading…' : 'Upload cover photo'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">

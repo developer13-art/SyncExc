@@ -3,6 +3,7 @@
  */
 
 import { Router } from 'express';
+import multer from 'multer';
 import Joi from 'joi';
 import {
   CreateProviderRequestSchema,
@@ -62,6 +63,11 @@ const UpdateProviderSchema = Joi.object({
   avatarUrl: Joi.string().uri({ scheme: ['https'] }).optional().allow(null),
   visibility: Joi.string().valid('private', 'public').optional(),
 }).min(1);
+
+const coverUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
 
 export function createMarketplaceRoutes(services) {
   const controller = createMarketplaceController(services);
@@ -155,6 +161,15 @@ export function createMarketplaceRoutes(services) {
     middleware.validateParams(Joi.object({ planId: UuidSchema.required() })),
     middleware.validateBody(UpdateProviderPlanSchema),
     middleware.asyncHandler(controller.updateMyPlan)
+  );
+
+  router.post(
+    '/providers/:providerId/cover',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ providerId: UuidSchema.required() })),
+    coverUpload.single('cover'),
+    middleware.asyncHandler(controller.uploadProviderCover),
   );
 
   router.post(

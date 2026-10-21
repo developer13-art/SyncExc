@@ -60,6 +60,10 @@ const MonitoringSchema = Joi.object({
   enabled: Joi.boolean().required(),
 });
 
+const TelegramMessagesQuerySchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(50).default(8),
+});
+
 const ExecutionConfigSchema = Joi.object({
   mode: Joi.string().valid('monitor_only', 'review', 'simulate', 'live').required(),
   settings: Joi.object({
@@ -173,6 +177,15 @@ export function createSourcesRoutes(services) {
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.asyncHandler(controller.getConnection),
+  );
+
+  router.get(
+    '/:sourceId/telegram/messages',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ sourceId: UuidSchema.required() })),
+    middleware.validateQuery(TelegramMessagesQuerySchema),
+    middleware.asyncHandler(controller.listTelegramMessages),
   );
 
   router.post(

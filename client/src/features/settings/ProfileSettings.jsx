@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { Camera, Trash2 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
+import { Avatar } from '../../components/ui/Avatar.jsx';
+import { Button } from '../../components/ui/Button.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ProfileForm } from './components/ProfileForm.jsx';
 import { useAuthContext } from '../../context/AuthContext.jsx';
@@ -17,6 +20,8 @@ export default function ProfileSettings() {
   const toast = useToast();
   const { user, refreshUser } = useAuthContext();
   const [submitting, setSubmitting] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarInput = useRef(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -43,6 +48,35 @@ export default function ProfileSettings() {
     }
   };
 
+  const handleAvatarChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setAvatarBusy(true);
+    try {
+      await identityApi.uploadAvatar(file);
+      await refreshUser?.();
+      toast.success('Profile picture updated');
+    } catch (err) {
+      toast.error('Profile picture upload failed', { description: getErrorMessage(err) });
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleAvatarRemoval = async () => {
+    setAvatarBusy(true);
+    try {
+      await identityApi.removeAvatar();
+      await refreshUser?.();
+      toast.success('Profile picture removed');
+    } catch (err) {
+      toast.error('Profile picture could not be removed', { description: getErrorMessage(err) });
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   if (!user) {
     return <LoadingState label="Loading profile" />;
   }
@@ -59,6 +93,54 @@ export default function ProfileSettings() {
         </p>
       </div>
       <SettingsSectionNav activePath={ROUTES.app.settings.profile} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Profile picture</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-4">
+          <Avatar
+            src={user.avatarUrl}
+            alt={`${user.displayName}'s profile picture`}
+            fallback={user.displayName?.slice(0, 1)?.toUpperCase() || '?'}
+            size="xl"
+          />
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">
+              JPEG, PNG, or WebP. Maximum file size: 5 MB.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={avatarInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                aria-label="Choose a profile picture"
+                onChange={handleAvatarChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={avatarBusy}
+                onClick={() => avatarInput.current?.click()}
+              >
+                <Camera className="h-4 w-4" />
+                {avatarBusy ? 'Uploading…' : 'Upload picture'}
+              </Button>
+              {user.avatarUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={avatarBusy}
+                  onClick={handleAvatarRemoval}
+                >
+                  <Trash2 className="h-4 w-4" /> Remove
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

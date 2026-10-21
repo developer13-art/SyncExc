@@ -283,6 +283,7 @@ test('syncs an existing connection using its stored credentials', async () => {
     },
     adapterRegistry: {
       get: () => ({
+        capabilities: { hasSpot: true, hasFutures: true },
         discoverAccounts: async (credentials) => {
           assert.equal(credentials.apiKey, 'decrypted-key');
           observed.discovered = true;
@@ -296,7 +297,7 @@ test('syncs an existing connection using its stored credentials', async () => {
             equity: '50123.45',
           };
         },
-        fetchInstruments: async () => [{ symbol: 'BTCUSDT' }],
+        fetchInstruments: async ({ marketType }) => [{ symbol: 'BTCUSDT', marketType }],
       }),
     },
     rateLimitCoordinator: {},

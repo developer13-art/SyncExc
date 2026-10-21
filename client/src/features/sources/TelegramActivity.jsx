@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Alert } from '../../components/ui/Alert.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
-import { signalsApi } from '../../api/index.js';
+import { signalsApi, sourcesApi } from '../../api/index.js';
 import { formatDateTime } from '../../lib/formatters/date.formatter.js';
 
-export function TelegramActivity({ sourceId }) {
+export function TelegramActivity({ sourceId, monitoringEnabled }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['telegram-source-activity', sourceId],
     queryFn: async () => {
@@ -18,6 +18,12 @@ export function TelegramActivity({ sourceId }) {
     },
     enabled: Boolean(sourceId),
     refetchInterval: 15_000,
+  });
+  const historyQuery = useQuery({
+    queryKey: ['telegram-source-history', sourceId],
+    queryFn: () => sourcesApi.listTelegramMessages(sourceId, { limit: 8 }),
+    enabled: Boolean(sourceId),
+    refetchInterval: 30_000,
   });
 
   if (isLoading) return <LoadingState label="Loading Telegram activity" />;
@@ -31,10 +37,37 @@ export function TelegramActivity({ sourceId }) {
 
   const messages = data?.messages ?? [];
   const candidates = data?.candidates ?? [];
+  const history = historyQuery.data ?? [];
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-3">
       <Card>
-        <CardHeader><CardTitle>Latest messages processed</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Recent Telegram messages</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {historyQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading recent channel messages…</p>
+          ) : historyQuery.isError ? (
+            <Alert variant="warning" title="Telegram messages unavailable">
+              <p className="text-xs">Reconnect the Telegram source and try again.</p>
+            </Alert>
+          ) : history.length ? history.map((message) => (
+            <article key={message.id} className="rounded-lg border border-border p-3">
+              <p className="mb-2 text-xs text-muted-foreground">{formatDateTime(message.timestamp)}</p>
+              <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+                {message.content || 'Media message (media is not downloaded)'}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">Telegram message {message.id}</p>
+            </article>
+          )) : (
+            <p className="text-sm text-muted-foreground">No messages are available in this chat.</p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            This is a read-only preview. Older messages are not imported for signal processing or
+            trading.
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Messages processed</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {messages.length ? messages.map((message) => (
             <article key={message.id} className="rounded-lg border border-border p-3">
@@ -54,6 +87,13 @@ export function TelegramActivity({ sourceId }) {
               No Telegram messages have been processed yet. New messages appear here automatically.
             </p>
           )}
+          {!messages.length && monitoringEnabled ? (
+            <p className="text-xs text-muted-foreground">
+              Telegram history is not replayed when a source is connected, to prevent old signals
+              from being treated as new trades. Only messages posted after monitoring starts are
+              processed.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
       <Card>

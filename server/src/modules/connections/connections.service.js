@@ -47,8 +47,12 @@ export function createConnectionsService({
     return adapter;
   }
 
-  async function getInstrument({ exchangeCode, symbol }) {
-    return queries.findInstrument(exchangeCode, symbol);
+  async function getInstrument({ exchangeCode, symbol, marketType }) {
+    return queries.findInstrument(
+      exchangeCode,
+      symbol,
+      marketType === 'perpetual' ? 'futures' : marketType,
+    );
   }
 
   async function loadCredentials(connectionId) {
@@ -389,15 +393,23 @@ export function createConnectionsService({
       });
     }
 
-    // Sync instruments
+    // Sync both spot and futures instruments; identical symbols exist in both markets.
     try {
-      const instruments = await adapter.fetchInstruments({ marketType: 'spot' });
+      const marketTypes = [
+        ...(adapter.capabilities?.hasSpot ? ['spot'] : []),
+        ...(adapter.capabilities?.hasFutures ? ['futures'] : []),
+      ];
+      const instrumentsByMarket = await Promise.all(
+        marketTypes.map((marketType) => adapter.fetchInstruments({ marketType })),
+      );
       await db.tx(async (tx) => {
-        for (const inst of instruments) {
-          await queries.upsertInstrument(tx, {
-            exchangeCode: connection.exchange_code,
-            ...inst,
-          });
+        for (const instruments of instrumentsByMarket) {
+          for (const inst of instruments) {
+            await queries.upsertInstrument(tx, {
+              exchangeCode: connection.exchange_code,
+              ...inst,
+            });
+          }
         }
       });
     } catch (err) {
@@ -730,7 +742,35 @@ export function createConnectionsService({
   }
 
   async function listInstruments({ exchangeCode, marketType }) {
-    const rows = await queries.listInstrumentsForExchange(exchangeCode, { marketType });
+    const normalizedMarketType = marketType === 'perpetual' ? 'futures' : marketType;
+    const requestedTypes = normalizedMarketType
+      ? [normalizedMarketType]
+      : ['spot', 'futures'];
+    let rows = await queries.listInstrumentsForExchange(exchangeCode, {
+      marketType: normalizedMarketType,
+    });
+    const missingTypes = requestedTypes.filter(
+      (type) => !rows.some((instrument) => instrument.market_type === type),
+    );
+    if (missingTypes.length) {
+      const adapter = await getAdapter(exchangeCode);
+      const fetched = await Promise.all(
+        missingTypes.map((type) => adapter.fetchInstruments({ marketType: type })),
+      );
+      await db.tx(async (tx) => {
+        for (const instruments of fetched) {
+          for (const instrument of instruments) {
+            await queries.upsertInstrument(tx, {
+              exchangeCode,
+              ...instrument,
+            });
+          }
+        }
+      });
+      rows = await queries.listInstrumentsForExchange(exchangeCode, {
+        marketType: normalizedMarketType,
+      });
+    }
     return rows;
   }
 

@@ -107,6 +107,7 @@ export function createSourcesModule({ services }) {
     queries,
     adapterRegistry,
     credentialVault: services.connections.credentialVault,
+    config: services.config,
     events: services.events,
     logger,
   });

@@ -135,6 +135,7 @@ export function createOrderSubmissionService({
     const instrument = await connections.getInstrument({
       exchangeCode: connection.exchange_code,
       symbol: instrumentId,
+      marketType,
     });
     if (!instrument) throw new ValidationError(`Unknown instrument: ${instrumentId}`);
     if (instrument.trading_status !== 'active') {

@@ -107,6 +107,25 @@ export function createIdentityQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async updateUserAvatar(userId, avatarUrl, client = db) {
+      const result = await client.query(
+        `
+        UPDATE users
+        SET avatar_url = $2, updated_at = now()
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING *
+        `,
+        [userId, avatarUrl],
+      );
+      if (result.rows[0]) {
+        await client.query(
+          `UPDATE marketplace_provider_profiles SET avatar_url = $2 WHERE user_id = $1`,
+          [userId, avatarUrl],
+        );
+      }
+      return result.rows[0] || null;
+    },
+
     async updateUserEmail(userId, email, emailNormalized) {
       const result = await db.query(
         `

@@ -164,6 +164,7 @@ export function createMarketplaceQueries({ db }) {
             supported_languages = COALESCE($6, supported_languages),
             avatar_url = COALESCE($7, avatar_url),
             visibility = COALESCE($8, visibility),
+            cover_image_url = COALESCE($9, cover_image_url),
             current_version = current_version + 1,
             updated_at = now()
         WHERE id = $1
@@ -178,6 +179,7 @@ export function createMarketplaceQueries({ db }) {
           fields.supportedLanguages ?? null,
           fields.avatarUrl ?? null,
           fields.visibility ?? null,
+          fields.coverImageUrl ?? null,
         ]
       );
       return result.rows[0] || null;

@@ -148,6 +148,18 @@ export function createMarketplaceController(services) {
       return success(res, serializeProvider(provider));
     },
 
+    async uploadProviderCover(req, res) {
+      const provider = await providerService.updateCoverImage({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        providerId: req.params.providerId,
+        file: req.file
+          ? { buffer: req.file.buffer, mimeType: req.file.mimetype }
+          : null,
+      });
+      return success(res, serializeProvider(provider));
+    },
+
     /* Publications */
     async publishSignal(req, res) {
       const provider = await providerService.getProviderForUser(req.auth.userId, req.workspace.id);

@@ -100,7 +100,12 @@ export function SourceCard({ source, onPause, onRevalidate, onRemove, className 
               ? `Last event ${formatRelativeTime(source.lastEventAt)}`
               : 'No recent events'}
           </span>
-          {source.workspaceName ? <span>{source.workspaceName}</span> : null}
+          <span className="flex items-center gap-2">
+            {source.workspaceName ? <span>{source.workspaceName}</span> : null}
+            {source.type === 'telegram' ? (
+              <span className="font-medium text-primary">View messages &amp; signals</span>
+            ) : null}
+          </span>
         </div>
       </Link>
     </Card>

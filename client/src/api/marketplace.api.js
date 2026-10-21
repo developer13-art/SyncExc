@@ -18,6 +18,12 @@ export const marketplaceApi = {
   updateProvider: (providerId, payload) =>
     api.patch(endpoints.marketplace.provider(providerId), payload),
 
+  uploadProviderCover: (providerId, file) => {
+    const formData = new FormData();
+    formData.append('cover', file);
+    return api.upload(endpoints.marketplace.providerCover(providerId), formData);
+  },
+
   listProviderSignals: (providerId, params) =>
     api.getPaged(endpoints.marketplace.providerSignals(providerId), { params }),
 

@@ -6,6 +6,7 @@
  */
 
 import { Router } from 'express';
+import multer from 'multer';
 import {
   RegisterRequestSchema,
   LoginRequestSchema,
@@ -33,12 +34,22 @@ const UserPreferencesSchema = Joi.object({
   }).min(1),
 }).min(1);
 
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
+
 export function createIdentityRoutes({ service, middleware }) {
   const controller = createIdentityController({ service });
 
   const authRouter = Router();
   const usersRouter = Router();
   const securityRouter = Router();
+
+  usersRouter.get(
+    '/media/:key',
+    middleware.asyncHandler(controller.getProfileImage),
+  );
 
   /* ===========================================================================
    * AUTH — public and semi-public
@@ -172,6 +183,19 @@ export function createIdentityRoutes({ service, middleware }) {
     middleware.requireAuth(),
     middleware.validateBody(ProfileUpdateSchema),
     middleware.asyncHandler(controller.updateProfile)
+  );
+
+  usersRouter.post(
+    '/me/avatar',
+    middleware.requireAuth(),
+    avatarUpload.single('avatar'),
+    middleware.asyncHandler(controller.uploadAvatar),
+  );
+
+  usersRouter.delete(
+    '/me/avatar',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.removeAvatar),
   );
 
   usersRouter.get(

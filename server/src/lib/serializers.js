@@ -526,6 +526,7 @@ export function serializeProvider(row) {
     biography: row.biography || null,
     methodology: row.methodology || null,
     avatarUrl: row.avatar_url || null,
+    coverImageUrl: row.cover_image_url || null,
     supportedMarkets: row.supported_markets || [],
     supportedLanguages: row.supported_languages || [],
     currentVersion: row.current_version,

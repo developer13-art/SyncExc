@@ -4,14 +4,17 @@
 
 import { NotFoundError, ConflictError } from '../../lib/errors.js';
 import { decrypt, encrypt } from '../../lib/crypto.js';
+import { createTelegramClient, toTelegramInputPeer } from './telegram-client.js';
 
 export function createSourceConnectionService({
   db,
   queries,
   adapterRegistry,
   credentialVault,
+  config,
   events,
   logger,
+  telegramClientFactory = createTelegramClient,
 }) {
   async function authorize({ userId, workspaceId, sourceId, credentials }) {
     const source = await queries.findSourceById(sourceId);
@@ -149,11 +152,57 @@ export function createSourceConnectionService({
     };
   }
 
+  async function listTelegramMessages({ workspaceId, sourceId, limit = 8 }) {
+    const source = await queries.findSourceById(sourceId);
+    if (!source || source.workspace_id !== workspaceId || source.type !== 'telegram') {
+      throw new NotFoundError('Telegram source');
+    }
+    const connection = await queries.findSourceConnection(sourceId);
+    if (
+      !connection ||
+      connection.status !== 'active' ||
+      connection.authorization_status !== 'authorized'
+    ) {
+      throw new ConflictError('Reconnect this Telegram source to view its messages', 'TELEGRAM_AUTH_REQUIRED');
+    }
+    const credential = await queries.findActiveCredentialForConnection(connection.id);
+    if (!credential) {
+      throw new ConflictError('Reconnect this Telegram source to view its messages', 'TELEGRAM_AUTH_REQUIRED');
+    }
+    const credentials = JSON.parse(decrypt(credential.encrypted_value));
+    if (!credentials.sessionString || !credentials.selectedPeer) {
+      throw new ConflictError('Reconnect this Telegram source to view its messages', 'TELEGRAM_AUTH_REQUIRED');
+    }
+
+    const client = telegramClientFactory(credentials.sessionString, config);
+    try {
+      await client.connect();
+      if (!(await client.checkAuthorization())) {
+        throw new ConflictError('Telegram authorization expired. Reconnect this source.', 'TELEGRAM_AUTH_REQUIRED');
+      }
+      const messages = await client.getMessages(
+        toTelegramInputPeer(credentials.selectedPeer),
+        { limit: Math.max(1, Math.min(50, Number(limit) || 8)) },
+      );
+      return messages.map((message) => ({
+        id: String(message.id),
+        content: message.message || message.text || message.caption || '',
+        timestamp:
+          message.date instanceof Date
+            ? message.date
+            : new Date(Number(message.date) * 1000),
+      }));
+    } finally {
+      await client.disconnect().catch(() => {});
+    }
+  }
+
   return {
     authorize,
     testConnection,
     disconnect,
     getConnection,
+    listTelegramMessages,
   };
 }
 

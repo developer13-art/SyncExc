@@ -52,7 +52,7 @@ function normalizeUsername(username) {
   return String(username).trim().toLowerCase();
 }
 
-export function createIdentityService({ db, queries, rateLimiter, mailer, push, events, audit, logger }) {
+export function createIdentityService({ db, queries, rateLimiter, mailer, push, events, audit, profileImages, logger }) {
   /* ===========================================================================
    * HELPERS
    * ======================================================================== */
@@ -861,6 +861,51 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     return updated;
   }
 
+  async function updateAvatar({ userId, file }) {
+    const previous = await queries.findUserById(userId);
+    if (!previous) throw new NotFoundError('User');
+    const stored = await profileImages.upload(file);
+    let updated;
+    try {
+      updated = await db.tx((tx) => queries.updateUserAvatar(userId, stored.url, tx));
+      if (!updated) throw new NotFoundError('User');
+    } catch (error) {
+      try {
+        await profileImages.remove(stored.url);
+      } catch (cleanupError) {
+        logger.error({ cleanupError, userId }, 'Could not clean up failed profile image upload');
+      }
+      throw error;
+    }
+    if (previous.avatar_url && previous.avatar_url !== stored.url) {
+      try {
+        await profileImages.remove(previous.avatar_url);
+      } catch (error) {
+        logger.error({ error, userId }, 'Could not remove replaced profile image');
+      }
+    }
+    return updated;
+  }
+
+  async function removeAvatar({ userId }) {
+    const previous = await queries.findUserById(userId);
+    if (!previous) throw new NotFoundError('User');
+    const updated = await db.tx((tx) => queries.updateUserAvatar(userId, null, tx));
+    if (!updated) throw new NotFoundError('User');
+    if (previous.avatar_url) {
+      try {
+        await profileImages.remove(previous.avatar_url);
+      } catch (error) {
+        logger.error({ error, userId }, 'Could not remove profile image');
+      }
+    }
+    return updated;
+  }
+
+  async function getProfileImage(key) {
+    return profileImages.get(key);
+  }
+
   const DEFAULT_USER_PREFERENCES = Object.freeze({
     general: {
       theme: 'system',
@@ -1067,6 +1112,9 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
 
     // Profile
     updateProfile,
+    updateAvatar,
+    removeAvatar,
+    getProfileImage,
     getUserPreferences,
     updateUserPreferences,
     requestEmailChange,

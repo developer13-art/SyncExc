@@ -23,6 +23,9 @@ export const sourcesApi = {
 
   getById: (sourceId) => api.get(endpoints.sources.detail(sourceId)),
 
+  listTelegramMessages: (sourceId, params) =>
+    api.get(endpoints.sources.telegramMessages(sourceId), { params }),
+
   update: (sourceId, payload) => api.patch(endpoints.sources.detail(sourceId), payload),
 
   setMonitoring: (sourceId, enabled) =>

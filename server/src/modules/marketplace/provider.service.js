@@ -8,7 +8,7 @@ import {
   AuthorizationError,
 } from '../../lib/errors.js';
 
-export function createProviderService({ db, queries, events, logger }) {
+export function createProviderService({ db, queries, events, profileImages, logger }) {
   async function createProvider({
     userId,
     workspaceId,
@@ -227,6 +227,38 @@ export function createProviderService({ db, queries, events, logger }) {
     });
   }
 
+  async function updateCoverImage({ userId, workspaceId, providerId, file }) {
+    const provider = await queries.findProviderById(providerId);
+    if (!provider || provider.user_id !== userId || provider.workspace_id !== workspaceId) {
+      throw new NotFoundError('Provider');
+    }
+    const stored = await profileImages.upload(file);
+    let updated;
+    try {
+      updated = await updateProvider({
+        userId,
+        workspaceId,
+        providerId,
+        updates: { coverImageUrl: stored.url },
+      });
+    } catch (error) {
+      try {
+        await profileImages.remove(stored.url);
+      } catch (cleanupError) {
+        logger.error({ cleanupError, providerId }, 'Could not clean up failed trader cover upload');
+      }
+      throw error;
+    }
+    if (provider.cover_image_url && provider.cover_image_url !== stored.url) {
+      try {
+        await profileImages.remove(provider.cover_image_url);
+      } catch (error) {
+        logger.error({ error, providerId }, 'Could not remove replaced trader cover image');
+      }
+    }
+    return updated;
+  }
+
   return {
     createProvider,
     getProvider,
@@ -240,6 +272,7 @@ export function createProviderService({ db, queries, events, logger }) {
     createProviderPlan,
     updateProviderPlan,
     updateProvider,
+    updateCoverImage,
   };
 }
 
