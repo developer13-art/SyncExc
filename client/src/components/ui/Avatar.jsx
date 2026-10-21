@@ -2,6 +2,8 @@ import * as AvatarPrimitive from '@radix-ui/react-avatar';
 import { forwardRef } from 'react';
 
 import { cn } from '../../lib/utils/cn.util.js';
+import { apiConfig } from '../../config/api.config.js';
+import { resolveProfileImageUrl } from '../../lib/profile-image-url.js';
 
 const sizes = {
   xs: 'h-6 w-6 text-2xs',
@@ -15,6 +17,12 @@ export const Avatar = forwardRef(function Avatar(
   { className, src, alt, fallback, size = 'md', ...props },
   ref,
 ) {
+  const imageSrc = resolveProfileImageUrl(
+    src,
+    apiConfig.baseURL,
+    typeof window === 'undefined' ? undefined : window.location.origin,
+  );
+
   return (
     <AvatarPrimitive.Root
       ref={ref}
@@ -25,9 +33,9 @@ export const Avatar = forwardRef(function Avatar(
       )}
       {...props}
     >
-      {src ? (
+      {imageSrc ? (
         <AvatarPrimitive.Image
-          src={src}
+          src={imageSrc}
           alt={alt ?? ''}
           className="aspect-square h-full w-full object-cover"
         />

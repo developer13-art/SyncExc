@@ -14,7 +14,7 @@ export const identityApi = {
 
   refresh: (refreshToken) => api.post(endpoints.auth.refresh, { refreshToken }),
 
-  getCurrentUser: () => api.get(endpoints.auth.me),
+  getCurrentUser: () => api.get(endpoints.users.me),
 
   verifyEmail: (token) => api.post(endpoints.auth.verifyEmail, { token }),
 

@@ -19,6 +19,8 @@ import { getErrorMessage } from '../../api/errors.js';
 import { useToast } from '../../hooks/useToast.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { apiConfig } from '../../config/api.config.js';
+import { resolveProfileImageUrl } from '../../lib/profile-image-url.js';
 
 const profileKey = (workspaceId) => ['marketplace', 'my-provider', workspaceId];
 const signalsKey = (workspaceId) => ['marketplace', 'my-signals', workspaceId];
@@ -478,7 +480,11 @@ export default function TraderProfile() {
           <CardContent className="space-y-3">
             {provider.coverImageUrl ? (
               <img
-                src={provider.coverImageUrl}
+                src={resolveProfileImageUrl(
+                  provider.coverImageUrl,
+                  apiConfig.baseURL,
+                  window.location.origin,
+                )}
                 alt="Trader profile cover"
                 className="h-40 w-full rounded-lg border border-border object-cover"
               />

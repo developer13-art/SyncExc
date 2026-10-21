@@ -20,6 +20,8 @@ import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { apiConfig } from '../../config/api.config.js';
+import { resolveProfileImageUrl } from '../../lib/profile-image-url.js';
 import { cn } from '../../lib/utils/cn.util.js';
 
 export default function ProviderProfile() {
@@ -115,7 +117,11 @@ export default function ProviderProfile() {
       <Card>
         {provider.coverImageUrl ? (
           <img
-            src={provider.coverImageUrl}
+            src={resolveProfileImageUrl(
+              provider.coverImageUrl,
+              apiConfig.baseURL,
+              window.location.origin,
+            )}
             alt=""
             className="h-48 w-full rounded-t-xl object-cover"
           />
