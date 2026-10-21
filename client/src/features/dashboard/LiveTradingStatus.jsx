@@ -8,6 +8,16 @@ import { Skeleton } from '../../components/ui/Skeleton.jsx';
 import { cn } from '../../lib/utils/cn.util.js';
 import { ROUTES } from '../../config/routes.config.js';
 
+const PENDING_ORDER_STATUSES = new Set([
+  'pending_submission',
+  'submitted',
+  'acknowledged',
+  'partially_filled',
+  'cancel_requested',
+  'unknown',
+  'reconciliation_required',
+]);
+
 export function LiveTradingStatus({ overview, positions = [], orders = [], isLoading }) {
   if (isLoading) {
     return (
@@ -44,9 +54,7 @@ export function LiveTradingStatus({ overview, positions = [], orders = [], isLoa
     },
     {
       label: 'Pending orders',
-      value: orders.filter(
-        (o) => o.status === 'pending' || o.status === 'partially_filled',
-      ).length,
+      value: orders.filter((order) => PENDING_ORDER_STATUSES.has(order.status)).length,
       tone: 'warning',
       href: ROUTES.app.terminal.orders,
     },
