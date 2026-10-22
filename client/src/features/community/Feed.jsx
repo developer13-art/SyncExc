@@ -24,6 +24,12 @@ import { uiActions } from '../../app/slices/uiSlice.js';
 import { communityApi } from '../../api/index.js';
 import { ROUTES } from '../../config/routes.config.js';
 
+const FEED_OPTIONS = [
+  { value: 'following', label: 'Following' },
+  { value: 'discover', label: 'Discover' },
+  { value: 'latest', label: 'Latest' },
+];
+
 export default function Feed() {
   const dispatch = useDispatch();
   const toast = useToast();
