@@ -255,6 +255,150 @@ test('uses IOC for Bybit market orders and preserves limit time-in-force', async
   }
 });
 
+test('submits Bybit stop-market orders with a validated trigger direction', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestBodies = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('/v5/market/tickers')) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          retCode: 0,
+          result: { list: [{ lastPrice: '100' }] },
+        }),
+      };
+    }
+    requestBodies.push(JSON.parse(options.body));
+    return {
+      ok: true,
+      text: async () =>
+        JSON.stringify({ retCode: 0, result: { orderId: 'conditional-order-id' } }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    const credentials = {
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'demo',
+    };
+    const order = {
+      instrument: 'BTCUSDT',
+      marketType: 'futures',
+      side: 'sell',
+      type: 'stop_market',
+      quantity: '0.01',
+      triggerPrice: '95',
+      reduceOnly: true,
+      timeInForce: 'GTC',
+    };
+    await adapter.placeOrder({ ...credentials, order });
+
+    assert.equal(requestBodies.length, 1);
+    assert.equal(requestBodies[0].category, 'linear');
+    assert.equal(requestBodies[0].orderType, 'Market');
+    assert.equal(requestBodies[0].triggerPrice, '95');
+    assert.equal(requestBodies[0].triggerDirection, 2);
+    assert.equal(requestBodies[0].triggerBy, 'LastPrice');
+    assert.equal(requestBodies[0].reduceOnly, true);
+    assert.equal(requestBodies[0].timeInForce, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('submits Bybit stop-limit orders with their trigger and limit prices', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestBodies = [];
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('/v5/market/tickers')) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          retCode: 0,
+          result: { list: [{ lastPrice: '100' }] },
+        }),
+      };
+    }
+    requestBodies.push(JSON.parse(options.body));
+    return {
+      ok: true,
+      text: async () =>
+        JSON.stringify({ retCode: 0, result: { orderId: 'conditional-order-id' } }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    await adapter.placeOrder({
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'demo',
+      order: {
+        instrument: 'BTCUSDT',
+        marketType: 'perpetual',
+        side: 'buy',
+        type: 'stop_limit',
+        quantity: '0.01',
+        price: '96',
+        triggerPrice: '95',
+        timeInForce: 'GTC',
+      },
+    });
+
+    assert.equal(requestBodies[0].category, 'linear');
+    assert.equal(requestBodies[0].orderType, 'Limit');
+    assert.equal(requestBodies[0].price, '96');
+    assert.equal(requestBodies[0].triggerPrice, '95');
+    assert.equal(requestBodies[0].triggerDirection, 2);
+    assert.equal(requestBodies[0].timeInForce, 'GTC');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('rejects Bybit conditional orders when the trigger matches current price', async () => {
+  const originalFetch = globalThis.fetch;
+  let createRequested = false;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/v5/market/tickers')) {
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          retCode: 0,
+          result: { list: [{ lastPrice: '100' }] },
+        }),
+      };
+    }
+    createRequested = true;
+    return { ok: true, text: async () => JSON.stringify({ retCode: 0, result: {} }) };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    await assert.rejects(
+      adapter.placeOrder({
+        apiKey: 'test-api-key',
+        apiSecret: 'test-api-secret',
+        environment: 'demo',
+        order: {
+          instrument: 'BTCUSDT',
+          marketType: 'futures',
+          side: 'buy',
+          type: 'stop_market',
+          quantity: '0.01',
+          triggerPrice: '100',
+        },
+      }),
+      /trigger price must differ from the current last price/
+    );
+    assert.equal(createRequested, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('fetches Bybit order status from the matching market category', async () => {
   const originalFetch = globalThis.fetch;
   const requestedUrls = [];

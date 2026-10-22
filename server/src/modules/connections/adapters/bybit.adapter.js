@@ -54,7 +54,14 @@ export function createBybitAdapter({ config, logger }) {
       hasMargin: false,
       hasSubaccounts: true,
       hasWebsocket: true,
-      supportedOrderTypes: ['market', 'limit'],
+      supportedOrderTypes: [
+        'market',
+        'limit',
+        'stop_market',
+        'stop_limit',
+        'take_profit_market',
+        'take_profit_limit',
+      ],
       supportedTimeInForce: ['GTC', 'IOC', 'FOK', 'PostOnly'],
     },
 
@@ -138,23 +145,62 @@ export function createBybitAdapter({ config, logger }) {
     },
 
     async placeOrder({ apiKey, apiSecret, accountType = 'unified', environment, order }) {
-      if (!['market', 'limit'].includes(order.type)) {
+      const marketOrderTypes = ['market', 'stop_market', 'take_profit_market'];
+      const limitOrderTypes = ['limit', 'stop_limit', 'take_profit_limit'];
+      if (![...marketOrderTypes, ...limitOrderTypes].includes(order.type)) {
         throw new Error(`Bybit does not support ${order.type} orders through this adapter`);
       }
+      const conditionalOrder = order.type !== 'market' && order.type !== 'limit';
+      if (conditionalOrder && order.marketType === 'spot') {
+        throw new Error('Bybit conditional orders through this adapter require a futures/perpetual market');
+      }
+
+      let triggerDirection;
+      if (conditionalOrder) {
+        if (!order.triggerPrice || !Number.isFinite(Number(order.triggerPrice)) || Number(order.triggerPrice) <= 0) {
+          throw new Error('Bybit conditional orders require a valid trigger price');
+        }
+        const category = order.marketType === 'spot' ? 'spot' : 'linear';
+        const tickerQuery = new URLSearchParams({
+          category,
+          symbol: order.instrument,
+        }).toString();
+        const tickerData = await this.fetchSigned({
+          url: `${getBaseUrl(environment)}/v5/market/tickers?${tickerQuery}`,
+        });
+        if (tickerData.retCode !== 0) {
+          throw new Error(`Bybit ticker fetch error: ${tickerData.retMsg}`);
+        }
+        const lastPrice = Number(tickerData.result?.list?.[0]?.lastPrice);
+        if (!Number.isFinite(lastPrice) || lastPrice <= 0) {
+          throw new Error('Bybit did not return a valid last price for conditional order validation');
+        }
+        const triggerPrice = Number(order.triggerPrice);
+        if (triggerPrice === lastPrice) {
+          throw new Error('Bybit trigger price must differ from the current last price');
+        }
+        triggerDirection = triggerPrice > lastPrice ? 1 : 2;
+      }
+
       const path = '/v5/order/create';
       const body = {
         category: order.marketType === 'spot' ? 'spot' : 'linear',
         symbol: order.instrument,
         side: order.side === 'buy' ? 'Buy' : 'Sell',
-        orderType: order.type === 'market' ? 'Market' : 'Limit',
+        orderType: marketOrderTypes.includes(order.type) ? 'Market' : 'Limit',
         qty: order.quantity,
       };
       if (order.price) body.price = order.price;
+      if (conditionalOrder) {
+        body.triggerPrice = order.triggerPrice;
+        body.triggerDirection = triggerDirection;
+        body.triggerBy = 'LastPrice';
+      }
       if (order.clientOrderId) body.orderLinkId = order.clientOrderId;
       if (order.reduceOnly) body.reduceOnly = true;
       if (order.type === 'market') {
         body.timeInForce = 'IOC';
-      } else if (order.timeInForce) {
+      } else if (limitOrderTypes.includes(order.type) && order.timeInForce) {
         body.timeInForce = order.timeInForce;
       }
 
