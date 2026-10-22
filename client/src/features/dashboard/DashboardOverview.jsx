@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { IconButton } from '../../components/ui/IconButton.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
+import { useAuthContext } from '../../context/AuthContext.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import {
   useTerminalAccountsSync,
@@ -27,15 +29,17 @@ import { LiveTradingStatus } from './LiveTradingStatus.jsx';
 import { ActiveSignalsWidget } from './ActiveSignalsWidget.jsx';
 import { OpenTradesWidget } from './OpenTradesWidget.jsx';
 import { RecentTradesWidget } from './RecentTradesWidget.jsx';
-import { ProfitLossWidget } from './ProfitLossWidget.jsx';
 import { RiskOverviewWidget } from './RiskOverviewWidget.jsx';
 import { AccountHealthWidget } from './AccountHealthWidget.jsx';
 import { SubscriptionStatusWidget } from './SubscriptionStatusWidget.jsx';
 import { ReferralSummaryWidget } from './ReferralSummaryWidget.jsx';
+import { DashboardMarketPanel } from './DashboardMarketPanel.jsx';
+import { TradingDashboardMetrics } from './TradingDashboardMetrics.jsx';
 
 export default function DashboardOverview() {
   const dispatch = useDispatch();
   const toast = useToast();
+  const { user } = useAuthContext();
   const {
     activeWorkspaceId,
     activeWorkspace,
@@ -122,28 +126,40 @@ export default function DashboardOverview() {
     positionsQuery.isLoading ||
     ordersQuery.isLoading ||
     exposureQuery.isLoading;
+  const firstName =
+    user?.displayName?.trim().split(/\s+/)[0] ||
+    user?.firstName ||
+    user?.email?.split('@')[0] ||
+    'there';
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-7">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            {activeWorkspace?.name ?? 'Dashboard'}
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Account overview</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {greeting}, {firstName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Overview of connected accounts, active positions, and recent activity across your
-            workspace.
+            {activeWorkspace?.name ?? 'Your workspace'} · Track your portfolio, positions, and market activity.
           </p>
         </div>
-        <IconButton
-          label="Refresh"
-          onClick={handleRefreshAll}
-          disabled={isLoading}
-          className="border border-border"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </IconButton>
-      </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/app/terminal">Open terminal</Link>
+          </Button>
+          <IconButton
+            label="Refresh dashboard"
+            onClick={handleRefreshAll}
+            disabled={isLoading}
+            className="border border-border bg-background"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </IconButton>
+        </div>
+      </header>
 
       {accountSyncQuery.error ? (
         <p className="text-xs text-destructive">
@@ -152,50 +168,40 @@ export default function DashboardOverview() {
       ) : null}
 
       {canMonitorTrading ? (
-        <>
-          <ProfitLossWidget
+        <TradingDashboardMetrics
             overview={overviewQuery.data}
             positions={positionsQuery.data ?? []}
             isLoading={overviewQuery.isLoading || positionsQuery.isLoading}
-            error={overviewQuery.error}
-          />
-          <div className="grid gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <PortfolioOverview
-                overview={overviewQuery.data}
-                isLoading={overviewQuery.isLoading}
-                error={overviewQuery.error}
-                onRetry={overviewQuery.refetch}
-              />
-            </div>
-            <div>
+            error={overviewQuery.error || positionsQuery.error}
+        />
+      ) : null}
+
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,0.8fr)]">
+        <DashboardMarketPanel
+          workspaceId={canMonitorTrading ? workspaceId : null}
+          connections={connectionsQuery.data?.items ?? []}
+          isLoadingConnections={connectionsQuery.isLoading}
+          connectionsError={connectionsQuery.error}
+          onRetryConnections={connectionsQuery.refetch}
+          canViewConnections={isWorkspaceReady && canMonitorTrading && canViewConnections}
+        />
+        <div className="grid content-start gap-5 md:grid-cols-2 xl:grid-cols-1">
+          {canMonitorTrading ? (
+            <>
               <LiveTradingStatus
                 overview={overviewQuery.data}
                 positions={positionsQuery.data ?? []}
                 orders={ordersQuery.data?.items ?? []}
                 isLoading={overviewQuery.isLoading || positionsQuery.isLoading}
               />
-            </div>
-          </div>
-        </>
-      ) : null}
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        {canMonitorTrading ? (
-          <AccountSummary
-            overview={overviewQuery.data}
-            isLoading={overviewQuery.isLoading}
-            error={overviewQuery.error}
-          />
-        ) : null}
-        {canViewRisk ? (
-          <RiskOverviewWidget
-            exposure={exposureQuery.data}
-            alerts={alertsQuery.data?.items ?? []}
-            isLoading={exposureQuery.isLoading || alertsQuery.isLoading}
-            error={exposureQuery.error}
-          />
-        ) : null}
+              <ActiveSignalsWidget
+                signals={signalsQuery.data?.items ?? []}
+                isLoading={signalsQuery.isLoading}
+                error={signalsQuery.error}
+              />
+            </>
+          ) : null}
+        </div>
       </div>
 
       {canMonitorTrading ? (
@@ -214,17 +220,20 @@ export default function DashboardOverview() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <ActiveSignalsWidget
-          signals={signalsQuery.data?.items ?? []}
-          isLoading={signalsQuery.isLoading}
-          error={signalsQuery.error}
-        />
-        {canViewConnections ? (
-          <AccountHealthWidget
-            connections={connectionsQuery.data?.items ?? []}
-            isLoading={connectionsQuery.isLoading}
-            error={connectionsQuery.error}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,1fr)]">
+        {canMonitorTrading ? (
+          <PortfolioOverview
+            overview={overviewQuery.data}
+            isLoading={overviewQuery.isLoading}
+            error={overviewQuery.error}
+            onRetry={overviewQuery.refetch}
+          />
+        ) : null}
+        {canMonitorTrading ? (
+          <AccountSummary
+            overview={overviewQuery.data}
+            isLoading={overviewQuery.isLoading}
+            error={overviewQuery.error}
           />
         ) : null}
       </div>
@@ -241,16 +250,28 @@ export default function DashboardOverview() {
         </Card>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid gap-5 xl:grid-cols-3">
+        {canViewRisk ? (
+          <RiskOverviewWidget
+            exposure={exposureQuery.data}
+            alerts={alertsQuery.data?.items ?? []}
+            isLoading={exposureQuery.isLoading || alertsQuery.isLoading}
+            error={exposureQuery.error}
+          />
+        ) : null}
+        {canViewConnections ? (
+          <AccountHealthWidget
+            connections={connectionsQuery.data?.items ?? []}
+            isLoading={connectionsQuery.isLoading}
+            error={connectionsQuery.error}
+          />
+        ) : null}
         <SubscriptionStatusWidget
           subscription={subscriptionQuery.subscription}
           usage={subscriptionQuery.usage}
           isLoading={subscriptionQuery.isLoading}
         />
-        <ReferralSummaryWidget
-          dashboard={referralQuery.data}
-          isLoading={referralQuery.isLoading}
-        />
+        <ReferralSummaryWidget dashboard={referralQuery.data} isLoading={referralQuery.isLoading} />
         <QuickActionsCard />
       </div>
     </div>
@@ -263,13 +284,13 @@ function QuickActionsCard() {
       <h3 className="text-sm font-semibold text-foreground">Quick Actions</h3>
       <div className="mt-3 flex flex-col gap-2">
         <Button variant="outline" className="justify-start" asChild>
-          <a href="/app/connections/new">Connect an exchange</a>
+        <Link to="/app/connections/new">Connect an exchange</Link>
         </Button>
         <Button variant="outline" className="justify-start" asChild>
-          <a href="/app/sources/new">Add a signal source</a>
+        <Link to="/app/sources/new">Add a signal source</Link>
         </Button>
         <Button variant="outline" className="justify-start" asChild>
-          <a href="/app/automation/new">Create a workflow</a>
+        <Link to="/app/automation/new">Create a workflow</Link>
         </Button>
       </div>
     </div>

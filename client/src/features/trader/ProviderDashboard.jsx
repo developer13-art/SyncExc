@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, ArrowRight, Send, Users, UserRound, Layers3 } from 'lucide-react';
+import { Activity, ArrowRight, ArrowUpRight, Layers3, Send, UserRound, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { marketplaceApi } from '../../api/index.js';
@@ -12,14 +12,33 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ROUTES } from '../../config/routes.config.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
+import { useConnections } from '../../hooks/useConnections.js';
+import { useTerminalOrders, useTerminalOverview, useTerminalPositions } from '../../hooks/useTerminal.js';
+import { DashboardMarketPanel } from '../dashboard/DashboardMarketPanel.jsx';
+import { OpenTradesWidget } from '../dashboard/OpenTradesWidget.jsx';
+import { PortfolioOverview } from '../dashboard/PortfolioOverview.jsx';
+import { RecentTradesWidget } from '../dashboard/RecentTradesWidget.jsx';
+import { TradingDashboardMetrics } from '../dashboard/TradingDashboardMetrics.jsx';
 
 export default function ProviderDashboard() {
-  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { activeWorkspace, activeWorkspaceId, permissions = [] } = useWorkspaceContext();
+  const canMonitorTrading = permissions.includes('trading.monitor');
+  const canViewConnections = permissions.includes('connections.view');
   const dashboardQuery = useQuery({
     queryKey: ['marketplace', 'provider-dashboard', activeWorkspaceId],
     queryFn: () => marketplaceApi.getProviderDashboard(),
     enabled: activeWorkspace?.type === 'trader',
   });
+  const connectionsQuery = useConnections({ status: 'active' }, canViewConnections);
+  const overviewQuery = useTerminalOverview(canMonitorTrading ? activeWorkspaceId : null);
+  const positionsQuery = useTerminalPositions(
+    canMonitorTrading ? activeWorkspaceId : null,
+    { status: 'open' },
+  );
+  const ordersQuery = useTerminalOrders(
+    canMonitorTrading ? activeWorkspaceId : null,
+    { limit: 10 },
+  );
 
   if (dashboardQuery.isLoading) return <LoadingState label="Loading Trader dashboard" />;
   if (dashboardQuery.isError) {
@@ -58,12 +77,15 @@ export default function ProviderDashboard() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-border bg-gradient-to-br from-primary/10 via-card to-card p-5 sm:p-7">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trader dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Welcome, {dashboard.provider.displayName}. Manage your audience, subscription plans, and published signals.
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Trader workspace</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            Welcome back, {dashboard.provider.displayName}
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Monitor your trading activity, keep an eye on the market, and manage your subscribers and signals.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Badge variant={dashboard.provider.moderationState === 'approved' ? 'success' : 'warning'}>
@@ -74,78 +96,150 @@ export default function ProviderDashboard() {
             </Badge>
           </div>
         </div>
-        <Button asChild>
-          <Link to={ROUTES.app.trader.publishSignal}>
-            <Send className="h-4 w-4" /> Publish signal
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link to={ROUTES.app.trader.profile}>
+              View profile <ArrowUpRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link to={ROUTES.app.trader.publishSignal}>
+              <Send className="h-4 w-4" /> Publish signal
+            </Link>
+          </Button>
+        </div>
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map(({ label, value, icon: Icon }) => (
-          <Card key={label}>
-            <CardContent className="flex items-start justify-between gap-3 p-5">
-              <div>
-                <p className="text-sm text-muted-foreground">{label}</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
+          <Card key={label} className="overflow-hidden">
+            <CardContent className="flex items-center justify-between gap-3 p-5">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
               </div>
-              <Icon className="h-5 w-5 text-primary" />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Icon className="h-5 w-5" />
+              </span>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent signals</CardTitle>
-            <CardDescription>Your latest published marketplace signals.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentSignals.length === 0 ? (
-              <EmptyState
-                icon={Activity}
-                title="No signals yet"
-                description="Publish a signal when your profile is approved and public."
-                action={<Button asChild><Link to={ROUTES.app.trader.publishSignal}>Create a signal</Link></Button>}
-              />
-            ) : (
-              <div className="divide-y divide-border">
-                {recentSignals.map((signal) => (
-                  <div key={signal.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                    <div>
-                      <p className="font-medium text-foreground">
-                        {signal.instrument} · {signal.direction}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {signal.marketType} · {signal.entry ? `Entry ${signal.entry}` : 'Entry not specified'}
-                      </p>
-                    </div>
-                    <Badge variant={signal.status === 'published' || signal.status === 'updated' ? 'success' : 'muted'}>
-                      {signal.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-            <Button variant="link" asChild className="mt-3 px-0">
-              <Link to={ROUTES.app.trader.signalHistory}>View all signals <ArrowRight className="h-4 w-4" /></Link>
-            </Button>
-          </CardContent>
-        </Card>
+      {canMonitorTrading ? (
+        <TradingDashboardMetrics
+          overview={overviewQuery.data}
+          positions={positionsQuery.data ?? []}
+          isLoading={overviewQuery.isLoading || positionsQuery.isLoading}
+          error={overviewQuery.error || positionsQuery.error}
+        />
+      ) : null}
 
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,0.8fr)]">
+        <DashboardMarketPanel
+          workspaceId={canMonitorTrading ? activeWorkspaceId : null}
+          connections={connectionsQuery.data?.items ?? []}
+          isLoadingConnections={connectionsQuery.isLoading}
+          connectionsError={connectionsQuery.error}
+          onRetryConnections={connectionsQuery.refetch}
+          canViewConnections={canMonitorTrading && canViewConnections}
+        />
+        <div className="grid content-start gap-5 md:grid-cols-2 xl:grid-cols-1">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Recent signals</CardTitle>
+                  <CardDescription className="mt-1">Your latest published marketplace activity.</CardDescription>
+                </div>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to={ROUTES.app.trader.signalHistory}>
+                    View all <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {recentSignals.length === 0 ? (
+                <EmptyState
+                  icon={Activity}
+                  title="No signals yet"
+                  description="Publish a signal when your profile is approved and public."
+                  action={<Button size="sm" asChild><Link to={ROUTES.app.trader.publishSignal}>Create a signal</Link></Button>}
+                  size="sm"
+                  className="border-0 bg-transparent py-4"
+                />
+              ) : (
+                <div className="divide-y divide-border">
+                  {recentSignals.slice(0, 4).map((signal) => (
+                    <div key={signal.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground">
+                          {signal.instrument} <span className="text-muted-foreground">·</span> {signal.direction}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {signal.marketType} · {signal.entry ? `Entry ${signal.entry}` : 'Entry not specified'}
+                        </p>
+                      </div>
+                      <Badge variant={signal.status === 'published' || signal.status === 'updated' ? 'success' : 'muted'}>
+                        {signal.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Trader tools</CardTitle>
+              <CardDescription>Manage your audience, plans, and public profile.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+              <Button variant="outline" className="justify-start" asChild>
+                <Link to={ROUTES.app.trader.subscribers}><Users className="h-4 w-4" /> Subscribers</Link>
+              </Button>
+              <Button variant="outline" className="justify-start" asChild>
+                <Link to={ROUTES.app.trader.plans}><Layers3 className="h-4 w-4" /> Subscription plans</Link>
+              </Button>
+              <Button variant="outline" className="justify-start" asChild>
+                <Link to={ROUTES.app.trader.profile}><UserRound className="h-4 w-4" /> Public profile</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {canMonitorTrading ? (
+        <>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <OpenTradesWidget
+              positions={positionsQuery.data ?? []}
+              orders={ordersQuery.data?.items ?? []}
+              isLoading={positionsQuery.isLoading || ordersQuery.isLoading}
+              error={positionsQuery.error}
+            />
+            <RecentTradesWidget
+              trades={overviewQuery.data?.recentTrades ?? []}
+              isLoading={overviewQuery.isLoading}
+              error={overviewQuery.error}
+            />
+          </div>
+          <PortfolioOverview
+            overview={overviewQuery.data}
+            isLoading={overviewQuery.isLoading}
+            error={overviewQuery.error}
+            onRetry={overviewQuery.refetch}
+          />
+        </>
+      ) : (
         <Card>
-          <CardHeader>
-            <CardTitle>Trader tools</CardTitle>
-            <CardDescription>Manage the parts of your provider account.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col items-start gap-2">
-            <Button variant="ghost" asChild><Link to={ROUTES.app.trader.subscribers}><Users className="h-4 w-4" /> Subscribers</Link></Button>
-            <Button variant="ghost" asChild><Link to={ROUTES.app.trader.plans}><Layers3 className="h-4 w-4" /> Subscription plans</Link></Button>
-            <Button variant="ghost" asChild><Link to={ROUTES.app.trader.profile}><UserRound className="h-4 w-4" /> Public profile</Link></Button>
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Connect an exchange and enable trading permissions to see live positions, portfolio, and market charts here.
           </CardContent>
         </Card>
-      </div>
+      )}
     </div>
   );
 }

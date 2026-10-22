@@ -45,6 +45,7 @@ export function OrderForm({
   isSubmitting = false,
   availableBalance,
   availableMargin,
+  availableBalances,
   maxLeverage,
   defaultOrderType = 'limit',
   className,
@@ -87,6 +88,13 @@ export function OrderForm({
 
   const isMarketOrder = type === 'market' || type === 'stop_market';
   const needsStopPrice = type === 'stop_market' || type === 'stop_limit';
+  const hasSideBalance = availableBalances &&
+    Object.prototype.hasOwnProperty.call(availableBalances, side);
+  const currentAvailableBalance = hasSideBalance
+    ? availableBalances[side]
+    : isFutures
+      ? availableMargin
+      : availableBalance;
 
   const notional = useMemo(() => {
     if (!quantity) {
@@ -98,7 +106,7 @@ export function OrderForm({
 
   const applyPercent = (nextPercent) => {
     setPercent(nextPercent);
-    const base = isFutures ? availableMargin : availableBalance;
+    const base = currentAvailableBalance;
     if (!base || !instrument) {
       return;
     }
@@ -218,9 +226,15 @@ export function OrderForm({
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Available</span>
             <span className="text-xs font-medium text-foreground">
-              {isFutures
-                ? formatCurrency(availableMargin ?? 0, instrument?.quoteAsset ?? 'USD')
-                : `${formatQuantity(availableBalance ?? 0, 6)} ${instrument?.baseAsset ?? ''}`}
+              {currentAvailableBalance == null
+                ? '—'
+                : isFutures
+                  ? formatCurrency(currentAvailableBalance, instrument?.quoteAsset ?? 'USD')
+                  : `${formatQuantity(currentAvailableBalance, 6)} ${
+                    side === 'buy' && hasSideBalance
+                      ? instrument?.quoteAsset ?? ''
+                      : instrument?.baseAsset ?? ''
+                  }`}
             </span>
           </div>
           <div className="flex gap-1">
