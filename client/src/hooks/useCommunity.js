@@ -24,11 +24,12 @@ export function useCommunityProfile() {
   };
 }
 
-export function useCommunityFeed(params = {}) {
+export function useCommunityFeed(params = {}, options = {}) {
   return useQuery({
     queryKey: queryKeys.community.feed(params),
     queryFn: () => communityApi.getFeed(params),
     staleTime: 30_000,
+    ...options,
   });
 }
 

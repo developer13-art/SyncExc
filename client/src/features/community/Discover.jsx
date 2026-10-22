@@ -13,7 +13,7 @@ import { RecommendationCard } from './components/RecommendationCard.jsx';
 import {
   useCommunitySearch,
   useCommunityGroups,
-  useCommunityPosts,
+  useCommunityFeed,
 } from '../../hooks/useCommunity.js';
 import { communityApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
@@ -32,6 +32,7 @@ export default function Discover() {
   const toast = useToast();
   const [tab, setTab] = useState('posts');
   const [query, setQuery] = useState('');
+  const searchTerm = query.trim();
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Discover'));
@@ -44,12 +45,15 @@ export default function Discover() {
   }, [dispatch]);
 
   const searchQuery = useCommunitySearch({
-    q: query || undefined,
+    q: searchTerm || undefined,
     type: tab === 'people' ? 'profiles' : tab,
-  }, { enabled: tab === 'people' || Boolean(query) });
-  const latestPostsQuery = useCommunityPosts({ limit: 20 });
-  const groupsQuery = useCommunityGroups({ q: query || undefined });
-  const isShowingLatestPosts = tab === 'posts' && !query;
+  }, { enabled: tab === 'people' || Boolean(searchTerm) });
+  const latestPostsQuery = useCommunityFeed(
+    { limit: 20, following: false },
+    { refetchOnMount: 'always' },
+  );
+  const groupsQuery = useCommunityGroups({ q: searchTerm || undefined });
+  const isShowingLatestPosts = tab === 'posts' && !searchTerm;
   const isLoading =
     tab === 'posts'
       ? isShowingLatestPosts ? latestPostsQuery.isLoading : searchQuery.isLoading
@@ -102,7 +106,7 @@ export default function Discover() {
             onRetry={isShowingLatestPosts ? latestPostsQuery.refetch : searchQuery.refetch}
           />
         ) : (isShowingLatestPosts
-          ? latestPostsQuery.posts
+          ? latestPostsQuery.data?.items ?? []
           : searchQuery.data?.results?.posts ?? []).length === 0 ? (
           <EmptyState
             title={isShowingLatestPosts ? 'No posts yet' : 'No posts found'}
@@ -113,7 +117,7 @@ export default function Discover() {
         ) : (
           <div className="flex flex-col gap-3">
             {(isShowingLatestPosts
-              ? latestPostsQuery.posts
+              ? latestPostsQuery.data?.items ?? []
               : searchQuery.data.results.posts).map((post) => (
               <PostCard key={post.id} post={post} />
             ))}

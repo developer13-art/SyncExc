@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, MessageCircle, Send } from 'lucide-react';
 
 import { communityApi } from '../../api/index.js';
+import { Avatar } from '../../components/ui/Avatar.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Input } from '../../components/ui/Input.jsx';
@@ -21,6 +22,16 @@ import { ROUTES } from '../../config/routes.config.js';
 
 function errorMessage(error) {
   return error?.response?.data?.error?.message || error?.message || 'Something went wrong.';
+}
+
+function initials(name) {
+  return (name || '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
 }
 
 export default function Messages() {
@@ -179,10 +190,18 @@ export default function Messages() {
                 <div key={request.id} className="rounded-md border border-border p-3">
                   <button
                     type="button"
-                    className="w-full text-left text-sm font-medium text-foreground hover:underline"
+                    className="flex w-full items-center gap-3 text-left"
                     onClick={() => navigate(ROUTES.app.community.messageConversation(request.id))}
                   >
-                    {request.other_display_name || request.other_handle}
+                    <Avatar
+                      size="sm"
+                      src={request.other_avatar_url}
+                      alt={request.other_display_name || request.other_handle}
+                      fallback={initials(request.other_display_name || request.other_handle)}
+                    />
+                    <span className="min-w-0 truncate text-sm font-medium text-foreground hover:underline">
+                      {request.other_display_name || request.other_handle}
+                    </span>
                   </button>
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                     {request.initial_message}
@@ -217,13 +236,21 @@ export default function Messages() {
               <Link
                 key={conversation.id}
                 to={ROUTES.app.community.messageConversation(conversation.id)}
-                className="rounded-md border border-border p-3 hover:bg-muted/40"
+                className="flex items-center gap-3 rounded-md border border-border p-3 hover:bg-muted/40"
               >
-                <span className="block text-sm font-medium text-foreground">
-                  {conversation.other_display_name || conversation.other_handle}
-                </span>
-                <span className="mt-1 block truncate text-xs text-muted-foreground">
-                  {conversation.last_message || 'No messages'}
+                <Avatar
+                  size="sm"
+                  src={conversation.other_avatar_url}
+                  alt={conversation.other_display_name || conversation.other_handle}
+                  fallback={initials(conversation.other_display_name || conversation.other_handle)}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-foreground">
+                    {conversation.other_display_name || conversation.other_handle}
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">
+                    {conversation.last_message || 'No messages'}
+                  </span>
                 </span>
               </Link>
             ))}

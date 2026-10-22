@@ -48,17 +48,18 @@ export function createMessagingQueries({ db }) {
         `
         SELECT c.*,
                CASE WHEN c.participant_low = $1 THEN c.participant_high ELSE c.participant_low END AS other_user_id,
-               p.handle AS other_handle,
-               p.display_name AS other_display_name,
-               p.avatar_url AS other_avatar_url,
+               COALESCE(p.handle, u.username_normalized, u.username) AS other_handle,
+               COALESCE(p.display_name, u.display_name) AS other_display_name,
+               COALESCE(p.avatar_url, u.avatar_url) AS other_avatar_url,
                m.content AS last_message,
                CASE WHEN c.participant_low = $1
                  THEN c.participant_low_read_at
                  ELSE c.participant_high_read_at
                END AS viewer_read_at
         FROM community_conversations c
-        JOIN community_profiles p
-          ON p.user_id = CASE WHEN c.participant_low = $1 THEN c.participant_high ELSE c.participant_low END
+        JOIN users u
+          ON u.id = CASE WHEN c.participant_low = $1 THEN c.participant_high ELSE c.participant_low END
+        LEFT JOIN community_profiles p ON p.user_id = u.id
         LEFT JOIN LATERAL (
           SELECT content FROM community_messages
           WHERE conversation_id = c.id AND deleted_at IS NULL
@@ -94,13 +95,14 @@ export function createMessagingQueries({ db }) {
         `
         SELECT c.*,
                CASE WHEN c.participant_low = $1 THEN c.participant_high ELSE c.participant_low END AS other_user_id,
-               p.handle AS other_handle,
-               p.display_name AS other_display_name,
-               p.avatar_url AS other_avatar_url,
+               COALESCE(p.handle, u.username_normalized, u.username) AS other_handle,
+               COALESCE(p.display_name, u.display_name) AS other_display_name,
+               COALESCE(p.avatar_url, u.avatar_url) AS other_avatar_url,
                m.content AS initial_message
         FROM community_conversations c
-        JOIN community_profiles p
-          ON p.user_id = CASE WHEN c.participant_low = $1 THEN c.participant_high ELSE c.participant_low END
+        JOIN users u
+          ON u.id = CASE WHEN c.participant_low = $1 THEN c.participant_high ELSE c.participant_low END
+        LEFT JOIN community_profiles p ON p.user_id = u.id
         LEFT JOIN LATERAL (
           SELECT content FROM community_messages
           WHERE conversation_id = c.id AND deleted_at IS NULL
