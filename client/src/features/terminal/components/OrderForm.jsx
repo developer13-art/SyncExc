@@ -94,7 +94,9 @@ export function OrderForm({
     ? availableBalances[side]
     : isFutures
       ? availableMargin
-      : availableBalance;
+      : side === 'buy'
+        ? availableMargin
+        : availableBalance;
 
   const notional = useMemo(() => {
     if (!quantity) {
@@ -117,7 +119,9 @@ export function OrderForm({
     const usable = Number(base) * (nextPercent / 100);
     const size = isFutures
       ? (usable * Number(leverage)) / refPrice
-      : usable / refPrice;
+      : side === 'buy'
+        ? usable / refPrice
+        : usable;
     setValue('quantity', formatQuantity(size, instrument.quantityPrecision ?? 6), {
       shouldValidate: true,
     });
@@ -141,7 +145,7 @@ export function OrderForm({
       <SegmentedControl
         options={[
           { value: 'buy', label: 'Buy / Long' },
-          { value: 'sell', label: 'Sell / Short' },
+          { value: 'sell', label: isFutures ? 'Sell / Short' : 'Sell' },
         ]}
         value={side}
         onChange={setSide}
@@ -230,11 +234,9 @@ export function OrderForm({
                 ? '—'
                 : isFutures
                   ? formatCurrency(currentAvailableBalance, instrument?.quoteAsset ?? 'USD')
-                  : `${formatQuantity(currentAvailableBalance, 6)} ${
-                    side === 'buy' && hasSideBalance
-                      ? instrument?.quoteAsset ?? ''
-                      : instrument?.baseAsset ?? ''
-                  }`}
+                    : `${formatQuantity(currentAvailableBalance, 6)} ${
+                      side === 'buy' ? instrument?.quoteAsset ?? '' : instrument?.baseAsset ?? ''
+                    }`}
             </span>
           </div>
           <div className="flex gap-1">
