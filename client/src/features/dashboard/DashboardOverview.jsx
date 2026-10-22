@@ -8,9 +8,12 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
-import { useTerminalOverview } from '../../hooks/useTerminal.js';
-import { useTerminalPositions } from '../../hooks/useTerminal.js';
-import { useTerminalOrders } from '../../hooks/useTerminal.js';
+import {
+  useTerminalAccountsSync,
+  useTerminalOverview,
+  useTerminalPositions,
+  useTerminalOrders,
+} from '../../hooks/useTerminal.js';
 import { useRiskExposure } from '../../hooks/useRisk.js';
 import { useRiskAlerts } from '../../hooks/useRisk.js';
 import { useConnections } from '../../hooks/useConnections.js';
@@ -65,6 +68,19 @@ export default function DashboardOverview() {
     {},
     isWorkspaceReady && canViewConnections,
   );
+  const exchangeAccounts = canViewConnections
+    ? (connectionsQuery.data?.items ?? [])
+      .filter((connection) => connection.status === 'active')
+      .flatMap((connection) =>
+        (connection.accounts ?? [])
+          .filter((account) => account.status === 'active')
+          .map((account) => ({ id: account.id }))
+      )
+    : [];
+  const accountSyncQuery = useTerminalAccountsSync(
+    canMonitorTrading ? workspaceId : null,
+    exchangeAccounts,
+  );
   const signalsQuery = useSignals({ limit: 5 }, isWorkspaceReady);
   const subscriptionQuery = useSubscription();
   const referralQuery = useReferralDashboard();
@@ -92,6 +108,9 @@ export default function DashboardOverview() {
       canViewRisk ? exposureQuery.refetch() : Promise.resolve(),
       canViewRisk ? alertsQuery.refetch() : Promise.resolve(),
       canViewConnections ? connectionsQuery.refetch() : Promise.resolve(),
+      canMonitorTrading && exchangeAccounts.length
+        ? accountSyncQuery.refetch()
+        : Promise.resolve(),
       signalsQuery.refetch(),
     ]);
     toast.success('Dashboard refreshed');
@@ -125,6 +144,12 @@ export default function DashboardOverview() {
           <RefreshCw className="h-4 w-4" />
         </IconButton>
       </div>
+
+      {accountSyncQuery.error ? (
+        <p className="text-xs text-destructive">
+          Exchange trade-history sync failed: {accountSyncQuery.error.message}
+        </p>
+      ) : null}
 
       {canMonitorTrading ? (
         <>

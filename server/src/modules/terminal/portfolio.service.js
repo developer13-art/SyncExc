@@ -58,6 +58,8 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
       [workspaceId]
     );
 
+    const recentTradesResult = await queries.listTradesForScope(workspaceId, { limit: 5 });
+
     // Recent executions
     const executionsResult = await db.query(
       `
@@ -227,6 +229,23 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
         totalRealizedPnl: closedTradesResult.rows[0].total_realized_pnl,
       },
       realizedPnlToday: closedTradesResult.rows[0].realized_pnl_today,
+      recentTrades: recentTradesResult.rows.map((trade) => ({
+        id: trade.id,
+        orderId: trade.order_id || null,
+        exchangeTradeId: trade.exchange_trade_id || null,
+        instrument: trade.instrument,
+        side: trade.side,
+        quantity: trade.quantity,
+        filledQuantity: trade.quantity,
+        entryPrice: trade.entry_price || null,
+        price: trade.price,
+        averagePrice: trade.price,
+        fees: trade.fee_amount || null,
+        feeAsset: trade.fee_asset || null,
+        realizedPnl: trade.realized_pnl,
+        closedAt: trade.executed_at,
+        status: trade.realized_pnl === null ? 'filled' : 'closed',
+      })),
       recentExecutions: executionsResult.rows,
     };
   }

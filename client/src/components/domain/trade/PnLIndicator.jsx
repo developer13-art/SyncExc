@@ -12,7 +12,11 @@ export function PnLIndicator({
   showPercent = true,
   className,
 }) {
-  const numeric = typeof value === 'number' ? value : Number(value);
+  const numeric = value === null || value === undefined || value === ''
+    ? Number.NaN
+    : typeof value === 'number'
+      ? value
+      : Number(value);
   if (!Number.isFinite(numeric)) {
     return <span className={cn('text-sm text-muted-foreground', className)}>—</span>;
   }

@@ -57,6 +57,28 @@ test('includes workspace exchange accounts and latest asset balances in overview
         assert.fail(`Unexpected overview query: ${sql}`);
       },
     },
+    queries: {
+      async listTradesForScope(workspaceId, options) {
+        assert.equal(workspaceId, 'workspace-id');
+        assert.equal(options.limit, 5);
+        return {
+          rows: [{
+            id: 'closed-trade-id',
+            order_id: null,
+            exchange_trade_id: 'exchange-trade-id',
+            instrument: 'BTCUSDT',
+            side: 'long',
+            quantity: '0.01',
+            entry_price: '60000',
+            price: '61000',
+            fee_amount: '0.2',
+            fee_asset: 'USDT',
+            realized_pnl: '10',
+            executed_at: '2026-10-22T07:00:00.000Z',
+          }],
+        };
+      },
+    },
   });
 
   const overview = await service.getWorkspaceOverview({ workspaceId: 'workspace-id' });
@@ -87,6 +109,23 @@ test('includes workspace exchange accounts and latest asset balances in overview
   assert.equal(overview.degradedConnectionCount, 1);
   assert.equal(overview.realizedPnlToday, '2.5');
   assert.deepEqual(overview.closedTrades, { count: 2, totalRealizedPnl: '14.5' });
+  assert.deepEqual(overview.recentTrades, [{
+    id: 'closed-trade-id',
+    orderId: null,
+    exchangeTradeId: 'exchange-trade-id',
+    instrument: 'BTCUSDT',
+    side: 'long',
+    quantity: '0.01',
+    filledQuantity: '0.01',
+    entryPrice: '60000',
+    price: '61000',
+    averagePrice: '61000',
+    fees: '0.2',
+    feeAsset: 'USDT',
+    realizedPnl: '10',
+    closedAt: '2026-10-22T07:00:00.000Z',
+    status: 'closed',
+  }]);
 });
 
 test('estimates USD portfolio value from balance quantities and exchange spot prices', async () => {
@@ -129,6 +168,7 @@ test('estimates USD portfolio value from balance quantities and exchange spot pr
         assert.fail(`Unexpected overview query: ${sql}`);
       },
     },
+    queries: { listTradesForScope: async () => ({ rows: [] }) },
     marketData: {
       getSpotPrice: async ({ exchangeCode, symbol }) => {
         assert.equal(exchangeCode, 'bybit');
@@ -185,6 +225,7 @@ test('does not report a partial portfolio total when an asset has no USD price',
         assert.fail(`Unexpected overview query: ${sql}`);
       },
     },
+    queries: { listTradesForScope: async () => ({ rows: [] }) },
     marketData: {
       getSpotPrice: async () => {
         throw new Error('price unavailable');

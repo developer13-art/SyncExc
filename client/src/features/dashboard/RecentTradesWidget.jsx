@@ -102,7 +102,7 @@ export function RecentTradesWidget({ trades = [], isLoading, error }) {
               </p>
             </div>
             <PnLIndicator
-              value={trade.realizedPnl ?? 0}
+              value={trade.realizedPnl}
               percent={trade.pnlPercent}
               currency={trade.quoteCurrency ?? 'USD'}
             />

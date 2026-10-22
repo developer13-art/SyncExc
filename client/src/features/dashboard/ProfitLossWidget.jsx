@@ -57,7 +57,7 @@ export function ProfitLossWidget({ overview, positions = [], isLoading, error })
 
       <StatCard
         label="Unrealized P&L"
-        value={formatCurrency(Math.abs(unrealizedPnl), currency)}
+        value={formatCurrency(unrealizedPnl, currency)}
         hint={`Across ${openPositionsCount} open position${openPositionsCount !== 1 ? 's' : ''}`}
         icon={unrealizedPnl >= 0 ? TrendingUp : TrendingDown}
         tone={unrealizedTone}
@@ -65,7 +65,7 @@ export function ProfitLossWidget({ overview, positions = [], isLoading, error })
 
       <StatCard
         label="Realized Today"
-        value={formatCurrency(Math.abs(realizedToday), currency)}
+        value={formatCurrency(realizedToday, currency)}
         hint={
           realizedPercent
             ? `${formatPercent(realizedPercent, { showSign: true, decimals: 2 })} of equity`

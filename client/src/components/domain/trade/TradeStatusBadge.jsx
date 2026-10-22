@@ -10,6 +10,7 @@ const STATUS_MAP = {
   pending: { label: 'Pending', variant: 'warning' },
   partially_filled: { label: 'Partial Fill', variant: 'warning' },
   filled: { label: 'Filled', variant: 'success' },
+  closed: { label: 'Closed', variant: 'success' },
   completed: { label: 'Completed', variant: 'success' },
   cancelled: { label: 'Cancelled', variant: 'muted' },
   cancelled_confirmed: { label: 'Cancelled', variant: 'muted' },

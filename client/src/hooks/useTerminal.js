@@ -132,6 +132,40 @@ export function useTerminalAccountSync(workspaceId, accountId) {
   });
 }
 
+export function useTerminalAccountsSync(workspaceId, accounts = []) {
+  const queryClient = useQueryClient();
+  const accountIds = [...new Set(accounts.map((account) => account.id).filter(Boolean))].sort();
+  return useQuery({
+    queryKey: ['terminal', 'exchange-sync-workspace', workspaceId, accountIds],
+    queryFn: async () => {
+      const results = await Promise.all(
+        accountIds.map((accountId) => terminalApi.syncAccountState(workspaceId, accountId))
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.positions(workspaceId, {}),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.orders(workspaceId, {}),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.trades(workspaceId, {}),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.overview(workspaceId),
+        }),
+      ]);
+      return results;
+    },
+    enabled: Boolean(workspaceId && accountIds.length),
+    staleTime: 0,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: 1,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useTerminalBalances(workspaceId, params = {}) {
   return useQuery({
     queryKey: queryKeys.terminal.balances(workspaceId, params),
