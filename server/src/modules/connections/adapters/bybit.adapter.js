@@ -3,6 +3,7 @@
  */
 
 import crypto from 'node:crypto';
+import { ExternalProviderError } from '../../../lib/errors.js';
 import { createBaseAdapter } from './base.adapter.js';
 
 const BASE_URL = 'https://api.bybit.com';
@@ -326,7 +327,16 @@ export function createBybitAdapter({ config, logger }) {
         method: 'GET',
         headers,
       });
-      if (data.retCode !== 0) throw new Error(`Bybit positions error: ${data.retMsg}`);
+      if (data.retCode !== 0) {
+        throw new ExternalProviderError(
+          `Bybit position sync failed: ${data.retMsg}`,
+          {
+            provider: 'bybit',
+            status: 502,
+            details: { providerCode: data.retCode, stage: 'position sync' },
+          },
+        );
+      }
 
       return (data.result?.list || [])
         .filter((p) => Number(p.size) > 0)
@@ -360,7 +370,14 @@ export function createBybitAdapter({ config, logger }) {
         headers,
       });
       if (data.retCode !== 0) {
-        throw new Error(`Bybit closed P&L fetch error: ${data.retMsg}`);
+        throw new ExternalProviderError(
+          `Bybit closed P&L sync failed: ${data.retMsg}`,
+          {
+            provider: 'bybit',
+            status: 502,
+            details: { providerCode: data.retCode, stage: 'closed P&L sync' },
+          },
+        );
       }
 
       const result = data.result || {};

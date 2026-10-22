@@ -5,7 +5,12 @@
  * Submission is handled by order-submission.service.js.
  */
 
-import { NotFoundError, ConflictError } from '../../lib/errors.js';
+import {
+  AppError,
+  ConflictError,
+  ExternalProviderError,
+  NotFoundError,
+} from '../../lib/errors.js';
 import { ORDER_STATUS } from '@syncexc/shared';
 
 const OPEN_ORDER_STATUSES = [
@@ -28,6 +33,58 @@ export function createTerminalService({
   audit,
   logger,
 }) {
+  async function fetchFromExchange({ exchangeCode, accountId, stage, fetch }) {
+    try {
+      return await fetch();
+    } catch (error) {
+      logger?.error?.(
+        {
+          exchangeCode,
+          accountId,
+          stage,
+          providerCode: error.exchangeResponse?.retCode ?? error.statusCode ?? null,
+          errorName: error.name || 'Error',
+        },
+        'Exchange account sync step failed',
+      );
+      if (error instanceof AppError) throw error;
+
+      const providerMessage = error.exchangeResponse?.retMsg;
+      throw new ExternalProviderError(
+        providerMessage
+          ? `${exchangeCode} ${stage} failed: ${providerMessage}`
+          : `${exchangeCode} ${stage} failed. Check the exchange connection and API permissions.`,
+        {
+          provider: exchangeCode,
+          retryable: Boolean(error.retryable),
+          status: 502,
+          details: {
+            stage,
+            providerCode: error.exchangeResponse?.retCode ?? error.statusCode ?? undefined,
+          },
+        },
+      );
+    }
+  }
+
+  async function withClosedPnlStorage(work) {
+    try {
+      return await work();
+    } catch (error) {
+      if (error.code !== '42P01' && error.code !== '42703') throw error;
+      throw new AppError(
+        'Closed-trade sync storage is not available. Run the pending database migrations and restart the server.',
+        {
+          code: 'TERMINAL_SYNC_SCHEMA_MISSING',
+          status: 503,
+          expose: true,
+          details: { migration: '033_terminal_closed_trade_history.sql' },
+          cause: error,
+        },
+      );
+    }
+  }
+
   async function getMarketData(params) {
     return marketData.getMarketData(params);
   }
@@ -89,7 +146,12 @@ export function createTerminalService({
     if (typeof adapter.fetchPositions !== 'function') {
       throw new Error(`The ${connection.exchange_code} adapter does not support position syncing`);
     }
-    const positions = await adapter.fetchPositions(adapterContext);
+    const positions = await fetchFromExchange({
+      exchangeCode: connection.exchange_code,
+      accountId,
+      stage: 'position sync',
+      fetch: () => adapter.fetchPositions(adapterContext),
+    });
     if (!Array.isArray(positions)) {
       throw new Error(`The ${connection.exchange_code} adapter returned invalid position data`);
     }
@@ -123,7 +185,9 @@ export function createTerminalService({
     });
 
     if (typeof adapter.fetchClosedPnl === 'function') {
-      const syncState = await queries.getClosedPnlSyncState(accountId);
+      const syncState = await withClosedPnlStorage(() =>
+        queries.getClosedPnlSyncState(accountId)
+      );
       let cursor = syncState?.closed_pnl_cursor || null;
       let latestClosedAt = syncState?.closed_pnl_last_at || null;
       const backfilled = Boolean(syncState?.closed_pnl_backfilled);
@@ -136,10 +200,15 @@ export function createTerminalService({
           : latestClosedAt
             ? Math.max(0, new Date(latestClosedAt).getTime() - 60_000)
             : Date.now();
-        const page = await adapter.fetchClosedPnl({
-          ...adapterContext,
-          cursor,
-          startTime: cursor ? undefined : startTime,
+        const page = await fetchFromExchange({
+          exchangeCode: connection.exchange_code,
+          accountId,
+          stage: 'closed P&L sync',
+          fetch: () => adapter.fetchClosedPnl({
+            ...adapterContext,
+            cursor,
+            startTime: cursor ? undefined : startTime,
+          }),
         });
         if (!page || !Array.isArray(page.trades)) {
           throw new Error(`${connection.exchange_code} adapter returned invalid closed P&L data`);
@@ -148,7 +217,7 @@ export function createTerminalService({
         cursor = page.nextCursor || null;
         hasMore = Boolean(cursor);
         pagesFetched += 1;
-        await db.tx(async (tx) => {
+        await withClosedPnlStorage(() => db.tx(async (tx) => {
           for (const trade of page.trades) {
             if (
               !trade.exchangeTradeId ||
@@ -185,7 +254,7 @@ export function createTerminalService({
             lastClosedAt: hasMore ? latestClosedAt : new Date(),
             backfilled: backfilled || !hasMore,
           });
-        });
+        }));
       }
     }
 
@@ -196,11 +265,16 @@ export function createTerminalService({
     });
     for (const order of activeOrders.rows) {
       if (!order.exchange_order_id || typeof adapter.fetchOrder !== 'function') continue;
-      const exchangeOrder = await adapter.fetchOrder({
-        ...adapterContext,
-        instrument: order.instrument,
-        exchangeOrderId: order.exchange_order_id,
-        marketType: order.market_type,
+      const exchangeOrder = await fetchFromExchange({
+        exchangeCode: connection.exchange_code,
+        accountId,
+        stage: 'order reconciliation',
+        fetch: () => adapter.fetchOrder({
+          ...adapterContext,
+          instrument: order.instrument,
+          exchangeOrderId: order.exchange_order_id,
+          marketType: order.market_type,
+        }),
       });
       if (!exchangeOrder) continue;
       await executionService.handleExecutionUpdate({
