@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Sparkles } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
-import { Card, CardContent } from '../../components/ui/Card.jsx';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { PostComposer } from './components/PostComposer.jsx';
 import { useCommunityPosts, useCommunityProfile } from '../../hooks/useCommunity.js';
 import { useToast } from '../../hooks/useToast.js';
@@ -50,26 +50,47 @@ export default function CreatePost() {
         </Button>
       </div>
 
-      <div className="mx-auto w-full max-w-2xl">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Create post
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Posts are informational. They never trigger trades or override execution controls.
-          </p>
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="min-w-0">
+          <div className="mb-5">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Create post
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Posts are informational. They never trigger trades or override execution controls.
+            </p>
+          </div>
+          <PostComposer
+            user={profileQuery.profile}
+            defaultDestination="public"
+            onSubmit={handleSubmit}
+            onCancel={() => navigate(ROUTES.app.community.feed)}
+          />
         </div>
-
-        <Card>
-          <CardContent className="p-6 pt-6">
-            <PostComposer
-              user={profileQuery.profile}
-              defaultDestination="public"
-              onSubmit={handleSubmit}
-              onCancel={() => navigate(ROUTES.app.community.feed)}
-            />
-          </CardContent>
-        </Card>
+        <aside className="flex flex-col gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Sparkles className="h-4 w-4 text-primary" /> Make it useful
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 text-sm text-muted-foreground">
+              Add context, explain your reasoning, and use topics so other members can find your
+              post.
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <ShieldCheck className="h-4 w-4 text-primary" /> Community guidelines
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 text-sm text-muted-foreground">
+              Keep discussions respectful. Don’t share private information or present an idea as
+              a guaranteed result.
+            </CardContent>
+          </Card>
+        </aside>
       </div>
     </div>
   );

@@ -101,7 +101,12 @@ export default function GroupDetails() {
         </Button>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
+        <div className="relative h-28 bg-gradient-to-r from-primary/25 via-primary/10 to-muted sm:h-36">
+          <div className="absolute bottom-4 left-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/60 bg-card/80 text-primary shadow-sm backdrop-blur">
+            <Users className="h-7 w-7" />
+          </div>
+        </div>
         <CardContent className="p-6 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">

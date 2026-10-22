@@ -31,12 +31,22 @@ export function ProfileHeader({
     .toUpperCase();
 
   return (
-    <Card className={className}>
-      <CardContent className="p-6 pt-6">
-        <div className="flex flex-wrap items-start gap-5">
-          <Avatar size="xl" src={profile.avatarUrl} fallback={initials} />
+    <Card className={`overflow-hidden ${className ?? ''}`}>
+      <div
+        role="img"
+        aria-label="Profile cover"
+        className="h-24 bg-gradient-to-r from-primary/25 via-primary/10 to-muted sm:h-32"
+      />
+      <CardContent className="relative p-5 pt-0 sm:p-6 sm:pt-0">
+        <div className="-mt-10 flex flex-wrap items-end gap-4 sm:-mt-12 sm:gap-5">
+          <Avatar
+            size="xl"
+            src={profile.avatarUrl}
+            fallback={initials}
+            className="h-20 w-20 border-4 border-card text-xl sm:h-24 sm:w-24"
+          />
 
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 pb-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                 {profile.displayName}
@@ -92,7 +102,7 @@ export function ProfileHeader({
             ) : null}
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 pb-1">
             {isOwnProfile ? (
               <Button variant="outline" asChild>
                 <Link to={ROUTES.app.community.myProfile}>

@@ -39,6 +39,7 @@ const Simulation = lazy(() => import('../features/simulation/Environments.jsx'))
 const CreateEnvironment = lazy(() => import('../features/simulation/CreateEnvironment.jsx'));
 const Developer = lazy(() => import('../features/developer/ApplicationsOverview.jsx'));
 const CommunityFeed = lazy(() => import('../features/community/Feed.jsx'));
+const CommunityLayout = lazy(() => import('../features/community/CommunityLayout.jsx'));
 const CommunityDiscover = lazy(() => import('../features/community/Discover.jsx'));
 const CommunityMyProfile = lazy(() => import('../features/community/MyProfile.jsx'));
 const CommunityUserProfile = lazy(() => import('../features/community/UserProfile.jsx'));
@@ -128,28 +129,30 @@ export function AppRoutes() {
         <Route path="simulation/environments/new" element={<Fallback><CreateEnvironment /></Fallback>} />
         <Route path="simulation/*" element={<Fallback><Simulation /></Fallback>} />
         <Route path="developer/*" element={<Fallback><Developer /></Fallback>} />
-        <Route path="community" element={<Fallback><CommunityFeed /></Fallback>} />
-        <Route path="community/feed" element={<Fallback><CommunityFeed /></Fallback>} />
-        <Route path="community/discover" element={<Fallback><CommunityDiscover /></Fallback>} />
-        <Route path="community/profile" element={<Fallback><CommunityMyProfile /></Fallback>} />
-        <Route path="community/profile/:userId" element={<Fallback><CommunityUserProfile /></Fallback>} />
-        <Route path="community/posts/new" element={<Fallback><CommunityCreatePost /></Fallback>} />
-        <Route path="community/posts/:postId" element={<Fallback><CommunityPostDetails /></Fallback>} />
-        <Route path="community/groups/new" element={<Fallback><CommunityCreateGroup /></Fallback>} />
-        <Route path="community/groups/:groupId/settings" element={<Fallback><CommunityGroupSettings /></Fallback>} />
-        <Route path="community/groups/:groupId" element={<Fallback><CommunityGroupDetails /></Fallback>} />
-        <Route path="community/groups" element={<Fallback><CommunityGroups /></Fallback>} />
-        <Route path="community/analysis/new" element={<Fallback><CommunityCreateAnalysis /></Fallback>} />
-        <Route path="community/analysis/:documentId/versions" element={<Fallback><CommunityAnalysisVersions /></Fallback>} />
-        <Route path="community/analysis/:documentId" element={<Fallback><CommunityAnalysisDetails /></Fallback>} />
-        <Route path="community/analysis" element={<Fallback><CommunityAnalysis /></Fallback>} />
-        <Route path="community/saved" element={<Fallback><CommunitySaved /></Fallback>} />
-        <Route path="community/recommendations" element={<Fallback><CommunityRecommendations /></Fallback>} />
-        <Route path="community/discussions" element={<Fallback><CommunityDiscussions /></Fallback>} />
-        <Route path="community/messages/:conversationId" element={<Fallback><CommunityMessages /></Fallback>} />
-        <Route path="community/messages" element={<Fallback><CommunityMessages /></Fallback>} />
-        <Route path="community/moderation" element={<Fallback><CommunityModerationCenter /></Fallback>} />
-        <Route path="community/*" element={<Fallback><CommunityFeed /></Fallback>} />
+        <Route element={<Fallback><CommunityLayout /></Fallback>}>
+          <Route path="community" element={<Fallback><CommunityFeed /></Fallback>} />
+          <Route path="community/feed" element={<Fallback><CommunityFeed /></Fallback>} />
+          <Route path="community/discover" element={<Fallback><CommunityDiscover /></Fallback>} />
+          <Route path="community/profile" element={<Fallback><CommunityMyProfile /></Fallback>} />
+          <Route path="community/profile/:userId" element={<Fallback><CommunityUserProfile /></Fallback>} />
+          <Route path="community/posts/new" element={<Fallback><CommunityCreatePost /></Fallback>} />
+          <Route path="community/posts/:postId" element={<Fallback><CommunityPostDetails /></Fallback>} />
+          <Route path="community/groups/new" element={<Fallback><CommunityCreateGroup /></Fallback>} />
+          <Route path="community/groups/:groupId/settings" element={<Fallback><CommunityGroupSettings /></Fallback>} />
+          <Route path="community/groups/:groupId" element={<Fallback><CommunityGroupDetails /></Fallback>} />
+          <Route path="community/groups" element={<Fallback><CommunityGroups /></Fallback>} />
+          <Route path="community/analysis/new" element={<Fallback><CommunityCreateAnalysis /></Fallback>} />
+          <Route path="community/analysis/:documentId/versions" element={<Fallback><CommunityAnalysisVersions /></Fallback>} />
+          <Route path="community/analysis/:documentId" element={<Fallback><CommunityAnalysisDetails /></Fallback>} />
+          <Route path="community/analysis" element={<Fallback><CommunityAnalysis /></Fallback>} />
+          <Route path="community/saved" element={<Fallback><CommunitySaved /></Fallback>} />
+          <Route path="community/recommendations" element={<Fallback><CommunityRecommendations /></Fallback>} />
+          <Route path="community/discussions" element={<Fallback><CommunityDiscussions /></Fallback>} />
+          <Route path="community/messages/:conversationId" element={<Fallback><CommunityMessages /></Fallback>} />
+          <Route path="community/messages" element={<Fallback><CommunityMessages /></Fallback>} />
+          <Route path="community/moderation" element={<Fallback><CommunityModerationCenter /></Fallback>} />
+          <Route path="community/*" element={<Fallback><CommunityFeed /></Fallback>} />
+        </Route>
         <Route path="referral/*" element={<Fallback><Referral /></Fallback>} />
         <Route path="billing/*" element={<Fallback><Billing /></Fallback>} />
         <Route path="support/*" element={<Fallback><Support /></Fallback>} />
