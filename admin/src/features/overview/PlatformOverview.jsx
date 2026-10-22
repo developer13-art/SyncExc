@@ -207,7 +207,7 @@ function MetricGrid({ dashboard }) {
       label: 'Trading volume (24h)',
       value: formatCurrency(dashboard.tradingVolume24h?.volume),
       detail: dashboard.tradingVolume24h?.changePct == null
-        ? 'USD-quoted executed trades'
+        ? 'Executed USD-stablecoin volume · all workspaces'
         : `${dashboard.tradingVolume24h.changePct >= 0 ? '+' : ''}${dashboard.tradingVolume24h.changePct.toFixed(1)}% vs previous 24h`,
       icon: CircleDollarSign,
       color: 'purple',

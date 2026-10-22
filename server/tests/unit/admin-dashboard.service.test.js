@@ -2,6 +2,30 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createDashboardService } from '../../src/modules/admin/dashboard.service.js';
+import { createAdminQueries } from '../../src/modules/admin/admin.queries.js';
+
+test('admin trading volume includes exchange-synced closed trades and normalized USD pairs', async () => {
+  let sql;
+  const queries = createAdminQueries({
+    db: {
+      async query(statement) {
+        sql = statement;
+        return { rows: [{ volume: '2500', previous_volume: '1000' }] };
+      },
+    },
+  });
+
+  const result = await queries.tradingVolume24h();
+
+  assert.deepEqual(result, { volume: '2500', previous_volume: '1000' });
+  assert.match(sql, /FROM trading_closed_trades ct/);
+  assert.match(sql, /FROM trading_orders o/);
+  assert.match(sql, /average_fill_price/);
+  assert.match(sql, /FROM trading_fills f WHERE f\.order_id = o\.id/);
+  assert.match(sql, /NOT EXISTS/);
+  assert.match(sql, /regexp_replace\(upper\(instrument\)/);
+  assert.match(sql, /USDT\|USDC\|BUSD/);
+});
 
 test('dashboard exposes real growth series and recent signups', async () => {
   const since = new Date('2026-10-15T00:00:00.000Z');

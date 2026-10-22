@@ -857,17 +857,52 @@ export function createAdminQueries({ db }) {
 
     async tradingVolume24h() {
       const result = await db.query(
-        `SELECT
-           COALESCE(sum(f.quantity * f.price) FILTER (
-             WHERE f.executed_at >= now() - interval '24 hours'
-           ), 0)::text AS volume,
-           COALESCE(sum(f.quantity * f.price) FILTER (
-             WHERE f.executed_at >= now() - interval '48 hours'
-               AND f.executed_at < now() - interval '24 hours'
-           ), 0)::text AS previous_volume
-         FROM trading_fills f
-         WHERE f.executed_at >= now() - interval '48 hours'
-           AND upper(f.instrument) ~ '(USD|USDT|USDC|BUSD)$'`
+        `
+        WITH traded_volume AS (
+          SELECT f.quantity * f.price AS notional, f.executed_at, f.instrument
+          FROM trading_fills f
+          JOIN trading_orders o ON o.id = f.order_id
+          WHERE f.executed_at >= now() - interval '48 hours'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM trading_closed_trades ct
+              WHERE ct.account_id = o.account_id
+                AND ct.exchange_order_id = o.exchange_order_id
+            )
+          UNION ALL
+          SELECT o.filled_quantity * COALESCE(o.average_fill_price, o.price) AS notional,
+            o.updated_at AS executed_at, o.instrument
+          FROM trading_orders o
+          WHERE o.updated_at >= now() - interval '48 hours'
+            AND o.status IN ('filled', 'partially_filled')
+            AND o.filled_quantity > 0
+            AND COALESCE(o.average_fill_price, o.price) > 0
+            AND NOT EXISTS (
+              SELECT 1 FROM trading_fills f WHERE f.order_id = o.id
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM trading_closed_trades ct
+              WHERE ct.account_id = o.account_id
+                AND ct.exchange_order_id = o.exchange_order_id
+            )
+          UNION ALL
+          SELECT ct.quantity * ct.exit_price AS notional, ct.closed_at AS executed_at, ct.instrument
+          FROM trading_closed_trades ct
+          WHERE ct.closed_at >= now() - interval '48 hours'
+        )
+        SELECT
+          COALESCE(sum(notional) FILTER (
+            WHERE executed_at >= now() - interval '24 hours'
+          ), 0)::text AS volume,
+          COALESCE(sum(notional) FILTER (
+            WHERE executed_at >= now() - interval '48 hours'
+              AND executed_at < now() - interval '24 hours'
+          ), 0)::text AS previous_volume
+        FROM traded_volume
+        WHERE regexp_replace(upper(instrument), '[^A-Z0-9]', '', 'g')
+          ~ '(USDT|USDC|BUSD|TUSD|FDUSD|USDP|USD)$'
+        `
       );
       return result.rows[0] ?? { volume: '0', previous_volume: '0' };
     },
