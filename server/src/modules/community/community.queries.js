@@ -766,11 +766,14 @@ export function createCommunityQueries({ db }) {
           COALESCE(prof.visibility, 'public') = 'public'
           OR (
             COALESCE(prof.visibility, 'public') IN ('followers', 'private')
-              AND (p.author_id = ${viewerParam} OR EXISTS (
+            AND (
+              p.author_id = ${viewerParam}
+              OR EXISTS (
                 SELECT 1 FROM community_follows f
                 WHERE f.follower_id = ${viewerParam} AND f.followee_id = p.author_id
               )
             )
+          )
         )`);
       } else {
         conditions.push(`COALESCE(prof.visibility, 'public') = 'public'`);

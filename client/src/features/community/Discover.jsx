@@ -10,7 +10,11 @@ import { SearchInput } from '../../components/forms/SearchInput.jsx';
 import { PostCard } from './components/PostCard.jsx';
 import { GroupCard } from './components/GroupCard.jsx';
 import { RecommendationCard } from './components/RecommendationCard.jsx';
-import { useCommunitySearch, useCommunityGroups } from '../../hooks/useCommunity.js';
+import {
+  useCommunitySearch,
+  useCommunityGroups,
+  useCommunityPosts,
+} from '../../hooks/useCommunity.js';
 import { communityApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
@@ -43,10 +47,12 @@ export default function Discover() {
     q: query || undefined,
     type: tab === 'people' ? 'profiles' : tab,
   }, { enabled: tab === 'people' || Boolean(query) });
+  const latestPostsQuery = useCommunityPosts({ limit: 20 });
   const groupsQuery = useCommunityGroups({ q: query || undefined });
+  const isShowingLatestPosts = tab === 'posts' && !query;
   const isLoading =
     tab === 'posts'
-      ? searchQuery.isLoading
+      ? isShowingLatestPosts ? latestPostsQuery.isLoading : searchQuery.isLoading
       : tab === 'groups'
         ? groupsQuery.isLoading
         : searchQuery.isLoading;
@@ -89,20 +95,26 @@ export default function Discover() {
       {isLoading ? (
         <LoadingState label="Loading" />
       ) : tab === 'posts' ? (
-        searchQuery.isError ? (
+        (isShowingLatestPosts ? latestPostsQuery.isError : searchQuery.isError) ? (
           <ErrorState
-            title="Search failed"
-            description="We could not complete your search."
-            onRetry={searchQuery.refetch}
+            title={isShowingLatestPosts ? 'Unable to load posts' : 'Search failed'}
+            description="We could not load community posts."
+            onRetry={isShowingLatestPosts ? latestPostsQuery.refetch : searchQuery.refetch}
           />
-        ) : (searchQuery.data?.results?.posts ?? []).length === 0 ? (
+        ) : (isShowingLatestPosts
+          ? latestPostsQuery.posts
+          : searchQuery.data?.results?.posts ?? []).length === 0 ? (
           <EmptyState
-            title="No posts found"
-            description="Try a different search query."
+            title={isShowingLatestPosts ? 'No posts yet' : 'No posts found'}
+            description={isShowingLatestPosts
+              ? 'Public community posts will appear here.'
+              : 'Try a different search query.'}
           />
         ) : (
           <div className="flex flex-col gap-3">
-            {searchQuery.data.results.posts.map((post) => (
+            {(isShowingLatestPosts
+              ? latestPostsQuery.posts
+              : searchQuery.data.results.posts).map((post) => (
               <PostCard key={post.id} post={post} />
             ))}
           </div>

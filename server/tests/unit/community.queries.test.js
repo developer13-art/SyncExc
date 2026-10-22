@@ -39,6 +39,10 @@ test('public feed includes users without Community profiles while enforcing prof
   assert.match(calls[0].sql, /COALESCE\(prof\.handle, u\.username_normalized, u\.username\)/);
   assert.match(calls[0].sql, /COALESCE\(prof\.visibility, 'public'\) = 'public'/);
   assert.match(calls[0].sql, /NOT EXISTS \([\s\S]*community_blocks/);
+  assert.equal(
+    [...calls[0].sql].filter((character) => character === '(').length,
+    [...calls[0].sql].filter((character) => character === ')').length
+  );
 });
 
 test('following feed includes the viewer’s own posts', async () => {
@@ -48,6 +52,10 @@ test('following feed includes the viewer’s own posts', async () => {
 
   assert.match(calls[0].sql, /p\.author_id = \$3 OR p\.visibility = 'public'/);
   assert.match(calls[0].sql, /p\.author_id = \$2/);
+  assert.equal(
+    [...calls[0].sql].filter((character) => character === '(').length,
+    [...calls[0].sql].filter((character) => character === ')').length
+  );
 });
 
 test('group post listing does not let membership bypass post or profile visibility', async () => {
