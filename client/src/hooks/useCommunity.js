@@ -158,11 +158,11 @@ export function useCommunityRecommendations(params = {}) {
   };
 }
 
-export function useCommunitySearch(params = {}) {
+export function useCommunitySearch(params = {}, { enabled = Boolean(params?.q) } = {}) {
   return useQuery({
     queryKey: queryKeys.community.search(params),
     queryFn: () => communityApi.search(params),
-    enabled: Boolean(params?.q),
+    enabled,
     staleTime: 30_000,
   });
 }

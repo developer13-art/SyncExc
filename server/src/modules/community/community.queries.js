@@ -373,10 +373,14 @@ export function createCommunityQueries({ db }) {
     async findPostById(postId) {
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
-               prof.avatar_url AS author_avatar
+        SELECT p.*,
+               COALESCE(prof.handle, u.username_normalized, u.username) AS author_handle,
+               COALESCE(prof.display_name, u.display_name) AS author_name,
+               COALESCE(prof.avatar_url, u.avatar_url) AS author_avatar,
+               COALESCE(prof.visibility, 'public') AS author_visibility
         FROM community_posts p
-        JOIN community_profiles prof ON prof.user_id = p.author_id
+        JOIN users u ON u.id = p.author_id
+        LEFT JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE p.id = $1 AND p.deleted_at IS NULL
         `,
         [postId]
@@ -976,9 +980,13 @@ export function createCommunityQueries({ db }) {
     async listCommentsForPost(postId, { limit = 200 } = {}) {
       const result = await db.query(
         `
-        SELECT c.*, prof.handle AS author_handle, prof.display_name AS author_name, prof.avatar_url AS author_avatar
+        SELECT c.*,
+               COALESCE(prof.handle, u.username_normalized, u.username) AS author_handle,
+               COALESCE(prof.display_name, u.display_name) AS author_name,
+               COALESCE(prof.avatar_url, u.avatar_url) AS author_avatar
         FROM community_comments c
-        JOIN community_profiles prof ON prof.user_id = c.author_id
+        JOIN users u ON u.id = c.author_id
+        LEFT JOIN community_profiles prof ON prof.user_id = c.author_id
         WHERE c.post_id = $1 AND c.deleted_at IS NULL
         ORDER BY c.created_at ASC
         LIMIT $2
@@ -1689,23 +1697,38 @@ export function createCommunityQueries({ db }) {
     async searchProfiles({ query, userId, limit = 50 }) {
       const result = await db.query(
         `
-        SELECT p.* FROM community_profiles p
-        WHERE p.visibility = 'public'
-          AND p.user_id <> $2
+        SELECT COALESCE(p.id, u.id) AS id,
+               u.id AS user_id,
+               COALESCE(p.handle, u.username_normalized, u.username) AS handle,
+               COALESCE(p.display_name, u.display_name) AS display_name,
+               p.biography,
+               COALESCE(p.avatar_url, u.avatar_url) AS avatar_url,
+               COALESCE(p.interests, '{}') AS interests,
+               COALESCE(p.skills, '{}') AS skills,
+               p.website,
+               COALESCE(p.visibility, 'public') AS visibility,
+               COALESCE(p.created_at, u.created_at) AS created_at
+        FROM users u
+        LEFT JOIN community_profiles p ON p.user_id = u.id
+        WHERE u.deleted_at IS NULL
+          AND u.status NOT IN ('suspended', 'deletion_pending', 'deleted')
+          AND COALESCE(p.visibility, 'public') = 'public'
+          AND u.id <> $2
           AND NOT EXISTS (
             SELECT 1 FROM community_blocks b
-            WHERE (b.blocker_id = $2 AND b.blocked_id = p.user_id)
-               OR (b.blocked_id = $2 AND b.blocker_id = p.user_id)
+            WHERE (b.blocker_id = $2 AND b.blocked_id = u.id)
+               OR (b.blocked_id = $2 AND b.blocker_id = u.id)
           )
           AND (
-            p.display_name ILIKE $3 OR
-            p.handle ILIKE $3 OR
+            $3 = '' OR
+            COALESCE(p.display_name, u.display_name) ILIKE $3 OR
+            COALESCE(p.handle, u.username_normalized, u.username) ILIKE $3 OR
             p.biography ILIKE $3
           )
-        ORDER BY p.created_at DESC
+        ORDER BY COALESCE(p.created_at, u.created_at) DESC
         LIMIT $4
         `,
-        [query, userId, `%${query}%`, limit]
+        [query, userId, query ? `%${query}%` : '', limit]
       );
       return result.rows;
     },

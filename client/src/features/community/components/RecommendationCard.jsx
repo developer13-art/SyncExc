@@ -1,11 +1,18 @@
 import { Lightbulb, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { Card, CardContent } from '../../../components/ui/Card.jsx';
 import { Avatar } from '../../../components/ui/Avatar.jsx';
 import { Button } from '../../../components/ui/Button.jsx';
 import { IconButton } from '../../../components/ui/IconButton.jsx';
 
-export function RecommendationCard({ recommendation, onAction, onDismiss, actionLabel = 'Follow' }) {
+export function RecommendationCard({
+  recommendation,
+  onAction,
+  onDismiss,
+  actionLabel = 'Follow',
+  profileTo,
+}) {
   if (!recommendation) {
     return null;
   }
@@ -22,12 +29,27 @@ export function RecommendationCard({ recommendation, onAction, onDismiss, action
     <Card className="overflow-hidden">
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <Avatar size="md" src={recommendation.avatarUrl} fallback={initials} />
+          {profileTo ? (
+            <Link to={profileTo} aria-label={`View ${recommendation.displayName}'s profile`}>
+              <Avatar size="md" src={recommendation.avatarUrl} fallback={initials} />
+            </Link>
+          ) : (
+            <Avatar size="md" src={recommendation.avatarUrl} fallback={initials} />
+          )}
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {recommendation.displayName}
-            </p>
+            {profileTo ? (
+              <Link
+                to={profileTo}
+                className="block truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
+              >
+                {recommendation.displayName}
+              </Link>
+            ) : (
+              <p className="truncate text-sm font-semibold text-foreground">
+                {recommendation.displayName}
+              </p>
+            )}
             {recommendation.handle ? (
               <p className="text-2xs text-muted-foreground">
                 @{recommendation.handle}
@@ -52,6 +74,11 @@ export function RecommendationCard({ recommendation, onAction, onDismiss, action
               <Button size="sm" onClick={() => onAction?.(recommendation)}>
                 {actionLabel}
               </Button>
+              {profileTo ? (
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={profileTo}>View profile</Link>
+                </Button>
+              ) : null}
               {onDismiss ? (
                 <Button
                   size="sm"

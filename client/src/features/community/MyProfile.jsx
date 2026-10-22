@@ -116,7 +116,7 @@ export default function MyProfile() {
       <ProfileHeader
         profile={profileQuery.profile}
         isOwnProfile
-        onFollow={() => setEditing(true)}
+        onEdit={() => setEditing(true)}
       />
 
       {editing ? (

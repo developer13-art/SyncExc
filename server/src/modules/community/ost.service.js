@@ -173,11 +173,11 @@ export function createPostService({ db, queries, events, realtime, logger }) {
       }
 
       const authorProfile = await queries.findProfileByUserId(post.author_id);
-      if (!authorProfile) throw new NotFoundError('Profile');
-      if (['group_members', 'workspace_members'].includes(authorProfile.visibility)) {
+      const authorVisibility = authorProfile?.visibility ?? post.author_visibility ?? 'public';
+      if (['group_members', 'workspace_members'].includes(authorVisibility)) {
         throw new AuthorizationError('Post is not available');
       }
-      if (['followers', 'private'].includes(authorProfile.visibility)) {
+      if (['followers', 'private'].includes(authorVisibility)) {
         const followsAuthor = viewerId
           ? await queries.isFollowing(viewerId, post.author_id)
           : false;

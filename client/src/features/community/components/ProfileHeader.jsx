@@ -15,6 +15,7 @@ export function ProfileHeader({
   hasPendingFollowRequest,
   onFollow,
   onUnfollow,
+  onEdit,
   canMessage = false,
   className,
 }) {
@@ -104,10 +105,8 @@ export function ProfileHeader({
 
           <div className="flex flex-wrap gap-2 pb-1">
             {isOwnProfile ? (
-              <Button variant="outline" asChild>
-                <Link to={ROUTES.app.community.myProfile}>
-                  <Settings className="h-4 w-4" /> Edit profile
-                </Link>
+              <Button variant="outline" onClick={onEdit}>
+                <Settings className="h-4 w-4" /> Edit profile
               </Button>
             ) : hasPendingFollowRequest ? (
               <Button variant="outline" disabled>Requested</Button>

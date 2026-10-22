@@ -41,6 +41,9 @@ export function createCommunityController(services) {
       profile = await profileService.getProfileByHandle(handleOrId);
       if (!profile && /^[0-9a-f-]{36}$/i.test(handleOrId)) {
         profile = await profileService.getProfileByUserId(handleOrId);
+        if (!profile) {
+          profile = await profileService.ensureProfileForUser(handleOrId);
+        }
       }
       if (!profile) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Profile not found' } });
 

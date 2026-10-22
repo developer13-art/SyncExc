@@ -42,7 +42,7 @@ export default function Discover() {
   const searchQuery = useCommunitySearch({
     q: query || undefined,
     type: tab === 'people' ? 'profiles' : tab,
-  });
+  }, { enabled: tab === 'people' || Boolean(query) });
   const groupsQuery = useCommunityGroups({ q: query || undefined });
   const isLoading =
     tab === 'posts'
@@ -139,6 +139,7 @@ export default function Discover() {
               recommendation={{ ...rec, reason: 'Public community profile' }}
               actionLabel="Follow"
               onAction={handleFollow}
+              profileTo={ROUTES.app.community.profile(rec.userId)}
             />
           ))}
         </div>

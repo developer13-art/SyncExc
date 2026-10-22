@@ -179,6 +179,7 @@ export function PostCard({
 
           <Link
             to={linkTo}
+            aria-label={`View ${post.commentsCount ?? 0} comments`}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
           >
             <MessageCircle className="h-3.5 w-3.5" />
