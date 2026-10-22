@@ -4,7 +4,7 @@
 
 import { NotFoundError, ConflictError, AuthorizationError } from '../../lib/errors.js';
 
-export function createGroupService({ db, queries, events, logger }) {
+export function createGroupService({ db, queries, events, profileImages, logger }) {
   async function createGroup({ userId, workspaceId, name, slug, description, type, topics }) {
     const existing = await queries.findGroupBySlug(slug);
     if (existing) throw new ConflictError('Slug is already taken', 'SLUG_TAKEN');
@@ -21,6 +21,7 @@ export function createGroupService({ db, queries, events, logger }) {
         slug,
         description,
         type,
+        topics,
         visibility: type === 'private' ? 'group_members' : 'public',
       });
 
@@ -212,6 +213,33 @@ export function createGroupService({ db, queries, events, logger }) {
     return queries.updateGroup(groupId, normalizedUpdates);
   }
 
+  async function updateGroupImage({ groupId, userId, imageType, file }) {
+    if (!['avatar', 'cover'].includes(imageType)) {
+      throw new ConflictError('Unsupported group image type');
+    }
+    const { group } = await requireModerator(groupId, userId);
+    const uploaded = await profileImages.upload(file);
+    const imageField = imageType === 'avatar' ? 'avatarUrl' : 'coverImageUrl';
+    const previousUrl = imageType === 'avatar' ? group.avatar_url : group.cover_image_url;
+
+    let updated;
+    try {
+      updated = await queries.updateGroup(groupId, { [imageField]: uploaded.url });
+    } catch (error) {
+      await profileImages.remove(uploaded.url);
+      throw error;
+    }
+
+    if (previousUrl && previousUrl !== uploaded.url) {
+      try {
+        await profileImages.remove(previousUrl);
+      } catch (error) {
+        logger.warn({ err: error, groupId, imageType }, 'Could not remove previous group image');
+      }
+    }
+    return updated;
+  }
+
   async function listJoinRequests({ groupId, userId, limit }) {
     await requireModerator(groupId, userId);
     return queries.listGroupRequests(groupId, { limit });
@@ -332,6 +360,7 @@ export function createGroupService({ db, queries, events, logger }) {
     leaveGroup,
     listMembers,
     updateGroup,
+    updateGroupImage,
     listJoinRequests,
     resolveJoinRequest,
     setMemberRole,

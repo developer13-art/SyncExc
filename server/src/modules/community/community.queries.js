@@ -1180,8 +1180,10 @@ export function createCommunityQueries({ db }) {
     async insertGroup(client, data) {
       const result = await client.query(
         `
-        INSERT INTO community_groups (owner_id, workspace_id, name, slug, description, type, visibility)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO community_groups (
+          owner_id, workspace_id, name, slug, description, type, visibility, topics
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
         `,
         [
@@ -1192,6 +1194,7 @@ export function createCommunityQueries({ db }) {
           data.description || null,
           data.type,
           data.visibility,
+          data.topics || [],
         ]
       );
       return result.rows[0];
@@ -1282,6 +1285,9 @@ export function createCommunityQueries({ db }) {
             description = COALESCE($3, description),
             type = COALESCE($4, type),
             visibility = COALESCE($5, visibility),
+            topics = COALESCE($6, topics),
+            avatar_url = COALESCE($7, avatar_url),
+            cover_image_url = COALESCE($8, cover_image_url),
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -1292,6 +1298,9 @@ export function createCommunityQueries({ db }) {
           fields.description ?? null,
           fields.type ?? null,
           fields.visibility ?? null,
+          fields.topics ?? null,
+          fields.avatarUrl ?? null,
+          fields.coverImageUrl ?? null,
         ]
       );
       return result.rows[0] || null;

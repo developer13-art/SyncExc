@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, X } from 'lucide-react';
+import { ArrowLeft, Check, ImagePlus, Upload, X } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
@@ -10,6 +10,7 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { Input } from '../../components/ui/Input.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { Textarea } from '../../components/ui/Textarea.jsx';
+import { TagInput } from '../../components/forms/TagInput.jsx';
 import {
   Select,
   SelectContent,
@@ -31,7 +32,12 @@ export default function GroupSettings() {
   const toast = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [type, setType] = useState('public');
+  const [topics, setTopics] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState('');
+  const avatarInputRef = useRef(null);
+  const coverInputRef = useRef(null);
 
   const groupQuery = useQuery({
     queryKey: queryKeys.community.group(groupId),
@@ -56,6 +62,8 @@ export default function GroupSettings() {
     if (!group) return;
     setName(group.name ?? '');
     setDescription(group.description ?? '');
+    setType(group.type ?? 'public');
+    setTopics(group.topics ?? []);
     dispatch(uiActions.setPageTitle(`${group.name} settings`));
     dispatch(uiActions.setBreadcrumbs([
       { label: 'Community', path: ROUTES.app.community.overview },
@@ -75,13 +83,32 @@ export default function GroupSettings() {
     event.preventDefault();
     setBusy(true);
     try {
-      await communityApi.updateGroup(groupId, { name: name.trim(), description: description.trim() });
+      await communityApi.updateGroup(groupId, {
+        name: name.trim(),
+        description: description.trim(),
+        type,
+        topics,
+      });
       await invalidateGroupData();
       toast.success('Group settings updated');
     } catch (error) {
       toast.error('Could not update settings', { description: getErrorMessage(error) });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleImageUpload = async (imageType, file) => {
+    if (!file) return;
+    setUploadingImage(imageType);
+    try {
+      await communityApi.uploadGroupImage(groupId, imageType, file);
+      await invalidateGroupData();
+      toast.success(imageType === 'avatar' ? 'Group profile image updated' : 'Group cover updated');
+    } catch (error) {
+      toast.error('Could not upload group image', { description: getErrorMessage(error) });
+    } finally {
+      setUploadingImage('');
     }
   };
 
@@ -136,11 +163,108 @@ export default function GroupSettings() {
 
       {canEdit ? (
         <Card>
-          <CardHeader><CardTitle>Group details</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Group profile and settings</CardTitle></CardHeader>
           <CardContent>
+            <div className="mb-5 grid gap-4 sm:grid-cols-2">
+              <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
+                  {group.avatarUrl ? (
+                    <img src={group.avatarUrl} alt={`${group.name} profile`} className="h-full w-full object-cover" />
+                  ) : (
+                    <ImagePlus className="h-6 w-6 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Group profile image</p>
+                  <p className="text-xs text-muted-foreground">JPEG, PNG, or WebP · up to 5 MB</p>
+                </div>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(event) => {
+                    handleImageUpload('avatar', event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Upload group profile image"
+                  title="Upload group profile image"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={Boolean(uploadingImage)}
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                <div className="h-14 w-20 shrink-0 overflow-hidden rounded-md bg-muted">
+                  {group.coverImageUrl ? (
+                    <img src={group.coverImageUrl} alt={`${group.name} cover`} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-muted-foreground">
+                      <ImagePlus className="h-5 w-5" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Cover image</p>
+                  <p className="text-xs text-muted-foreground">JPEG, PNG, or WebP · up to 5 MB</p>
+                </div>
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(event) => {
+                    handleImageUpload('cover', event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  aria-label="Upload group cover image"
+                  title="Upload group cover image"
+                  onClick={() => coverInputRef.current?.click()}
+                  disabled={Boolean(uploadingImage)}
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </div>
+              {uploadingImage ? (
+                <p className="text-xs text-muted-foreground sm:col-span-2">Uploading image…</p>
+              ) : null}
+            </div>
             <form onSubmit={handleSave} className="flex flex-col gap-3">
-              <Input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} aria-label="Group name" />
-              <Textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} rows={4} aria-label="Group description" />
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Group name
+                <Input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} aria-label="Group name" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Description
+                <Textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} rows={4} aria-label="Group description" />
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Group type and access
+                <Select value={type} onValueChange={setType}>
+                  <SelectTrigger aria-label="Group type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public — anyone can join</SelectItem>
+                    <SelectItem value="approval_based">Approval required</SelectItem>
+                    <SelectItem value="private">Private — invitation only</SelectItem>
+                    <SelectItem value="organization">Organization</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+              <div className="flex flex-col gap-1 text-sm font-medium">
+                Topics
+                <TagInput value={topics} onChange={setTopics} placeholder="Add group topics" />
+              </div>
               <Button type="submit" disabled={busy || !name.trim()}>
                 {busy ? 'Saving…' : 'Save changes'}
               </Button>

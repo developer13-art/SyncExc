@@ -434,6 +434,8 @@ export const apiConfig = Object.freeze({
       savedItem: (itemId) => `/community/bookmarks/${itemId}`,
       groups: '/community/groups',
       group: (groupId) => `/community/groups/${groupId}`,
+      groupImage: (groupId, imageType) =>
+        `/community/groups/${groupId}/images/${imageType}`,
       groupMembers: (groupId) => `/community/groups/${groupId}/members`,
       groupMember: (groupId, userId) => `/community/groups/${groupId}/members/${userId}`,
       groupMemberRole: (groupId, userId) =>

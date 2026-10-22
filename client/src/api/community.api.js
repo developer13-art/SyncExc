@@ -130,6 +130,12 @@ export const communityApi = {
 
   updateGroup: (groupId, payload) => api.patch(endpoints.community.group(groupId), payload),
 
+  uploadGroupImage: (groupId, imageType, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.upload(endpoints.community.groupImage(groupId, imageType), formData);
+  },
+
   joinGroup: (groupId, payload) =>
     api.post(endpoints.community.joinGroup(groupId), payload),
 

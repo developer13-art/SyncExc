@@ -108,3 +108,38 @@ test('discussion channels are listed globally and channel inserts are marked pub
   assert.match(calls[1].sql, /INSERT INTO community_channels .*is_public/s);
   assert.equal(calls[1].params[4], true);
 });
+
+test('group inserts and updates persist topics and branding fields', async () => {
+  const { calls, queries } = createQueryRecorder();
+  const client = {
+    query: async (sql, params = []) => {
+      calls.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+
+  await queries.insertGroup(client, {
+    ownerId: 'owner-id',
+    name: 'Trading',
+    slug: 'trading',
+    type: 'public',
+    visibility: 'public',
+    topics: ['crypto'],
+  });
+  await queries.updateGroup('group-id', {
+    topics: ['crypto', 'analysis'],
+    avatarUrl: 'https://example.com/avatar.png',
+    coverImageUrl: 'https://example.com/cover.png',
+  });
+
+  assert.match(calls[0].sql, /visibility, topics/);
+  assert.deepEqual(calls[0].params[7], ['crypto']);
+  assert.match(calls[1].sql, /topics = COALESCE\(\$6, topics\)/);
+  assert.match(calls[1].sql, /avatar_url = COALESCE\(\$7, avatar_url\)/);
+  assert.match(calls[1].sql, /cover_image_url = COALESCE\(\$8, cover_image_url\)/);
+  assert.deepEqual(calls[1].params.slice(5), [
+    ['crypto', 'analysis'],
+    'https://example.com/avatar.png',
+    'https://example.com/cover.png',
+  ]);
+});

@@ -808,6 +808,8 @@ export function serializeCommunityGroup(row) {
         : 'public',
     ownerId: row.owner_id,
     description: row.description || null,
+    avatarUrl: row.avatar_url || null,
+    coverImageUrl: row.cover_image_url || null,
     topics: row.topics || [],
     memberCount: row.member_count || 0,
     viewerIsMember: row.viewer_is_member ?? false,

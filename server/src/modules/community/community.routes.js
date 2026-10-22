@@ -12,6 +12,10 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024, files: 1 },
 });
+const groupImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
 
 const AttachmentIdsSchema = Joi.array().items(UuidSchema).max(10).unique().optional();
 const FeedQuerySchema = PaginationSchema.keys({
@@ -136,6 +140,7 @@ const UpdateGroupSchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).optional(),
   description: Joi.string().trim().max(2000).optional().allow(''),
   type: Joi.string().valid('public', 'private', 'approval_based', 'organization').optional(),
+  topics: Joi.array().items(Joi.string().trim().min(1).max(64)).max(10).optional(),
 }).min(1);
 
 const GroupRequestDecisionSchema = Joi.object({
@@ -444,6 +449,13 @@ export function createCommunityRoutes(services) {
     middleware.requireAuth(),
     middleware.validateBody(UpdateGroupSchema),
     middleware.asyncHandler(controller.updateGroup)
+  );
+
+  router.post(
+    '/groups/:groupId/images/:imageType',
+    middleware.requireAuth(),
+    groupImageUpload.single('file'),
+    middleware.asyncHandler(controller.uploadGroupImage)
   );
 
   router.get(

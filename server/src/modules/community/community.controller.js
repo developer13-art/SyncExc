@@ -319,6 +319,20 @@ export function createCommunityController(services) {
       return success(res, serializeCommunityGroup(group));
     },
 
+    async uploadGroupImage(req, res) {
+      if (!req.file) throw new ValidationError('Choose an image to upload');
+      const group = await groupService.updateGroupImage({
+        groupId: req.params.groupId,
+        userId: req.auth.userId,
+        imageType: req.params.imageType,
+        file: {
+          buffer: req.file.buffer,
+          mimeType: req.file.mimetype,
+        },
+      });
+      return success(res, serializeCommunityGroup(group));
+    },
+
     async getGroup(req, res) {
       const group = await groupService.getGroup({
         groupId: req.params.groupId,

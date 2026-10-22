@@ -6,6 +6,7 @@ import { ArrowLeft, Settings, Users } from 'lucide-react';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
+import { Avatar } from '../../components/ui/Avatar.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/Tabs.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
@@ -103,9 +104,20 @@ export default function GroupDetails() {
 
       <Card className="overflow-hidden">
         <div className="relative h-28 bg-gradient-to-r from-primary/25 via-primary/10 to-muted sm:h-36">
-          <div className="absolute bottom-4 left-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/60 bg-card/80 text-primary shadow-sm backdrop-blur">
-            <Users className="h-7 w-7" />
-          </div>
+          {group.coverImageUrl ? (
+            <img
+              src={group.coverImageUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : null}
+          <Avatar
+            size="xl"
+            src={group.avatarUrl}
+            alt={`${group.name} profile`}
+            fallback={group.name?.slice(0, 2).toUpperCase() || <Users className="h-7 w-7" />}
+            className="absolute bottom-4 left-5 rounded-2xl border-2 border-card bg-card shadow-sm"
+          />
         </div>
         <CardContent className="p-6 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-4">

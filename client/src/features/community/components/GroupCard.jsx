@@ -3,6 +3,7 @@ import { ArrowUpRight, Lock, Users } from 'lucide-react';
 
 import { Card } from '../../../components/ui/Card.jsx';
 import { Badge } from '../../../components/ui/Badge.jsx';
+import { Avatar } from '../../../components/ui/Avatar.jsx';
 import { cn } from '../../../lib/utils/cn.util.js';
 import { ROUTES } from '../../../config/routes.config.js';
 
@@ -37,6 +38,15 @@ export function GroupCard({ group, className }) {
               <Users className="relative h-9 w-9 text-primary/80" />
             </>
           )}
+          {group.avatarUrl ? (
+            <Avatar
+              size="lg"
+              src={group.avatarUrl}
+              alt={`${group.name} profile`}
+              fallback={group.name?.slice(0, 2).toUpperCase()}
+              className="absolute bottom-2 left-3 border-2 border-card shadow-sm"
+            />
+          ) : null}
           <Badge variant={visibility.variant} className="absolute right-3 top-3 bg-card/90">
             {group.visibility === 'private' ? <Lock className="mr-1 h-3 w-3" /> : null}
             {visibility.label}
