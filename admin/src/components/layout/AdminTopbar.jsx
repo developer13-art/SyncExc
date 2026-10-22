@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
-import { Command, LogOut, Search, ShieldAlert, User } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Bell, LogOut, Moon, Search, ShieldAlert, Sun, User } from 'lucide-react';
 
 import { IconButton } from '../ui/IconButton.jsx';
 import { Badge } from '../ui/Badge.jsx';
@@ -15,17 +15,17 @@ import {
 } from '../ui/Dropdown.jsx';
 import { ConsoleBreadcrumbs } from './ConsoleBreadcrumbs.jsx';
 import { useAuthContext } from '../../context/AuthContext.jsx';
-import { usePermissions } from '../../hooks/usePermissions.js';
 import { uiActions, selectCommandPaletteOpen } from '../../app/slices/uiSlice.js';
 import { cn } from '../../lib/utils/cn.util.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { useTheme } from '../../context/ThemeContext.jsx';
 
 export function AdminTopbar() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { admin, logout } = useAuthContext();
-  const permissions = usePermissions();
   const commandPaletteOpen = useSelector(selectCommandPaletteOpen);
+  const { isDark, toggleTheme } = useTheme();
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -52,7 +52,7 @@ export function AdminTopbar() {
     .toUpperCase();
 
   return (
-    <header className="admin-topbar sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/85 px-4 backdrop-blur md:px-6">
+    <header className="admin-topbar sticky top-0 z-30 flex h-11 items-center justify-between border-b border-border bg-background/85 px-3 backdrop-blur md:px-4">
       <div className="flex min-w-0 items-center gap-3">
         <ConsoleBreadcrumbs className="min-w-0" />
       </div>
@@ -77,6 +77,21 @@ export function AdminTopbar() {
           <ShieldAlert className="mr-1 h-3 w-3" />
           {admin?.roleSummary ?? 'Administrator'}
         </Badge>
+        <Link
+          to={ROUTES.console.alerts.events}
+          aria-label="View system alerts"
+          title="View system alerts"
+          className="hidden h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground sm:inline-flex"
+        >
+          <Bell className="h-4 w-4" />
+        </Link>
+        <IconButton
+          label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+          onClick={toggleTheme}
+          className="hidden sm:inline-flex"
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </IconButton>
 
         <DropdownMenu>
           <DropdownTrigger asChild>

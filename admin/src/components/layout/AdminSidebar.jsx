@@ -3,7 +3,6 @@ import { useSelector, useDispatch } from 'react-redux';
 import {
   PanelLeftClose,
   PanelLeftOpen,
-  ShieldCheck,
 } from 'lucide-react';
 
 import { cn } from '../../lib/utils/cn.util.js';
@@ -62,6 +61,7 @@ export function AdminSidebar() {
     <aside
       className={cn(
         'admin-sidebar sticky top-0 flex h-screen flex-col border-r border-border bg-background transition-all',
+        location.pathname === '/overview' && 'admin-sidebar-dashboard',
         collapsed ? 'w-16' : 'w-64',
       )}
     >
@@ -71,17 +71,16 @@ export function AdminSidebar() {
           collapsed && 'justify-center px-0',
         )}
       >
-        <div className="admin-brand-mark flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-          <ShieldCheck className="h-5 w-5 text-primary-foreground" />
-        </div>
+        <img src="/assets/logo.svg" alt="" className="h-8 w-8 shrink-0 rounded-lg" />
         {!collapsed ? (
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-tight text-foreground">
-              SyncExc Admin
-            </p>
-            <p className="truncate text-2xs uppercase tracking-[0.12em] text-muted-foreground">
-              Admin Console
-            </p>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold leading-tight text-foreground">SyncExc</p>
+              <p className="truncate text-[9px] text-muted-foreground">Platform Console</p>
+            </div>
+            <span className="rounded bg-blue-600/20 px-1.5 py-0.5 text-[9px] font-medium text-blue-300">
+              Admin
+            </span>
           </div>
         ) : null}
       </div>

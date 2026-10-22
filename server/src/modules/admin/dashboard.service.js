@@ -7,6 +7,11 @@ export function createDashboardService({ db, queries, logger }) {
     const since = computeSince(timeRange);
 
     const users = await queries.countUsers({ since });
+    const totalUsers = await queries.countAllUsers();
+    const activeWorkspaces = await queries.countActiveWorkspaces();
+    const activeExchanges = await queries.countActiveExchanges();
+    const platformGrowth = await queries.platformGrowth({ since });
+    const recentSignups = await queries.recentSignups({ limit: 6 });
     const activeSubscriptions = await queries.countActiveSubscriptions();
     const subscriptionsByStatus = await queries.subscriptionsByStatus();
     const paymentMetrics = await queries.paymentMetrics({ since });
@@ -22,6 +27,23 @@ export function createDashboardService({ db, queries, logger }) {
       timeRange,
       since: since.toISOString(),
       users: { newInRange: users },
+      totalUsers,
+      activeWorkspaces,
+      activeExchanges,
+      platformGrowth: platformGrowth.map((row) => ({
+        date: row.day,
+        newUsers: row.new_users,
+        newWorkspaces: row.new_workspaces,
+        successfulPayments: row.successful_payments,
+      })),
+      recentSignups: recentSignups.map((row) => ({
+        id: row.id,
+        displayName: row.display_name,
+        username: row.username,
+        avatarUrl: row.avatar_url,
+        status: row.status,
+        createdAt: row.created_at,
+      })),
       subscriptions: {
         active: activeSubscriptions,
         byStatus: subscriptionsByStatus.reduce(

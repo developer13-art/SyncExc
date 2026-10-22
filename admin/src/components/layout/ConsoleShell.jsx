@@ -17,14 +17,20 @@ export function ConsoleShell() {
   }, [location.pathname]);
 
   return (
-    <div className="admin-console-shell flex min-h-screen bg-background">
+    <div className={cn(
+      'admin-console-shell flex min-h-screen bg-background',
+      location.pathname === '/overview' && 'admin-dashboard-shell',
+    )}>
       <AdminSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminTopbar />
         <main
           data-console-main
           className={cn(
-            'admin-console-main flex-1 overflow-y-auto scrollbar-thin px-4 py-6 md:px-6 lg:px-8',
+            'admin-console-main flex-1 overflow-y-auto scrollbar-thin',
+            location.pathname === '/overview'
+              ? 'px-3 py-3 md:px-3 lg:px-3'
+              : 'px-4 py-6 md:px-6 lg:px-8',
           )}
         >
           <div className="mx-auto w-full max-w-[1600px]">

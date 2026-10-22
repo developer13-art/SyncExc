@@ -792,6 +792,69 @@ export function createAdminQueries({ db }) {
       return result.rows[0].count;
     },
 
+    async countAllUsers() {
+      const result = await db.query(
+        `SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL`
+      );
+      return result.rows[0].count;
+    },
+
+    async countActiveWorkspaces() {
+      const result = await db.query(
+        `SELECT count(*)::int AS count FROM workspaces WHERE status = 'active'`
+      );
+      return result.rows[0].count;
+    },
+
+    async countActiveExchanges() {
+      const result = await db.query(
+        `SELECT count(*)::int AS count FROM exchange_connections WHERE status = 'active'`
+      );
+      return result.rows[0].count;
+    },
+
+    async platformGrowth({ since }) {
+      const result = await db.query(
+        `
+        WITH days AS (
+          SELECT generate_series(
+            date_trunc('day', $1::timestamptz),
+            date_trunc('day', now()),
+            interval '1 day'
+          ) AS day
+        )
+        SELECT days.day,
+          (SELECT count(*)::int FROM users
+           WHERE deleted_at IS NULL
+             AND created_at >= GREATEST(days.day, $1::timestamptz)
+             AND created_at < LEAST(days.day + interval '1 day', now())) AS new_users,
+          (SELECT count(*)::int FROM workspaces
+           WHERE created_at >= GREATEST(days.day, $1::timestamptz)
+             AND created_at < LEAST(days.day + interval '1 day', now())) AS new_workspaces,
+          (SELECT count(*)::int FROM subscription_payments
+           WHERE status = 'succeeded'
+             AND created_at >= GREATEST(days.day, $1::timestamptz)
+             AND created_at < LEAST(days.day + interval '1 day', now())) AS successful_payments
+        FROM days
+        ORDER BY days.day
+        `,
+        [since]
+      );
+      return result.rows;
+    },
+
+    async recentSignups({ limit = 5 } = {}) {
+      const result = await db.query(
+        `SELECT id, display_name, username, avatar_url, status, created_at
+         FROM users
+         WHERE deleted_at IS NULL
+         ORDER BY created_at DESC
+         LIMIT $1`,
+        [limit]
+      );
+      return result.rows;
+    },
+
     async countActiveSubscriptions() {
       const result = await db.query(
         `SELECT count(*)::int AS count FROM subscriptions WHERE status IN ('active', 'trialing')`
