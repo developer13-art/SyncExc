@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors.js';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -29,30 +30,21 @@ export function createCommunityAttachmentService({
     if (!extension) throw new ValidationError('Unsupported file type');
     validateFileSignature(file.buffer, file.mimetype);
 
-    const stored = await storage.put({
-      buffer: file.buffer,
-      mimeType: file.mimetype,
-      extension,
-    });
-    try {
-      const result = await db.query(
-        `INSERT INTO community_attachments
-           (uploader_id, storage_key, file_name, mime_type, size_bytes)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, file_name, mime_type, size_bytes, created_at`,
-        [
-          userId,
-          stored.key,
-          sanitizeFileName(file.originalname),
-          file.mimetype,
-          file.buffer.length,
-        ]
-      );
-      return serializeAttachment(result.rows[0]);
-    } catch (error) {
-      await storage.delete(stored.key);
-      throw error;
-    }
+    const result = await db.query(
+      `INSERT INTO community_attachments
+         (uploader_id, storage_key, file_name, mime_type, size_bytes, file_data)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, file_name, mime_type, size_bytes, created_at`,
+      [
+        userId,
+        `database:${randomUUID()}.${extension}`,
+        sanitizeFileName(file.originalname),
+        file.mimetype,
+        file.buffer.length,
+        file.buffer,
+      ]
+    );
+    return serializeAttachment(result.rows[0]);
   }
 
   async function attach(client, { userId, attachmentIds = [], resourceType, resourceId }) {
@@ -93,7 +85,7 @@ export function createCommunityAttachmentService({
         discussionService,
       });
     }
-    const buffer = await storage.get(attachment.storage_key);
+    const buffer = attachment.file_data ?? await storage.get(attachment.storage_key);
     if (!buffer) throw new NotFoundError('Attachment file');
     return {
       buffer,
@@ -105,7 +97,9 @@ export function createCommunityAttachmentService({
   async function deletePending({ userId, attachmentId }) {
     const attachment = await queries.deletePendingFile(attachmentId, userId);
     if (!attachment) throw new NotFoundError('Attachment');
-    await storage.delete(attachment.storage_key);
+    if (!attachment.storage_key.startsWith('database:')) {
+      await storage.delete(attachment.storage_key);
+    }
     return { ok: true };
   }
 
