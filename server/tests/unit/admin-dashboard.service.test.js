@@ -27,6 +27,18 @@ test('dashboard exposes real growth series and recent signups', async () => {
         status: 'active',
         created_at: since,
       }],
+      tradingVolume24h: async () => ({ volume: '5000', previous_volume: '4000' }),
+      exchangeOverview: async () => [{
+        exchange_code: 'bybit',
+        display_name: 'Bybit',
+        connection_count: 3,
+        healthy_count: 2,
+        current_balance: '1000',
+        prior_balance: '800',
+      }],
+      recentPlatformActivity: async () => [],
+      topPerformingTraders: async () => [],
+      recentSignals: async () => [],
       countActiveSubscriptions: async () => 12,
       subscriptionsByStatus: async () => [{ status: 'active', count: 12 }],
       paymentMetrics: async () => ({
@@ -54,6 +66,15 @@ test('dashboard exposes real growth series and recent signups', async () => {
   assert.equal(dashboard.totalUsers, 120);
   assert.equal(dashboard.activeWorkspaces, 30);
   assert.equal(dashboard.activeExchanges, 6);
+  assert.deepEqual(dashboard.tradingVolume24h, { volume: '5000', changePct: 25 });
+  assert.deepEqual(dashboard.exchangeOverview[0], {
+    exchangeCode: 'bybit',
+    displayName: 'Bybit',
+    connectionCount: 3,
+    healthyCount: 2,
+    stablecoinBalanceUsd: 1000,
+    stablecoinBalanceChangePct: 25,
+  });
   assert.deepEqual(dashboard.platformGrowth[0], {
     date: since,
     newUsers: 3,

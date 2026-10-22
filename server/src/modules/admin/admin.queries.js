@@ -855,6 +855,172 @@ export function createAdminQueries({ db }) {
       return result.rows;
     },
 
+    async tradingVolume24h() {
+      const result = await db.query(
+        `SELECT
+           COALESCE(sum(f.quantity * f.price) FILTER (
+             WHERE f.executed_at >= now() - interval '24 hours'
+           ), 0)::text AS volume,
+           COALESCE(sum(f.quantity * f.price) FILTER (
+             WHERE f.executed_at >= now() - interval '48 hours'
+               AND f.executed_at < now() - interval '24 hours'
+           ), 0)::text AS previous_volume
+         FROM trading_fills f
+         WHERE f.executed_at >= now() - interval '48 hours'
+           AND upper(f.instrument) ~ '(USD|USDT|USDC|BUSD)$'`
+      );
+      return result.rows[0] ?? { volume: '0', previous_volume: '0' };
+    },
+
+    async exchangeOverview() {
+      const result = await db.query(
+        `
+        WITH latest_snapshots AS (
+          SELECT DISTINCT ON (account_id)
+            account_id, id, observed_at
+          FROM exchange_balance_snapshots
+          ORDER BY account_id, observed_at DESC
+        ),
+        prior_snapshots AS (
+          SELECT DISTINCT ON (account_id)
+            account_id, id, observed_at
+          FROM exchange_balance_snapshots
+          WHERE observed_at <= now() - interval '24 hours'
+          ORDER BY account_id, observed_at DESC
+        ),
+        stable_balances AS (
+          SELECT snapshot_id, sum(total)::numeric AS balance
+          FROM exchange_balance_items
+          WHERE upper(asset) IN ('USD', 'USDT', 'USDC', 'BUSD', 'TUSD', 'FDUSD')
+          GROUP BY snapshot_id
+        )
+        SELECT r.exchange_code, r.display_name,
+          count(DISTINCT c.id)::int AS connection_count,
+          count(DISTINCT c.id) FILTER (WHERE h.state = 'healthy')::int AS healthy_count,
+          COALESCE(sum(current_balance.balance), 0)::text AS current_balance,
+          COALESCE(sum(prior_balance.balance), 0)::text AS prior_balance
+        FROM exchange_connections c
+        JOIN exchange_registry r ON r.exchange_code = c.exchange_code
+        LEFT JOIN exchange_connection_health h ON h.connection_id = c.id
+        LEFT JOIN exchange_accounts a ON a.connection_id = c.id
+        LEFT JOIN latest_snapshots current_snapshot ON current_snapshot.account_id = a.id
+        LEFT JOIN stable_balances current_balance ON current_balance.snapshot_id = current_snapshot.id
+        LEFT JOIN prior_snapshots prior_snapshot ON prior_snapshot.account_id = a.id
+        LEFT JOIN stable_balances prior_balance ON prior_balance.snapshot_id = prior_snapshot.id
+        WHERE c.status NOT IN ('disconnected', 'revoked')
+        GROUP BY r.exchange_code, r.display_name
+        ORDER BY connection_count DESC, r.display_name ASC
+        LIMIT 8
+        `
+      );
+      return result.rows;
+    },
+
+    async recentPlatformActivity({ limit = 6 } = {}) {
+      const result = await db.query(
+        `
+        SELECT id, occurred_at, action, detail, actor_name, resource_type
+        FROM (
+          SELECT e.id, e.occurred_at, e.action,
+            concat_ws(' · ', e.resource_type, nullif(e.outcome, 'success')) AS detail,
+            u.display_name AS actor_name, e.resource_type
+          FROM audit_events e
+          LEFT JOIN users u ON u.id = e.actor_id
+          WHERE e.occurred_at >= now() - interval '24 hours'
+          UNION ALL
+          SELECT f.id, f.executed_at AS occurred_at, 'Trade executed' AS action,
+            concat_ws(' · ', o.instrument, upper(f.side), f.quantity::text) AS detail,
+            u.display_name AS actor_name, 'trade' AS resource_type
+          FROM trading_fills f
+          JOIN trading_orders o ON o.id = f.order_id
+          JOIN exchange_accounts a ON a.id = o.account_id
+          JOIN exchange_connections c ON c.id = a.connection_id
+          LEFT JOIN users u ON u.id = c.owner_id
+          WHERE f.executed_at >= now() - interval '24 hours'
+          UNION ALL
+          SELECT s.id, s.created_at AS occurred_at, 'Signal published' AS action,
+            concat_ws(' · ', s.instrument, upper(s.direction)) AS detail,
+            p.display_name AS actor_name, 'signal' AS resource_type
+          FROM marketplace_published_signals s
+          JOIN marketplace_provider_profiles p ON p.id = s.provider_id
+          WHERE s.status IN ('published', 'updated')
+            AND s.created_at >= now() - interval '24 hours'
+          UNION ALL
+          SELECT u.id, u.created_at AS occurred_at, 'New user' AS action,
+            coalesce(u.username, u.email) AS detail,
+            u.display_name AS actor_name, 'user' AS resource_type
+          FROM users u
+          WHERE u.created_at >= now() - interval '24 hours' AND u.deleted_at IS NULL
+          UNION ALL
+          SELECT e.id, e.occurred_at, 'Exchange connection' AS action,
+            concat_ws(' · ', r.display_name, replace(e.event_type, '_', ' ')) AS detail,
+            u.display_name AS actor_name, 'exchange' AS resource_type
+          FROM exchange_connection_events e
+          JOIN exchange_connections c ON c.id = e.connection_id
+          JOIN exchange_registry r ON r.exchange_code = c.exchange_code
+          LEFT JOIN users u ON u.id = e.actor_id
+          WHERE e.occurred_at >= now() - interval '24 hours'
+        ) activity
+        ORDER BY occurred_at DESC
+        LIMIT $1
+        `,
+        [limit]
+      );
+      return result.rows;
+    },
+
+    async topPerformingTraders({ limit = 5 } = {}) {
+      const result = await db.query(
+        `
+        WITH observation_rates AS (
+          SELECT s.provider_id,
+            count(*) FILTER (WHERE lower(o.outcome) IN
+              ('win', 'won', 'profit', 'profitable', 'target_hit', 'take_profit', 'tp_hit'))::numeric
+              AS wins,
+            count(*) FILTER (WHERE lower(o.outcome) IN
+              ('loss', 'lost', 'stop_loss', 'sl_hit', 'unprofitable'))::numeric
+              AS losses
+          FROM marketplace_performance_observations o
+          JOIN marketplace_published_signals s ON s.id = o.signal_id
+          WHERE o.observed_at >= now() - interval '30 days'
+          GROUP BY s.provider_id
+        )
+        SELECT p.id, p.handle, p.display_name, p.avatar_url,
+          count(DISTINCT f.follower_user_id)::int AS followers,
+          CASE WHEN COALESCE(max(r.wins), 0) + COALESCE(max(r.losses), 0) > 0
+            THEN round(100 * COALESCE(max(r.wins), 0) /
+              (COALESCE(max(r.wins), 0) + COALESCE(max(r.losses), 0)), 1)
+            ELSE NULL
+          END AS win_rate
+        FROM marketplace_provider_profiles p
+        LEFT JOIN marketplace_follows f ON f.provider_id = p.id
+        LEFT JOIN observation_rates r ON r.provider_id = p.id
+        WHERE p.moderation_state = 'approved'
+        GROUP BY p.id, p.handle, p.display_name, p.avatar_url
+        ORDER BY win_rate DESC NULLS LAST, followers DESC, p.display_name ASC
+        LIMIT $1
+        `,
+        [limit]
+      );
+      return result.rows;
+    },
+
+    async recentSignals({ limit = 5 } = {}) {
+      const result = await db.query(
+        `
+        SELECT s.id, s.instrument, s.market_type, s.direction, s.status,
+          s.entry, s.created_at, p.display_name AS source_name, p.avatar_url
+        FROM marketplace_published_signals s
+        JOIN marketplace_provider_profiles p ON p.id = s.provider_id
+        WHERE s.status IN ('published', 'updated', 'closed')
+        ORDER BY s.created_at DESC
+        LIMIT $1
+        `,
+        [limit]
+      );
+      return result.rows;
+    },
+
     async countActiveSubscriptions() {
       const result = await db.query(
         `SELECT count(*)::int AS count FROM subscriptions WHERE status IN ('active', 'trialing')`

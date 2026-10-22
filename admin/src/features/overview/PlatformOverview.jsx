@@ -8,12 +8,9 @@ import {
   Building2,
   CheckCircle2,
   CircleDollarSign,
-  Clock3,
-  CreditCard,
   RefreshCw,
   ShieldCheck,
   Users,
-  Zap,
 } from 'lucide-react';
 import {
   Area,
@@ -28,7 +25,6 @@ import {
   YAxis,
 } from 'recharts';
 
-import { Button } from '../../components/ui/Button.jsx';
 import { IconButton } from '../../components/ui/IconButton.jsx';
 import { Avatar } from '../../components/ui/Avatar.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
@@ -155,6 +151,7 @@ export default function PlatformOverview() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
           <SubscriptionPanel subscriptions={dashboard.subscriptions} />
           <RecentSignups signups={dashboard.recentSignups ?? []} />
+          <TopTraders traders={dashboard.topPerformingTraders ?? []} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
           <AlertPanel alerts={alerts} />
@@ -163,10 +160,12 @@ export default function PlatformOverview() {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-[1.05fr_1fr_1.2fr]">
-        <ExchangeOverview exchangeHealth={dashboard.exchangeHealth ?? {}} />
-        <RecentActivity dashboard={dashboard} />
+        <ExchangeOverview exchanges={dashboard.exchangeOverview ?? []} />
+        <RecentActivity activities={dashboard.recentActivity ?? []} />
         <QuickActions />
       </div>
+
+      <RecentSignals signals={dashboard.recentSignals ?? []} />
 
       <div className="flex items-center justify-between border-t border-sky-950 pt-2 text-[10px] text-slate-500">
         <span>SyncExc Platform Operations</span>
@@ -177,7 +176,6 @@ export default function PlatformOverview() {
 }
 
 function MetricGrid({ dashboard }) {
-  const payments = dashboard.payments ?? {};
   const exchangeHealth = dashboard.exchangeHealth ?? {};
   const activeExchanges = Number(dashboard.activeExchanges) ||
     Object.entries(exchangeHealth).reduce((total, [state, count]) =>
@@ -205,9 +203,11 @@ function MetricGrid({ dashboard }) {
       color: 'teal',
     },
     {
-      label: 'Successful payments',
-      value: formatNumber(payments.successful),
-      detail: `${formatNumber(payments.failed)} failed in selected period`,
+      label: 'Trading volume (24h)',
+      value: formatCurrency(dashboard.tradingVolume24h?.volume),
+      detail: dashboard.tradingVolume24h?.changePct == null
+        ? 'USD-quoted executed trades'
+        : `${dashboard.tradingVolume24h.changePct >= 0 ? '+' : ''}${dashboard.tradingVolume24h.changePct.toFixed(1)}% vs previous 24h`,
       icon: CircleDollarSign,
       color: 'purple',
     },
@@ -241,6 +241,7 @@ function MetricGrid({ dashboard }) {
 
 function metricSparkValues(metric, dashboard) {
   if (metric.label === 'Connected exchanges') return [];
+  if (metric.label === 'Trading volume (24h)') return [];
   const key = metric.label === 'Total users'
     ? 'newUsers'
     : metric.label === 'Active workspaces'
@@ -430,51 +431,145 @@ function PlatformStatus({ health }) {
   );
 }
 
-function ExchangeOverview({ exchangeHealth }) {
-  const entries = Object.entries(exchangeHealth);
+function ExchangeOverview({ exchanges }) {
   return (
     <section className={`${panelClass} p-3`}>
       <PanelHeading title="Exchange overview" href={ROUTES.console.exchanges.overview} />
-      {entries.length ? (
-        <ul className="mt-2 divide-y divide-sky-950">
-          {entries.map(([state, count]) => (
-            <li key={state} className="flex items-center justify-between py-2 text-[10px]">
-              <span className="flex items-center gap-2 text-slate-300">
-                <span className={`h-1.5 w-1.5 rounded-full ${['active', 'healthy', 'connected'].includes(state) ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                {humanize(state)}
-              </span>
-              <span className="font-medium text-slate-100">{formatNumber(count)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : <InlineEmpty text="No exchange health data reported." />}
+      {exchanges.length ? (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[360px] text-left text-[9px]">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="pb-2 font-medium">Exchange</th>
+                <th className="pb-2 font-medium">Status</th>
+                <th className="pb-2 text-right font-medium">Balance*</th>
+                <th className="pb-2 text-right font-medium">24h</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sky-950">
+              {exchanges.slice(0, 6).map((exchange) => {
+                const healthy = exchange.connectionCount > 0 &&
+                  exchange.healthyCount === exchange.connectionCount;
+                return (
+                  <tr key={exchange.exchangeCode}>
+                    <td className="py-2 font-medium text-slate-200">{exchange.displayName}</td>
+                    <td className="py-2">
+                      <span className={healthy ? 'text-emerald-300' : 'text-amber-300'}>
+                        {healthy ? 'Connected' : `${exchange.healthyCount}/${exchange.connectionCount} healthy`}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right text-slate-300">
+                      {exchange.stablecoinBalanceUsd == null ? '—' : formatCurrency(exchange.stablecoinBalanceUsd)}
+                    </td>
+                    <td className={`py-2 text-right ${exchange.stablecoinBalanceChangePct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {exchange.stablecoinBalanceChangePct == null
+                        ? '—'
+                        : `${exchange.stablecoinBalanceChangePct >= 0 ? '+' : ''}${exchange.stablecoinBalanceChangePct.toFixed(2)}%`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="mt-1 text-[8px] text-slate-600">*USD estimate from available stablecoin balance snapshots.</p>
+        </div>
+      ) : (
+        <InlineEmpty text="No exchange connections are available." />
+      )}
     </section>
   );
 }
 
-function RecentActivity({ dashboard }) {
-  const events = [
-    { label: 'New users', value: dashboard.users?.newInRange, icon: Users, color: 'text-blue-300' },
-    { label: 'Payments succeeded', value: dashboard.payments?.successful, icon: CreditCard, color: 'text-emerald-300' },
-    { label: 'Payments failed', value: dashboard.payments?.failed, icon: CircleDollarSign, color: 'text-rose-300' },
-    { label: 'Open support cases', value: dashboard.support?.open, icon: Clock3, color: 'text-amber-300' },
-    { label: 'Queued sync operations', value: dashboard.sync?.queued, icon: Activity, color: 'text-cyan-300' },
-  ];
+function RecentActivity({ activities }) {
   return (
     <section className={`${panelClass} p-3`}>
-      <PanelHeading title="Operations snapshot" subtitle="Current operational counts and selected-period activity" />
-      <ul className="mt-2 divide-y divide-sky-950">
-        {events.map((event) => {
-          const Icon = event.icon;
+      <PanelHeading title="Recent activity" subtitle="Latest platform events" href={ROUTES.console.audit.overview} />
+      {activities.length ? <ul className="mt-2 divide-y divide-sky-950">
+        {activities.slice(0, 5).map((event) => {
           return (
-            <li key={event.label} className="flex items-center gap-2 py-2">
-              <Icon className={`h-3.5 w-3.5 ${event.color}`} />
-              <span className="flex-1 text-[10px] text-slate-300">{event.label}</span>
-              <span className="text-[10px] font-semibold text-white">{formatNumber(event.value)}</span>
+            <li key={`${event.resourceType}-${event.id}`} className="flex items-center gap-2 py-2">
+              <span className="w-10 shrink-0 text-[9px] text-slate-500">{formatDate(event.occurredAt, 'HH:mm')}</span>
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-blue-950 text-blue-300">
+                <Activity className="h-3 w-3" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[10px] text-slate-200">{event.action}</p>
+                <p className="truncate text-[9px] text-slate-500">{event.actorName || 'System'}{event.detail ? ` · ${event.detail}` : ''}</p>
+              </div>
             </li>
           );
         })}
-      </ul>
+      </ul> : <InlineEmpty text="No recent activity recorded." />}
+    </section>
+  );
+}
+
+function TopTraders({ traders }) {
+  return (
+    <section className={`${panelClass} p-3`}>
+      <PanelHeading title="Top performing traders" href={ROUTES.console.exchanges.overview} />
+      {traders.length ? (
+        <ul className="mt-2 divide-y divide-sky-950">
+          {traders.slice(0, 5).map((trader) => (
+            <li key={trader.id} className="flex items-center gap-2 py-2 first:pt-0 last:pb-0">
+              <Avatar
+                size="xs"
+                src={trader.avatarUrl}
+                alt=""
+                fallback={(trader.displayName || trader.handle || '?').slice(0, 1).toUpperCase()}
+                className="h-6 w-6 bg-blue-950 text-[9px] text-blue-200"
+              />
+              <span className="min-w-0 flex-1 truncate text-[10px] text-slate-200">{trader.displayName}</span>
+              <span className="w-12 text-right text-[9px] text-slate-300">
+                {trader.winRate == null ? '—' : `${trader.winRate.toFixed(1)}%`}
+              </span>
+              <span className="w-12 text-right text-[9px] text-slate-400">{formatNumber(trader.followers)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : <InlineEmpty text="No published trader performance data yet." />}
+      <div className="mt-1 flex justify-end gap-3 text-[8px] text-slate-600">
+        <span>Win rate*</span><span>Followers</span>
+      </div>
+      <p className="mt-1 text-[8px] text-slate-600">*Calculated only from explicitly recorded win/loss outcomes.</p>
+    </section>
+  );
+}
+
+function RecentSignals({ signals }) {
+  return (
+    <section className={`${panelClass} p-3`}>
+      <PanelHeading title="Recent signals" subtitle="Latest published marketplace signals" href={ROUTES.console.signalSources.overview} />
+      {signals.length ? (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[520px] text-left text-[9px]">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="pb-2 font-medium">Time</th>
+                <th className="pb-2 font-medium">Source</th>
+                <th className="pb-2 font-medium">Pair</th>
+                <th className="pb-2 font-medium">Direction</th>
+                <th className="pb-2 text-right font-medium">Entry</th>
+                <th className="pb-2 text-right font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sky-950">
+              {signals.slice(0, 5).map((signal) => (
+                <tr key={signal.id}>
+                  <td className="py-2 text-slate-500">{formatDate(signal.createdAt, 'HH:mm')}</td>
+                  <td className="max-w-36 truncate py-2 text-slate-300">{signal.sourceName}</td>
+                  <td className="py-2 font-medium text-slate-200">{signal.instrument}</td>
+                  <td className={`py-2 font-medium ${signal.direction === 'long' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {humanize(signal.direction)}
+                  </td>
+                  <td className="py-2 text-right text-slate-300">{signal.entry == null ? '—' : Number(signal.entry).toLocaleString()}</td>
+                  <td className="py-2 text-right text-emerald-300">{humanize(signal.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <InlineEmpty text="No published signals yet." />}
     </section>
   );
 }
@@ -542,7 +637,20 @@ function metricColor(color) {
 }
 
 function formatNumber(value) {
-  return Number.isFinite(Number(value)) ? Number(value).toLocaleString() : '—';
+  return value != null && Number.isFinite(Number(value))
+    ? Number(value).toLocaleString()
+    : '—';
+}
+
+function formatCurrency(value) {
+  const amount = Number(value);
+  return value != null && Number.isFinite(amount)
+    ? new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(amount)
+    : '—';
 }
 
 function humanize(value) {
