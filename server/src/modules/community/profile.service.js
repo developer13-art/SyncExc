@@ -64,7 +64,9 @@ export function createProfileService({ db, queries, events, logger }) {
   }
 
   async function getProfileWithPrivacy({ userId, viewerId = null }) {
-    const profile = await queries.findProfileByUserId(userId);
+    const profile = viewerId
+      ? await ensureProfileForUser(userId)
+      : await queries.findProfileByUserId(userId);
     if (!profile) throw new NotFoundError('Profile');
     const privacy = await queries.getProfilePrivacy(profile.id);
 

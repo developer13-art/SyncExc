@@ -33,7 +33,7 @@ const FEED_OPTIONS = [
 export default function Feed() {
   const dispatch = useDispatch();
   const toast = useToast();
-  const [tab, setTab] = useState('following');
+  const [tab, setTab] = useState('latest');
   const [reportTarget, setReportTarget] = useState(null);
 
   const profileQuery = useCommunityProfile();
@@ -54,6 +54,7 @@ export default function Feed() {
     tab === 'following'
       ? (feedQuery.data?.items ?? [])
       : (postsQuery.posts ?? []);
+  const activeQuery = tab === 'following' ? feedQuery : postsQuery;
   const topicCounts = posts.reduce((counts, post) => {
     (post.topics ?? []).forEach((topic) => {
       const name = typeof topic === 'string' ? topic : topic?.name;
@@ -130,13 +131,13 @@ export default function Feed() {
         />
         <SegmentedControl options={FEED_OPTIONS} value={tab} onChange={setTab} />
 
-        {tab === 'following' && feedQuery.isLoading ? (
+        {activeQuery.isLoading ? (
           <LoadingState label="Loading feed" />
-        ) : tab === 'following' && feedQuery.isError ? (
+        ) : activeQuery.isError ? (
           <ErrorState
             title="Unable to load feed"
-            description="We could not fetch your feed."
-            onRetry={feedQuery.refetch}
+            description="We could not fetch community posts."
+            onRetry={activeQuery.refetch}
           />
         ) : posts.length === 0 ? (
           <EmptyState

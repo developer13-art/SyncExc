@@ -741,7 +741,7 @@ export function createCommunityQueries({ db }) {
         params.push(userId);
         const followingParam = `$${params.length}`;
         conditions.push(
-          `(p.visibility = 'public' OR (
+          `(p.author_id = ${followingParam} OR p.visibility = 'public' OR (
             p.visibility = 'followers' AND (
               p.author_id = ${followingParam}
               OR EXISTS (
@@ -763,15 +763,17 @@ export function createCommunityQueries({ db }) {
 
       if (viewerParam) {
         conditions.push(`(
-          prof.visibility = 'public'
-          OR (prof.visibility IN ('followers', 'private') AND EXISTS (
-            SELECT 1 FROM community_follows f
-            WHERE f.follower_id = ${viewerParam} AND f.followee_id = p.author_id
-          ))
-          OR (prof.user_id = ${viewerParam})
+          COALESCE(prof.visibility, 'public') = 'public'
+          OR (
+            COALESCE(prof.visibility, 'public') IN ('followers', 'private')
+              AND (p.author_id = ${viewerParam} OR EXISTS (
+                SELECT 1 FROM community_follows f
+                WHERE f.follower_id = ${viewerParam} AND f.followee_id = p.author_id
+              )
+            )
         )`);
       } else {
-        conditions.push(`prof.visibility = 'public'`);
+        conditions.push(`COALESCE(prof.visibility, 'public') = 'public'`);
       }
 
       if (cursor) {
@@ -781,8 +783,10 @@ export function createCommunityQueries({ db }) {
 
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
-               prof.avatar_url AS author_avatar,
+        SELECT p.*,
+               COALESCE(prof.handle, u.username_normalized, u.username) AS author_handle,
+               COALESCE(prof.display_name, u.display_name) AS author_name,
+               COALESCE(prof.avatar_url, u.avatar_url) AS author_avatar,
                (SELECT count(*)::int FROM community_reactions r
                 WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count,
                ${viewerParam ? `(SELECT r.reaction_type FROM community_reactions r
@@ -792,7 +796,8 @@ export function createCommunityQueries({ db }) {
                  WHERE s.user_id = ${viewerParam} AND s.resource_type = 'post' AND s.resource_id = p.id
                  LIMIT 1)` : 'NULL'} AS bookmark_id
         FROM community_posts p
-        JOIN community_profiles prof ON prof.user_id = p.author_id
+        JOIN users u ON u.id = p.author_id
+        LEFT JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE ${conditions.join(' AND ')}
         ORDER BY p.created_at DESC
         LIMIT $1
@@ -826,8 +831,8 @@ export function createCommunityQueries({ db }) {
         }
         const viewerReference = viewerParam || 'NULL';
         conditions.push(`(
-          prof.visibility = 'public'
-          OR (prof.visibility IN ('followers', 'private') AND EXISTS (
+          COALESCE(prof.visibility, 'public') = 'public'
+          OR (COALESCE(prof.visibility, 'public') IN ('followers', 'private') AND EXISTS (
             SELECT 1 FROM community_follows f
             WHERE f.follower_id = ${viewerReference} AND f.followee_id = p.author_id
           ))
@@ -850,6 +855,12 @@ export function createCommunityQueries({ db }) {
             WHERE gm.group_id = p.destination_ref_id
               AND gm.user_id = ${viewerReference}
               AND gm.state = 'active'
+          ) AND (
+            p.visibility IN ('public', 'group_members')
+            OR (p.visibility = 'followers' AND EXISTS (
+              SELECT 1 FROM community_follows
+              WHERE follower_id = ${viewerReference} AND followee_id = p.author_id
+            ))
           ))
         )`);
       }
@@ -865,8 +876,10 @@ export function createCommunityQueries({ db }) {
 
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
-               prof.avatar_url AS author_avatar,
+        SELECT p.*,
+               COALESCE(prof.handle, u.username_normalized, u.username) AS author_handle,
+               COALESCE(prof.display_name, u.display_name) AS author_name,
+               COALESCE(prof.avatar_url, u.avatar_url) AS author_avatar,
                (SELECT count(*)::int FROM community_reactions r
                 WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count,
                ${viewerParam ? `(SELECT r.reaction_type FROM community_reactions r
@@ -876,7 +889,8 @@ export function createCommunityQueries({ db }) {
                  WHERE s.user_id = ${viewerParam} AND s.resource_type = 'post' AND s.resource_id = p.id
                  LIMIT 1)` : 'NULL'} AS bookmark_id
         FROM community_posts p
-        JOIN community_profiles prof ON prof.user_id = p.author_id
+        JOIN users u ON u.id = p.author_id
+        LEFT JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE ${conditions.join(' AND ')}
         ORDER BY p.created_at DESC
         LIMIT $2
@@ -911,10 +925,30 @@ export function createCommunityQueries({ db }) {
              OR (b.blocked_id = $3 AND b.blocker_id = p.author_id)
         )`,
         `(
-          ($4::boolean AND p.visibility = 'public')
-          OR EXISTS (
-            SELECT 1 FROM community_group_memberships gm
-            WHERE gm.group_id = $1 AND gm.user_id = $3 AND gm.state = 'active'
+          ($4::boolean AND p.visibility = 'public'
+            AND COALESCE(prof.visibility, 'public') = 'public')
+          OR (
+            EXISTS (
+              SELECT 1 FROM community_group_memberships gm
+              WHERE gm.group_id = $1 AND gm.user_id = $3 AND gm.state = 'active'
+            )
+            AND (
+              COALESCE(prof.visibility, 'public') = 'public'
+              OR (COALESCE(prof.visibility, 'public') IN ('followers', 'private')
+                AND (p.author_id = $3 OR EXISTS (
+                  SELECT 1 FROM community_follows f
+                  WHERE f.follower_id = $3 AND f.followee_id = p.author_id
+                )))
+            )
+            AND (
+              p.visibility IN ('public', 'group_members')
+              OR (p.visibility = 'followers' AND (
+                p.author_id = $3 OR EXISTS (
+                  SELECT 1 FROM community_follows f
+                  WHERE f.follower_id = $3 AND f.followee_id = p.author_id
+                )
+              ))
+            )
           )
         )`,
       ];
@@ -925,8 +959,10 @@ export function createCommunityQueries({ db }) {
 
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
-               prof.avatar_url AS author_avatar,
+        SELECT p.*,
+               COALESCE(prof.handle, u.username_normalized, u.username) AS author_handle,
+               COALESCE(prof.display_name, u.display_name) AS author_name,
+               COALESCE(prof.avatar_url, u.avatar_url) AS author_avatar,
                (SELECT count(*)::int FROM community_reactions r
                 WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count,
                (SELECT r.reaction_type FROM community_reactions r
@@ -936,7 +972,8 @@ export function createCommunityQueries({ db }) {
                 WHERE s.user_id = $3 AND s.resource_type = 'post' AND s.resource_id = p.id
                 LIMIT 1) AS bookmark_id
         FROM community_posts p
-        JOIN community_profiles prof ON prof.user_id = p.author_id
+        JOIN users u ON u.id = p.author_id
+        LEFT JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE ${conditions.join(' AND ')}
         ORDER BY p.created_at DESC
         LIMIT $2
@@ -1353,9 +1390,12 @@ export function createCommunityQueries({ db }) {
     async listDiscussionThreads(channelId, { limit = 50 } = {}) {
       const result = await db.query(
         `
-        SELECT t.*, p.handle AS creator_handle, p.display_name AS creator_name
+        SELECT t.*,
+               COALESCE(p.handle, u.username_normalized, u.username) AS creator_handle,
+               COALESCE(p.display_name, u.display_name) AS creator_name
         FROM community_discussion_threads t
-        JOIN community_profiles p ON p.user_id = t.created_by
+        JOIN users u ON u.id = t.created_by
+        LEFT JOIN community_profiles p ON p.user_id = t.created_by
         WHERE t.channel_id = $1
         ORDER BY t.updated_at DESC
         LIMIT $2
@@ -1380,9 +1420,13 @@ export function createCommunityQueries({ db }) {
     async listDiscussionMessages(threadId, { limit = 200 } = {}) {
       const result = await db.query(
         `
-        SELECT m.*, p.handle AS author_handle, p.display_name AS author_name
+        SELECT m.*,
+               COALESCE(p.handle, u.username_normalized, u.username) AS author_handle,
+               COALESCE(p.display_name, u.display_name) AS author_name,
+               COALESCE(p.avatar_url, u.avatar_url) AS author_avatar
         FROM community_discussion_messages m
-        JOIN community_profiles p ON p.user_id = m.author_id
+        JOIN users u ON u.id = m.author_id
+        LEFT JOIN community_profiles p ON p.user_id = m.author_id
         WHERE m.thread_id = $1 AND m.deleted_at IS NULL
         ORDER BY m.created_at ASC
         LIMIT $2
@@ -1670,16 +1714,19 @@ export function createCommunityQueries({ db }) {
     async searchPosts({ query, userId, limit = 50 }) {
       const result = await db.query(
         `
-        SELECT p.*, prof.handle AS author_handle, prof.display_name AS author_name,
-               prof.avatar_url AS author_avatar,
+        SELECT p.*,
+               COALESCE(prof.handle, u.username_normalized, u.username) AS author_handle,
+               COALESCE(prof.display_name, u.display_name) AS author_name,
+               COALESCE(prof.avatar_url, u.avatar_url) AS author_avatar,
                (SELECT count(*)::int FROM community_reactions r
                 WHERE r.target_type = 'post' AND r.target_id = p.id) AS reaction_count
         FROM community_posts p
-        JOIN community_profiles prof ON prof.user_id = p.author_id
+        JOIN users u ON u.id = p.author_id
+        LEFT JOIN community_profiles prof ON prof.user_id = p.author_id
         WHERE p.deleted_at IS NULL
           AND p.destination_type = 'public_feed'
           AND p.visibility = 'public'
-          AND prof.visibility = 'public'
+          AND COALESCE(prof.visibility, 'public') = 'public'
           AND NOT EXISTS (
             SELECT 1 FROM community_blocks b
             WHERE (b.blocker_id = $2 AND b.blocked_id = p.author_id)
@@ -1713,22 +1760,22 @@ export function createCommunityQueries({ db }) {
         WHERE u.deleted_at IS NULL
           AND u.status NOT IN ('suspended', 'deletion_pending', 'deleted')
           AND COALESCE(p.visibility, 'public') = 'public'
-          AND u.id <> $2
+          AND u.id <> $1
           AND NOT EXISTS (
             SELECT 1 FROM community_blocks b
-            WHERE (b.blocker_id = $2 AND b.blocked_id = u.id)
-               OR (b.blocked_id = $2 AND b.blocker_id = u.id)
+            WHERE (b.blocker_id = $1 AND b.blocked_id = u.id)
+               OR (b.blocked_id = $1 AND b.blocker_id = u.id)
           )
           AND (
-            $3 = '' OR
-            COALESCE(p.display_name, u.display_name) ILIKE $3 OR
-            COALESCE(p.handle, u.username_normalized, u.username) ILIKE $3 OR
-            p.biography ILIKE $3
+            $2 = '' OR
+            COALESCE(p.display_name, u.display_name) ILIKE $2 OR
+            COALESCE(p.handle, u.username_normalized, u.username) ILIKE $2 OR
+            p.biography ILIKE $2
           )
         ORDER BY COALESCE(p.created_at, u.created_at) DESC
-        LIMIT $4
+        LIMIT $3
         `,
-        [query, userId, query ? `%${query}%` : '', limit]
+        [userId, query ? `%${query}%` : '', limit]
       );
       return result.rows;
     },

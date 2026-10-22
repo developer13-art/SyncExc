@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
+import { Textarea } from '../../components/ui/Textarea.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { PostCard } from './components/PostCard.jsx';
@@ -25,6 +26,8 @@ export default function PostDetails() {
   const profileQuery = useCommunityProfile();
   const postQuery = useCommunityPost(postId);
   const [reportTarget, setReportTarget] = useState(null);
+  const [commentText, setCommentText] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
 
   useEffect(() => {
     if (postQuery.post) {
@@ -57,9 +60,28 @@ export default function PostDetails() {
       await postQuery.addComment({ parentId, content });
       toast.success('Reply posted');
       postQuery.refetch?.();
+      return true;
     } catch (err) {
       toast.error('Reply failed', { description: getErrorMessage(err) });
-      throw err;
+      return false;
+    }
+  };
+
+  const handleCreateComment = async (event) => {
+    event.preventDefault();
+    const content = commentText.trim();
+    if (!content) return;
+
+    setCommentSubmitting(true);
+    try {
+      await postQuery.addComment({ content });
+      toast.success('Comment posted');
+      setCommentText('');
+      await postQuery.refetchComments();
+    } catch (err) {
+      toast.error('Comment failed', { description: getErrorMessage(err) });
+    } finally {
+      setCommentSubmitting(false);
     }
   };
 
@@ -112,13 +134,44 @@ export default function PostDetails() {
           <CardTitle>Comments</CardTitle>
         </CardHeader>
         <CardContent>
-          <CommentThread
-            comments={postQuery.comments}
-            currentUserId={profileQuery.profile?.userId}
-            onReply={handleReply}
-            onDelete={handleDelete}
-            onReport={(comment) => setReportTarget({ type: 'comment', id: comment.id })}
-          />
+          {postQuery.post.allowComments ? (
+            <form onSubmit={handleCreateComment} className="mb-5 flex flex-col gap-2">
+              <Textarea
+                value={commentText}
+                onChange={(event) => setCommentText(event.target.value)}
+                placeholder="Write a comment"
+                rows={3}
+                maxLength={5000}
+                aria-label="Write a comment"
+              />
+              <div className="flex justify-end">
+                <Button type="submit" disabled={commentSubmitting || !commentText.trim()}>
+                  {commentSubmitting ? 'Posting…' : 'Comment'}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <p className="mb-5 text-sm text-muted-foreground">
+              Comments are disabled for this post.
+            </p>
+          )}
+          {postQuery.commentsIsLoading ? (
+            <LoadingState label="Loading comments" />
+          ) : postQuery.commentsIsError ? (
+            <ErrorState
+              title="Unable to load comments"
+              description="We could not fetch comments for this post."
+              onRetry={postQuery.refetchComments}
+            />
+          ) : (
+            <CommentThread
+              comments={postQuery.comments}
+              currentUserId={profileQuery.profile?.userId}
+              onReply={handleReply}
+              onDelete={handleDelete}
+              onReport={(comment) => setReportTarget({ type: 'comment', id: comment.id })}
+            />
+          )}
         </CardContent>
       </Card>
       <ReportDialog

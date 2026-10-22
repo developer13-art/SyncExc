@@ -147,7 +147,7 @@ export const communityApi = {
     api.post(endpoints.community.discussionChannels, payload),
 
   listDiscussionThreads: (channelId, params) =>
-    api.get(endpoints.community.discussionChannelThreads(channelId), { params }),
+    api.getPaged(endpoints.community.discussionChannelThreads(channelId), { params }),
 
   createDiscussionThread: (channelId, payload) =>
     api.post(endpoints.community.discussionChannelThreads(channelId), payload),

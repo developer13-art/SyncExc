@@ -25,6 +25,13 @@ export function AuthProvider({ children }) {
   const user = useSelector(selectCurrentUser);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      void queryClient.cancelQueries({ queryKey: ['community'] });
+      queryClient.removeQueries({ queryKey: ['community'] });
+    }
+  }, [isAuthenticated, queryClient]);
+
+  useEffect(() => {
     if (!accessToken || user) {
       if (isBootstrapping) {
         dispatch(authActions.bootstrappingComplete());
@@ -66,6 +73,8 @@ export function AuthProvider({ children }) {
         return { mfaRequired: true, challengeToken: result.challengeToken };
       }
 
+      await queryClient.cancelQueries({ queryKey: ['community'] });
+      queryClient.removeQueries({ queryKey: ['community'] });
       dispatch(authActions.loginSucceeded(result));
       queryClient.setQueryData(queryKeys.auth.me, result.user);
       return { success: true };
@@ -81,6 +90,8 @@ export function AuthProvider({ children }) {
   const verifyMfa = useCallback(
     async ({ challengeToken, code, method = 'totp' }) => {
       const result = await identityApi.verifyMfa({ challengeToken, code, method });
+      await queryClient.cancelQueries({ queryKey: ['community'] });
+      queryClient.removeQueries({ queryKey: ['community'] });
       dispatch(authActions.loginSucceeded(result));
       dispatch(authActions.mfaChallengeCleared());
       queryClient.setQueryData(queryKeys.auth.me, result.user);

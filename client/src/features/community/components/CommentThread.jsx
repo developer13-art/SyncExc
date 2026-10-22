@@ -35,7 +35,8 @@ export function CommentThread({
     }
     setSubmitting(true);
     try {
-      await onReply?.({ parentId, content: replyText.trim() });
+      const posted = await onReply?.({ parentId, content: replyText.trim() });
+      if (posted === false) return;
       setReplyText('');
       setReplyingTo(null);
     } finally {

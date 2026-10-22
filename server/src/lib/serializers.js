@@ -778,6 +778,7 @@ export function serializePost(row) {
     viewerReacted: Boolean(row.viewer_reaction),
     viewerBookmarked: Boolean(row.bookmark_id),
     bookmarkId: row.bookmark_id || null,
+    allowComments: row.allow_comments !== false,
     visibility: row.visibility,
     poll: row.poll || null,
     event: row.event || null,

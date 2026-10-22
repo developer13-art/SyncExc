@@ -50,8 +50,9 @@ export function useCommunityPosts(params = {}) {
     posts: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
-    createPost: create.mutateAsync,
+    isError: listQuery.isError,
     refetch: listQuery.refetch,
+    createPost: create.mutateAsync,
   };
 }
 
@@ -90,6 +91,9 @@ export function useCommunityPost(postId) {
     comments: commentsQuery.data?.items ?? [],
     meta: commentsQuery.data?.meta ?? {},
     isLoading: detailQuery.isLoading,
+    commentsIsLoading: commentsQuery.isLoading,
+    commentsIsError: commentsQuery.isError,
+    refetchComments: commentsQuery.refetch,
     addComment: addComment.mutateAsync,
     addReaction: addReaction.mutateAsync,
     refetch: async () => {
