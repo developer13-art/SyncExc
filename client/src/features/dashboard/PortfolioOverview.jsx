@@ -45,7 +45,7 @@ export function PortfolioOverview({ overview, isLoading, error, onRetry }) {
                 >
                   {isPositive ? '+' : '-'}
                   {formatCurrency(Math.abs(changeAbsolute), currency)} (
-                  {changePercent.toFixed(2)}%)
+                  {changePercent == null ? '—' : `${changePercent.toFixed(2)}%`})
                 </span>
               ) : null}
             </div>
@@ -67,14 +67,26 @@ export function PortfolioOverview({ overview, isLoading, error, onRetry }) {
       <CardContent className="p-0">
         <AreaChart
           title={null}
-          subtitle={null}
           data={series}
           dataKeys={[{ key: 'value', label: 'Portfolio', color: 'hsl(var(--primary))' }]}
           xKey="timestamp"
           height={280}
+          isEmpty={series.length < 2}
+          emptyDescription={
+            series.length === 1
+              ? 'More account balance snapshots are needed to draw portfolio history.'
+              : overview?.portfolioValue != null
+                ? 'The current balance is available, but no historical balance snapshots have been saved yet. History will appear as your exchange account syncs.'
+                : 'Connect and sync an exchange account to start collecting portfolio history.'
+          }
           isLoading={isLoading}
           error={error}
           onRetry={onRetry}
+          subtitle={
+            overview?.portfolioValueEstimated
+              ? 'Historical balances valued at current spot prices'
+              : 'Historical equity from exchange account snapshots'
+          }
           showLegend={false}
           valueFormatter={(v) => formatCurrency(v, currency)}
           className="border-0 shadow-none"

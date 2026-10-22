@@ -9,6 +9,29 @@ const USD_PEGGED_ASSETS = new Set(['USD', 'USDT', 'USDC', 'BUSD', 'TUSD', 'FDUSD
 
 export function createPortfolioService({ db, queries, marketData, logger }) {
   async function getWorkspaceOverview({ workspaceId }) {
+    const spotPricePromises = new Map();
+    async function getSpotPrice(exchangeCode, asset) {
+      const symbol = exchangeCode === 'okx' ? `${asset}-USDT` : `${asset}USDT`;
+      const key = `${exchangeCode}:${symbol}`;
+      if (!spotPricePromises.has(key)) {
+        spotPricePromises.set(
+          key,
+          Promise.resolve().then(() => {
+            if (typeof marketData?.getSpotPrice !== 'function') {
+              throw new Error('Spot price service is unavailable');
+            }
+            return marketData.getSpotPrice({ exchangeCode, symbol });
+          }),
+        );
+      }
+      try {
+        return await spotPricePromises.get(key);
+      } catch (error) {
+        spotPricePromises.delete(key);
+        throw error;
+      }
+    }
+
     // Total orders by status
     const ordersResult = await db.query(
       `
@@ -173,17 +196,8 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
           return;
         }
 
-        const symbol = account.exchangeName === 'okx'
-          ? `${asset}-USDT`
-          : `${asset}USDT`;
         try {
-          if (typeof marketData?.getSpotPrice !== 'function') {
-            throw new Error('Spot price service is unavailable');
-          }
-          const price = await marketData.getSpotPrice({
-            exchangeCode: account.exchangeName,
-            symbol,
-          });
+          const price = await getSpotPrice(account.exchangeName, asset);
           estimatedEquity += amount * price;
         } catch (error) {
           logger?.warn?.(
@@ -200,6 +214,139 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
     }));
     const connectionCounts = connectionsResult.rows[0] ?? {};
     const valuedAccounts = accounts.filter((account) => account.equity !== null);
+    const historyRows = accountRows.length
+      ? (await db.query(
+        `
+        WITH bucketed_snapshots AS (
+          SELECT
+            bs.id,
+            bs.account_id,
+            bs.observed_at,
+            CASE
+              WHEN bs.observed_at >= now() - interval '90 days'
+                THEN date_trunc('hour', bs.observed_at)
+              ELSE date_trunc('day', bs.observed_at)
+            END AS bucket
+          FROM exchange_balance_snapshots bs
+          JOIN exchange_accounts a ON a.id = bs.account_id
+          JOIN exchange_connections c ON c.id = a.connection_id
+          WHERE c.workspace_id = $1
+            AND c.status NOT IN ('disconnected', 'revoked')
+            AND a.status = 'active'
+            AND bs.observed_at >= now() - interval '1 year'
+        ),
+        latest_per_bucket AS (
+          SELECT DISTINCT ON (account_id, bucket)
+            id, account_id, observed_at, bucket
+          FROM bucketed_snapshots
+          ORDER BY account_id, bucket, observed_at DESC
+        )
+        SELECT
+          snapshot.bucket,
+          snapshot.account_id,
+          c.exchange_code,
+          snapshot.observed_at,
+          (
+            SELECT jsonb_agg(jsonb_build_object(
+              'asset', item.asset,
+              'total', item.total::text
+            ) ORDER BY item.asset)
+            FROM exchange_balance_items item
+            WHERE item.snapshot_id = snapshot.id
+          ) AS balances,
+          (
+            SELECT account_snapshot.equity::text
+            FROM exchange_account_snapshots account_snapshot
+            WHERE account_snapshot.account_id = snapshot.account_id
+              AND account_snapshot.observed_at = snapshot.observed_at
+              AND account_snapshot.equity IS NOT NULL
+            ORDER BY account_snapshot.id DESC
+            LIMIT 1
+          ) AS equity
+        FROM latest_per_bucket snapshot
+        JOIN exchange_accounts a ON a.id = snapshot.account_id
+        JOIN exchange_connections c ON c.id = a.connection_id
+        ORDER BY snapshot.bucket ASC, snapshot.account_id ASC
+        `,
+        [workspaceId],
+      )).rows
+      : [];
+    const historyByBucket = new Map();
+    for (const row of historyRows) {
+      const bucketKey = new Date(row.bucket).toISOString();
+      if (!historyByBucket.has(bucketKey)) historyByBucket.set(bucketKey, []);
+      historyByBucket.get(bucketKey).push(row);
+    }
+    const history = [];
+    for (const [bucket, rows] of historyByBucket) {
+      if (rows.length !== accountRows.length) continue;
+      let value = 0;
+      let isComplete = true;
+      for (const row of rows) {
+        if (row.equity !== null && row.equity !== undefined) {
+          const equity = Number(row.equity);
+          if (!Number.isFinite(equity)) {
+            isComplete = false;
+            break;
+          }
+          value += equity;
+          continue;
+        }
+
+        const balances = Array.isArray(row.balances) ? row.balances : [];
+        if (balances.length === 0) {
+          isComplete = false;
+          break;
+        }
+        for (const balance of balances) {
+          const asset = String(balance.asset || '').toUpperCase();
+          const amount = Number(balance.total);
+          if (!asset || !Number.isFinite(amount) || amount < 0) {
+            isComplete = false;
+            break;
+          }
+          if (amount === 0) continue;
+          if (USD_PEGGED_ASSETS.has(asset)) {
+            value += amount;
+            continue;
+          }
+          try {
+            value += amount * await getSpotPrice(row.exchange_code, asset);
+          } catch (error) {
+            logger?.warn?.(
+              { accountId: row.account_id, asset, errorName: error?.name || 'Error' },
+              'Unable to value historical account balance',
+            );
+            isComplete = false;
+            break;
+          }
+        }
+        if (!isComplete) break;
+      }
+      if (isComplete) history.push({ timestamp: bucket, value });
+    }
+    const now = Date.now();
+    const ranges = {
+      '1d': 24 * 60 * 60 * 1000,
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '30d': 30 * 24 * 60 * 60 * 1000,
+      '90d': 90 * 24 * 60 * 60 * 1000,
+      '1y': 365 * 24 * 60 * 60 * 1000,
+    };
+    const equitySeries = {};
+    const equityChange = {};
+    for (const [range, duration] of Object.entries(ranges)) {
+      const series = history.filter((point) => Date.parse(point.timestamp) >= now - duration);
+      equitySeries[range] = series;
+      if (series.length >= 2) {
+        const first = series[0].value;
+        const last = series[series.length - 1].value;
+        equityChange[range] = {
+          absolute: last - first,
+          percent: first === 0 ? null : ((last - first) / Math.abs(first)) * 100,
+        };
+      }
+    }
 
     return {
       accounts,
@@ -208,6 +355,8 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
         : null,
       portfolioValueEstimated: valuedAccounts.some((account) => account.equitySource === 'estimated'),
       unpricedAssets: [...new Set(accounts.flatMap((account) => account.unpricedAssets))],
+      equitySeries,
+      equityChange,
       baseCurrency: 'USD',
       activeConnectionCount: connectionCounts.active_count ?? 0,
       totalConnectionCount: connectionCounts.total_count ?? 0,

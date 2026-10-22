@@ -24,13 +24,15 @@ export function AreaChart({
   isLoading,
   error,
   onRetry,
+  isEmpty,
+  emptyDescription,
   valueFormatter,
   showGrid = true,
   showLegend = true,
   stacked = false,
   className,
 }) {
-  const isEmpty = !data || data.length === 0;
+  const chartIsEmpty = isEmpty ?? (!data || data.length === 0);
 
   return (
     <ChartContainer
@@ -40,7 +42,8 @@ export function AreaChart({
       isLoading={isLoading}
       error={error}
       onRetry={onRetry}
-      isEmpty={isEmpty}
+      isEmpty={chartIsEmpty}
+      emptyDescription={emptyDescription}
       height={height}
       className={className}
     >

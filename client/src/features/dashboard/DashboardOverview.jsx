@@ -146,19 +146,6 @@ export default function DashboardOverview() {
             {activeWorkspace?.name ?? 'Your workspace'} · Track your portfolio, positions, and market activity.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" asChild>
-            <Link to="/app/terminal">Open terminal</Link>
-          </Button>
-          <IconButton
-            label="Refresh dashboard"
-            onClick={handleRefreshAll}
-            disabled={isLoading}
-            className="border border-border bg-background"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </IconButton>
-        </div>
       </header>
 
       {accountSyncQuery.error ? (
