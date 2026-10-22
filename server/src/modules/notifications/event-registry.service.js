@@ -5,7 +5,7 @@
  * registered before it can be notified.
  */
 
-export function createEventRegistry({ queries, logger }) {
+export function createEventRegistry({ db, queries, logger }) {
   const defaults = [
     // Account security
     { eventType: 'user.login_success', category: 'security', defaultPriority: 'normal', defaultChannels: ['in_app'] },
@@ -133,15 +133,17 @@ export function createEventRegistry({ queries, logger }) {
    * Persist all registered event types into the DB. Called at bootstrap.
    */
   async function persistDefaults() {
-    for (const def of registry.values()) {
-      await queries.upsertEventType(null, {
-        eventType: def.eventType,
-        category: def.category,
-        defaultPriority: def.defaultPriority,
-        defaultChannels: def.defaultChannels,
-        description: def.description || null,
-      });
-    }
+    await db.tx(async (tx) => {
+      for (const def of registry.values()) {
+        await queries.upsertEventType(tx, {
+          eventType: def.eventType,
+          category: def.category,
+          defaultPriority: def.defaultPriority,
+          defaultChannels: def.defaultChannels,
+          description: def.description || null,
+        });
+      }
+    });
     logger.info({ count: registry.size }, 'Notification event types persisted');
   }
 

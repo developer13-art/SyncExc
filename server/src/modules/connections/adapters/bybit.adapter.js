@@ -213,7 +213,16 @@ export function createBybitAdapter({ config, logger }) {
         body,
       });
 
-      if (data.retCode !== 0) throw new Error(`Bybit order error: ${data.retMsg}`);
+      if (data.retCode !== 0) {
+        const permissionError = /invalid api-key, ip, or permissions/i.test(data.retMsg || '');
+        const error = new Error(
+          permissionError
+            ? 'Bybit rejected the API key, server IP, or trading permissions. Verify the key is active, the server IP is allowlisted, the correct environment is selected, and trading access is enabled.'
+            : `Bybit order error: ${data.retMsg}`
+        );
+        error.exchangeResponse = { retCode: data.retCode, retMsg: data.retMsg };
+        throw error;
+      }
 
       return {
         exchangeOrderId: data.result.orderId,

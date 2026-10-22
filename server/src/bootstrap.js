@@ -75,7 +75,11 @@ export async function bootstrap() {
     services.jobs = jobsFacade;
 
     logger.info('Initializing domain modules');
-    initializeModules(services);
+    const modules = initializeModules(services);
+    await Promise.all([
+      modules.notifications.eventRegistry.persistDefaults(),
+      modules.notifications.template.registerDefaults(),
+    ]);
 
     logger.info('Initializing job runner and scheduler');
     services.jobsRunner = await initJobs({ services });

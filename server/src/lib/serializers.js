@@ -312,6 +312,7 @@ export function serializeOrder(row) {
     price: row.price || null,
     averageFillPrice: row.average_fill_price || null,
     status: row.status,
+    rejectionReason: row.rejection_reason || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

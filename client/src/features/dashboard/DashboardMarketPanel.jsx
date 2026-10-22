@@ -156,6 +156,20 @@ export function DashboardMarketPanel({
         return;
       }
 
+      if (result?.order?.status === 'rejected') {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.overview(workspaceId),
+        });
+        setConfirmOpen(false);
+        setPendingOrder(null);
+        setApprovalRequestId(null);
+        setApprovalMessage('');
+        toast.error('Order rejected by exchange', {
+          description: result.order.rejectionReason || 'The exchange did not accept this order.',
+        });
+        return;
+      }
+
       await queryClient.invalidateQueries({
         queryKey: queryKeys.terminal.overview(workspaceId),
       });

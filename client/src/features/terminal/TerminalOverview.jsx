@@ -224,6 +224,18 @@ export default function TerminalOverview() {
         return;
       }
 
+      if (result?.order?.status === 'rejected') {
+        setConfirmOpen(false);
+        setPendingOrder(null);
+        setApprovalRequestId(null);
+        setApprovalMessage('');
+        await ordersQuery.refetch();
+        toast.error('Order rejected by exchange', {
+          description: result.order.rejectionReason || 'The exchange did not accept this order.',
+        });
+        return;
+      }
+
       toast.success(result?.ambiguous ? 'Order status needs checking' : 'Order submitted', {
         description: result?.ambiguous
           ? 'The exchange response was uncertain. Check execution status before trying again.'

@@ -50,6 +50,44 @@ test('routes Bybit private requests to the selected environment', async () => {
   }
 });
 
+test('explains Bybit API key, IP allowlist, and trading permission rejections', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({
+      retCode: 10003,
+      retMsg: 'Invalid API-key, IP, or permissions for action.',
+      result: {},
+    }),
+  });
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    await assert.rejects(
+      adapter.placeOrder({
+        apiKey: 'test-api-key',
+        apiSecret: 'test-api-secret',
+        environment: 'testnet',
+        order: {
+          instrument: 'BTCUSDT',
+          marketType: 'spot',
+          side: 'buy',
+          type: 'market',
+          quantity: '0.01',
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /server IP is allowlisted/);
+        assert.match(error.message, /trading access is enabled/);
+        assert.equal(error.exchangeResponse.retCode, 10003);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('defaults Bybit private requests to mainnet', async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl;

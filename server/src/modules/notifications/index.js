@@ -39,7 +39,7 @@ export function createNotificationsModule({ services }) {
 
   const queries = createNotificationQueries({ db: services.db });
 
-  const eventRegistry = createEventRegistry({ queries, logger });
+  const eventRegistry = createEventRegistry({ db: services.db, queries, logger });
   const templateService = createTemplateService({ db: services.db, queries, logger });
   const preferencesService = createPreferencesService({ db: services.db, queries, logger });
   const deduplicationService = createDeduplicationService({ db: services.db, queries, logger });

@@ -423,6 +423,8 @@ export function createOrderSubmissionService({
             'execution.order_rejected',
             {
               orderId: order.id,
+              instrument: instrumentId,
+              side,
               reason: adapterError.message,
             },
             {
