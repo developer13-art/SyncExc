@@ -326,10 +326,18 @@ export function serializeFill(row) {
     instrument: row.instrument,
     side: row.side,
     quantity: row.quantity,
+    filledQuantity: row.quantity,
+    entryPrice: row.entry_price || null,
     price: row.price,
+    averagePrice: row.price,
     feeAmount: row.fee_amount || null,
+    fees: row.fee_amount || null,
     feeAsset: row.fee_asset || null,
     executedAt: row.executed_at,
+    closedAt: row.executed_at,
+    realizedPnl: row.realized_pnl === null || row.realized_pnl === undefined
+      ? null
+      : row.realized_pnl,
   };
 }
 

@@ -296,6 +296,51 @@ export function createBybitAdapter({ config, logger }) {
         }));
     },
 
+    async fetchClosedPnl({
+      apiKey,
+      apiSecret,
+      environment,
+      cursor,
+      startTime,
+    }) {
+      const params = { category: 'linear', limit: '100' };
+      if (cursor) params.cursor = cursor;
+      if (startTime) params.startTime = String(startTime);
+      const query = new URLSearchParams(params).toString();
+      const headers = signedHeaders({ apiKey, apiSecret, params: query });
+      const data = await this.fetchSigned({
+        url: `${getBaseUrl(environment)}/v5/position/closed-pnl?${query}`,
+        method: 'GET',
+        headers,
+      });
+      if (data.retCode !== 0) {
+        throw new Error(`Bybit closed P&L fetch error: ${data.retMsg}`);
+      }
+
+      const result = data.result || {};
+      return {
+        trades: (result.list || []).map((item) => ({
+          exchangeTradeId: [
+            item.orderId,
+            item.createdTime,
+            item.closedSize,
+          ].join(':'),
+          exchangeOrderId: item.orderId,
+          instrument: item.symbol,
+          side: String(item.side || '').toLowerCase() === 'buy' ? 'long' : 'short',
+          quantity: item.closedSize,
+          entryPrice: item.avgEntryPrice || null,
+          exitPrice: item.avgExitPrice,
+          realizedPnl: item.closedPnl,
+          feeAmount: item.closeFee || null,
+          feeAsset: item.settleCoin || null,
+          closedAt: item.updatedTime || item.createdTime,
+          exchangePayload: item,
+        })),
+        nextCursor: result.nextPageCursor || null,
+      };
+    },
+
     _mapStatus(status) {
       const map = {
         New: 'submitted',

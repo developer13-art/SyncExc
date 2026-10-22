@@ -44,6 +44,20 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
       [workspaceId]
     );
 
+    const closedTradesResult = await db.query(
+      `
+      SELECT
+        count(*)::int AS closed_trade_count,
+        COALESCE(sum(realized_pnl), 0)::text AS total_realized_pnl,
+        COALESCE(sum(realized_pnl) FILTER (
+          WHERE closed_at >= now() - interval '24 hours'
+        ), 0)::text AS realized_pnl_today
+      FROM trading_closed_trades
+      WHERE workspace_id = $1
+      `,
+      [workspaceId]
+    );
+
     // Recent executions
     const executionsResult = await db.query(
       `
@@ -208,6 +222,11 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
         count: fillsResult.rows[0].fill_count,
         notional: fillsResult.rows[0].total_notional,
       },
+      closedTrades: {
+        count: closedTradesResult.rows[0].closed_trade_count,
+        totalRealizedPnl: closedTradesResult.rows[0].total_realized_pnl,
+      },
+      realizedPnlToday: closedTradesResult.rows[0].realized_pnl_today,
       recentExecutions: executionsResult.rows,
     };
   }

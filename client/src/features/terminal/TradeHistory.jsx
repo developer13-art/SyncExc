@@ -62,8 +62,16 @@ export function TradeHistory({ workspaceId, accountId }) {
       render: (row) => formatQuantity(row.filledQuantity ?? row.quantity, 8),
     },
     {
+      key: 'entryPrice',
+      label: 'Entry Price',
+      align: 'right',
+      render: (row) => (
+        row.entryPrice ? formatQuantity(row.entryPrice, 8) : '—'
+      ),
+    },
+    {
       key: 'averagePrice',
-      label: 'Avg Price',
+      label: 'Exit / Fill Price',
       align: 'right',
       render: (row) => formatQuantity(row.averagePrice ?? row.price, 8),
     },
@@ -84,7 +92,7 @@ export function TradeHistory({ workspaceId, accountId }) {
       align: 'right',
       render: (row) => (
         <PnLIndicator
-          value={row.realizedPnl ?? 0}
+          value={row.realizedPnl}
           percent={row.pnlPercent}
           currency={row.quoteCurrency ?? 'USD'}
         />

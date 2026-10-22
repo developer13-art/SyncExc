@@ -26,9 +26,10 @@ test('filters trade history by the selected account', async () => {
   });
 
   assert.match(queryText, /JOIN trading_orders o ON o\.id = f\.order_id/);
-  assert.match(queryText, /o\.account_id = \$2/);
-  assert.match(queryText, /f\.instrument = \$3/);
-  assert.match(queryText, /f\.executed_at < \$4/);
+  assert.match(queryText, /t\.account_id = \$2/);
+  assert.match(queryText, /t\.instrument = \$3/);
+  assert.match(queryText, /t\.executed_at < \$4/);
+  assert.match(queryText, /FROM trading_closed_trades ct/);
   assert.match(queryText, /LIMIT \$5/);
   assert.deepEqual(queryParams, [
     'workspace-id',

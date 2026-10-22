@@ -122,6 +122,73 @@ export function createTerminalService({
       await queries.clearMissingPositions(tx, accountId, positions);
     });
 
+    if (typeof adapter.fetchClosedPnl === 'function') {
+      const syncState = await queries.getClosedPnlSyncState(accountId);
+      let cursor = syncState?.closed_pnl_cursor || null;
+      let latestClosedAt = syncState?.closed_pnl_last_at || null;
+      const backfilled = Boolean(syncState?.closed_pnl_backfilled);
+      let hasMore = true;
+      let pagesFetched = 0;
+
+      while (hasMore && pagesFetched < 5) {
+        const startTime = !backfilled && !cursor
+          ? undefined
+          : latestClosedAt
+            ? Math.max(0, new Date(latestClosedAt).getTime() - 60_000)
+            : Date.now();
+        const page = await adapter.fetchClosedPnl({
+          ...adapterContext,
+          cursor,
+          startTime: cursor ? undefined : startTime,
+        });
+        if (!page || !Array.isArray(page.trades)) {
+          throw new Error(`${connection.exchange_code} adapter returned invalid closed P&L data`);
+        }
+
+        cursor = page.nextCursor || null;
+        hasMore = Boolean(cursor);
+        pagesFetched += 1;
+        await db.tx(async (tx) => {
+          for (const trade of page.trades) {
+            if (
+              !trade.exchangeTradeId ||
+              !trade.instrument ||
+              !trade.quantity ||
+              !trade.exitPrice ||
+              trade.realizedPnl === null ||
+              trade.realizedPnl === undefined ||
+              !trade.closedAt
+            ) {
+              throw new Error(`${connection.exchange_code} adapter returned an incomplete closed trade`);
+            }
+            const closedAt = /^\d+$/.test(String(trade.closedAt))
+              ? new Date(Number(trade.closedAt))
+              : new Date(trade.closedAt);
+            if (Number.isNaN(closedAt.getTime())) {
+              throw new Error(`${connection.exchange_code} adapter returned an invalid closed-trade date`);
+            }
+            if (!latestClosedAt || closedAt > new Date(latestClosedAt)) {
+              latestClosedAt = closedAt;
+            }
+
+            await queries.upsertClosedTrade(tx, {
+              ...trade,
+              workspaceId,
+              connectionId: connection.id,
+              accountId,
+              exchangeCode: connection.exchange_code,
+              closedAt,
+            });
+          }
+          await queries.updateClosedPnlSyncState(tx, accountId, {
+            cursor,
+            lastClosedAt: hasMore ? latestClosedAt : new Date(),
+            backfilled: backfilled || !hasMore,
+          });
+        });
+      }
+    }
+
     const activeOrders = await queries.listOrders(workspaceId, {
       accountId,
       statuses: OPEN_ORDER_STATUSES,

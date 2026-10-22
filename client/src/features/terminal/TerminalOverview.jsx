@@ -23,6 +23,7 @@ import { ExecutionStatus } from './ExecutionStatus.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import {
+  useTerminalAccountSync,
   useTerminalMarkets,
   useTerminalMarketData,
   useTerminalOrders,
@@ -107,6 +108,7 @@ export default function TerminalOverview() {
     const account = accounts.find((a) => a.id === selectedAccountId);
     return connections.find((c) => c.id === account?.connectionId) ?? null;
   }, [accounts, connections, selectedAccountId]);
+  const accountSyncQuery = useTerminalAccountSync(activeWorkspaceId, selectedAccountId);
 
   const marketsQuery = useTerminalMarkets(activeWorkspaceId, {
     exchangeCode: activeConnection?.exchange,
@@ -294,6 +296,11 @@ export default function TerminalOverview() {
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
+      {accountSyncQuery.error ? (
+        <p className="text-xs text-destructive">
+          Exchange sync failed: {getErrorMessage(accountSyncQuery.error)}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2">
         <AccountSelector
           accounts={accounts}

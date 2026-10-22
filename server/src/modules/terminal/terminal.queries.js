@@ -185,26 +185,46 @@ export function createTerminalQueries({ db }) {
       { limit = 50, cursor = null, accountId = null, instrument = null } = {},
     ) {
       const params = [workspaceId];
-      const conditions = ['f.workspace_id = $1'];
+      const conditions = ['t.workspace_id = $1'];
       if (accountId) {
         params.push(accountId);
-        conditions.push(`o.account_id = $${params.length}`);
+        conditions.push(`t.account_id = $${params.length}`);
       }
       if (instrument) {
         params.push(instrument);
-        conditions.push(`f.instrument = $${params.length}`);
+        conditions.push(`t.instrument = $${params.length}`);
       }
       if (cursor) {
         params.push(cursor);
-        conditions.push(`f.executed_at < $${params.length}`);
+        conditions.push(`t.executed_at < $${params.length}`);
       }
       params.push(limit + 1);
       const result = await db.query(
         `
-        SELECT f.* FROM trading_fills f
-        JOIN trading_orders o ON o.id = f.order_id
+        SELECT t.* FROM (
+          SELECT f.id, f.order_id, f.exchange_trade_id, f.instrument, f.side,
+                 f.quantity, f.price, NULL::numeric AS entry_price,
+                 f.fee_amount, f.fee_asset, f.executed_at,
+                 NULL::numeric AS realized_pnl, o.account_id, f.workspace_id
+          FROM trading_fills f
+          JOIN trading_orders o ON o.id = f.order_id
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM trading_closed_trades ct
+            WHERE ct.account_id = o.account_id
+              AND ct.exchange_order_id = o.exchange_order_id
+          )
+          UNION ALL
+          SELECT ct.id, NULL::uuid AS order_id, ct.exchange_trade_id,
+                 ct.instrument, ct.side,
+                 ct.quantity, ct.exit_price AS price, ct.entry_price,
+                 ct.fee_amount, ct.fee_asset,
+                 ct.closed_at AS executed_at, ct.realized_pnl, ct.account_id, ct.workspace_id
+          FROM trading_closed_trades ct
+          WHERE ct.workspace_id = $1
+        ) t
         WHERE ${conditions.join(' AND ')}
-        ORDER BY f.executed_at DESC
+        ORDER BY t.executed_at DESC
         LIMIT $${params.length}
         `,
         params
@@ -216,6 +236,85 @@ export function createTerminalQueries({ db }) {
         rows,
         nextCursor: hasMore && last ? last.executed_at.toISOString() : null,
       };
+    },
+
+    async getClosedPnlSyncState(accountId) {
+      const result = await db.query(
+        `SELECT * FROM trading_exchange_sync_state WHERE account_id = $1`,
+        [accountId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async upsertClosedTrade(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO trading_closed_trades (
+          workspace_id, connection_id, account_id, exchange_code, exchange_trade_id,
+          exchange_order_id, instrument, side, quantity, entry_price, exit_price,
+          realized_pnl, fee_amount, fee_asset, closed_at, exchange_payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ON CONFLICT (account_id, exchange_trade_id) DO UPDATE SET
+          exchange_order_id = EXCLUDED.exchange_order_id,
+          quantity = EXCLUDED.quantity,
+          entry_price = EXCLUDED.entry_price,
+          exit_price = EXCLUDED.exit_price,
+          realized_pnl = EXCLUDED.realized_pnl,
+          fee_amount = EXCLUDED.fee_amount,
+          fee_asset = EXCLUDED.fee_asset,
+          closed_at = EXCLUDED.closed_at,
+          exchange_payload = EXCLUDED.exchange_payload,
+          updated_at = now()
+        RETURNING *
+        `,
+        [
+          data.workspaceId,
+          data.connectionId,
+          data.accountId,
+          data.exchangeCode,
+          data.exchangeTradeId,
+          data.exchangeOrderId || null,
+          data.instrument,
+          data.side,
+          data.quantity,
+          data.entryPrice,
+          data.exitPrice,
+          data.realizedPnl,
+          data.feeAmount,
+          data.feeAsset,
+          data.closedAt,
+          JSON.stringify(data.exchangePayload || {}),
+        ]
+      );
+      return result.rows[0];
+    },
+
+    async updateClosedPnlSyncState(client, accountId, fields) {
+      const result = await client.query(
+        `
+        INSERT INTO trading_exchange_sync_state (
+          account_id, closed_pnl_cursor, closed_pnl_last_at, closed_pnl_backfilled
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (account_id) DO UPDATE SET
+          closed_pnl_cursor = EXCLUDED.closed_pnl_cursor,
+          closed_pnl_last_at = GREATEST(
+            trading_exchange_sync_state.closed_pnl_last_at,
+            EXCLUDED.closed_pnl_last_at
+          ),
+          closed_pnl_backfilled = EXCLUDED.closed_pnl_backfilled,
+          updated_at = now()
+        RETURNING *
+        `,
+        [
+          accountId,
+          fields.cursor ?? null,
+          fields.lastClosedAt ?? null,
+          Boolean(fields.backfilled),
+        ]
+      );
+      return result.rows[0];
     },
 
     /* =========================================================================

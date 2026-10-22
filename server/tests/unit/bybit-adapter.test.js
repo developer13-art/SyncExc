@@ -94,6 +94,78 @@ test('routes Bybit demo credentials to the demo API', async () => {
   }
 });
 
+test('fetches and normalizes Bybit closed P&L history', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl;
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return {
+      ok: true,
+      text: async () => JSON.stringify({
+        retCode: 0,
+        result: {
+          list: [{
+            orderId: 'close-order',
+            symbol: 'BTCUSDT',
+            side: 'Buy',
+            closedSize: '0.25',
+            avgEntryPrice: '60000',
+            avgExitPrice: '61000',
+            closedPnl: '250',
+            closeFee: '1.5',
+            settleCoin: 'USDT',
+            createdTime: '1720000000000',
+            updatedTime: '1720000001000',
+          }],
+          nextPageCursor: 'next-page',
+        },
+      }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    const result = await adapter.fetchClosedPnl({
+      apiKey: 'api-key',
+      apiSecret: 'api-secret',
+      environment: 'demo',
+      startTime: 1720000000000,
+    });
+
+    assert.equal(new URL(requestedUrl).pathname, '/v5/position/closed-pnl');
+    assert.equal(new URL(requestedUrl).searchParams.get('startTime'), '1720000000000');
+    assert.equal(result.nextCursor, 'next-page');
+    assert.deepEqual(result.trades[0], {
+      exchangeTradeId: 'close-order:1720000000000:0.25',
+      exchangeOrderId: 'close-order',
+      instrument: 'BTCUSDT',
+      side: 'long',
+      quantity: '0.25',
+      entryPrice: '60000',
+      exitPrice: '61000',
+      realizedPnl: '250',
+      feeAmount: '1.5',
+      feeAsset: 'USDT',
+      closedAt: '1720000001000',
+      exchangePayload: {
+        orderId: 'close-order',
+        symbol: 'BTCUSDT',
+        side: 'Buy',
+        closedSize: '0.25',
+        avgEntryPrice: '60000',
+        avgExitPrice: '61000',
+        closedPnl: '250',
+        closeFee: '1.5',
+        settleCoin: 'USDT',
+        createdTime: '1720000000000',
+        updatedTime: '1720000001000',
+      },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('signs Bybit GET requests using the exact URL query string', async () => {
   const originalFetch = globalThis.fetch;
   let requestUrl;

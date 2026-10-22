@@ -17,6 +17,15 @@ test('includes workspace exchange accounts and latest asset balances in overview
         if (sql.includes('FROM trading_fills')) {
           return { rows: [{ fill_count: 0, total_notional: '0' }] };
         }
+        if (sql.includes('FROM trading_closed_trades')) {
+          return {
+            rows: [{
+              closed_trade_count: 2,
+              total_realized_pnl: '14.5',
+              realized_pnl_today: '2.5',
+            }],
+          };
+        }
         if (sql.includes('FROM trading_execution_requests')) return { rows: [] };
         if (sql.includes('FROM exchange_accounts a')) {
           return {
@@ -76,6 +85,8 @@ test('includes workspace exchange accounts and latest asset balances in overview
   assert.equal(overview.activeConnectionCount, 0);
   assert.equal(overview.totalConnectionCount, 1);
   assert.equal(overview.degradedConnectionCount, 1);
+  assert.equal(overview.realizedPnlToday, '2.5');
+  assert.deepEqual(overview.closedTrades, { count: 2, totalRealizedPnl: '14.5' });
 });
 
 test('estimates USD portfolio value from balance quantities and exchange spot prices', async () => {
@@ -88,6 +99,9 @@ test('estimates USD portfolio value from balance quantities and exchange spot pr
         }
         if (sql.includes('FROM trading_fills')) {
           return { rows: [{ fill_count: 0, total_notional: '0' }] };
+        }
+        if (sql.includes('FROM trading_closed_trades')) {
+          return { rows: [{ closed_trade_count: 0, total_realized_pnl: '0', realized_pnl_today: '0' }] };
         }
         if (sql.includes('FROM trading_execution_requests')) return { rows: [] };
         if (sql.includes('FROM exchange_accounts a')) {
@@ -144,6 +158,9 @@ test('does not report a partial portfolio total when an asset has no USD price',
         }
         if (sql.includes('FROM trading_fills')) {
           return { rows: [{ fill_count: 0, total_notional: '0' }] };
+        }
+        if (sql.includes('FROM trading_closed_trades')) {
+          return { rows: [{ closed_trade_count: 0, total_realized_pnl: '0', realized_pnl_today: '0' }] };
         }
         if (sql.includes('FROM trading_execution_requests')) return { rows: [] };
         if (sql.includes('FROM exchange_accounts a')) {

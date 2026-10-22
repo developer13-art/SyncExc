@@ -101,6 +101,37 @@ export function useTerminalPositions(workspaceId, params = {}) {
   };
 }
 
+export function useTerminalAccountSync(workspaceId, accountId) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: ['terminal', 'exchange-sync', workspaceId, accountId],
+    queryFn: async () => {
+      const result = await terminalApi.syncAccountState(workspaceId, accountId);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.positions(workspaceId, {}),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.orders(workspaceId, {}),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.trades(workspaceId, {}),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.terminal.overview(workspaceId),
+        }),
+      ]);
+      return result;
+    },
+    enabled: Boolean(workspaceId && accountId),
+    staleTime: 0,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: 1,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useTerminalBalances(workspaceId, params = {}) {
   return useQuery({
     queryKey: queryKeys.terminal.balances(workspaceId, params),
@@ -115,7 +146,8 @@ export function useTerminalTrades(workspaceId, params = {}) {
     queryKey: queryKeys.terminal.trades(workspaceId, params),
     queryFn: () => terminalApi.listTrades(workspaceId, params),
     enabled: Boolean(workspaceId),
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
   });
 }
 
@@ -162,8 +194,8 @@ export function useTerminalMarketData(workspaceId, params = {}) {
     queryKey: queryKeys.terminal.marketData(workspaceId, params),
     queryFn: () => terminalApi.getMarketData(workspaceId, params),
     enabled,
-    staleTime: 4_000,
-    refetchInterval: 10_000,
+    staleTime: 2_000,
+    refetchInterval: 5_000,
     retry: 1,
   });
 }
