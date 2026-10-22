@@ -160,6 +160,7 @@ export default function PostDetails() {
                 accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
                 multiple
                 maxSizeMb={25}
+                compact
                 value={commentFiles}
                 onChange={setCommentFiles}
                 disabled={commentSubmitting}

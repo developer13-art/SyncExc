@@ -266,6 +266,7 @@ export default function Discussions() {
                     accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
                     multiple
                     maxSizeMb={25}
+                    compact
                     value={messageFiles}
                     onChange={setMessageFiles}
                     disabled={busy}

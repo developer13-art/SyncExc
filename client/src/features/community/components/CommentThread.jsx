@@ -154,6 +154,7 @@ export function CommentThread({
                       accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
                       multiple
                       maxSizeMb={25}
+                      compact
                       value={replyFiles}
                       onChange={setReplyFiles}
                       disabled={submitting}

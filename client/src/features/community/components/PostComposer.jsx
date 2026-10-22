@@ -189,6 +189,7 @@ export function PostComposer({
               accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
               multiple
               maxSizeMb={25}
+              compact
               value={files}
               onChange={setFiles}
               disabled={isSubmitting}

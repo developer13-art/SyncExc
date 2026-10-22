@@ -13,6 +13,7 @@ export function FileUpload({
   value = [],
   className,
   disabled = false,
+  compact = false,
 }) {
   const inputRef = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -37,6 +38,56 @@ export function FileUpload({
       onChange?.(null);
     }
   };
+
+  if (compact) {
+    return (
+      <div className={cn('flex min-w-0 flex-wrap items-center gap-2', className)}>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={accept}
+          multiple={multiple}
+          className="hidden"
+          onChange={(event) => {
+            handleFiles(event.target.files);
+            event.target.value = '';
+          }}
+          disabled={disabled}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Attach files"
+          title={`Attach files (max ${maxSizeMb} MB each)`}
+          onClick={() => inputRef.current?.click()}
+          disabled={disabled}
+          className="shrink-0"
+        >
+          <Upload className="h-4 w-4" />
+        </Button>
+        {files.map((file, index) => (
+          <span
+            key={`${file.name}-${index}`}
+            className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+          >
+            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="max-w-40 truncate">{file.name}</span>
+            <span className="shrink-0 text-muted-foreground">{formatFileSize(file.size)}</span>
+            <button
+              type="button"
+              aria-label={`Remove ${file.name}`}
+              onClick={() => removeFile(index)}
+              disabled={disabled}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
@@ -82,7 +133,10 @@ export function FileUpload({
           accept={accept}
           multiple={multiple}
           className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = '';
+          }}
           disabled={disabled}
         />
       </div>
