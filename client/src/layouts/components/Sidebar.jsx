@@ -47,8 +47,16 @@ export function Sidebar() {
   const location = useLocation();
   const collapsed = useSelector(selectSidebarCollapsed);
   const mobileNavOpen = useSelector(selectMobileNavOpen);
-  const { activeWorkspace } = useWorkspaceContext();
-  const sections = activeWorkspace?.type === 'trader' ? TRADER_NAV_SECTIONS : NAV_SECTIONS;
+  const { activeWorkspace, permissions = [] } = useWorkspaceContext();
+  const sections = (activeWorkspace?.type === 'trader' ? TRADER_NAV_SECTIONS : NAV_SECTIONS)
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        !item.requiresPermissions ||
+        item.requiresPermissions.every((permission) => permissions.includes(permission)),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   useEffect(() => {
     if (!mobileNavOpen) return undefined;

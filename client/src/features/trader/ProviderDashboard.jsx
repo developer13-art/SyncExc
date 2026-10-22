@@ -24,6 +24,7 @@ export default function ProviderDashboard() {
   const { activeWorkspace, activeWorkspaceId, permissions = [] } = useWorkspaceContext();
   const canMonitorTrading = permissions.includes('trading.monitor');
   const canViewConnections = permissions.includes('connections.view');
+  const canExecuteTrades = permissions.includes('trading.request_execution');
   const dashboardQuery = useQuery({
     queryKey: ['marketplace', 'provider-dashboard', activeWorkspaceId],
     queryFn: () => marketplaceApi.getProviderDashboard(),
@@ -97,6 +98,13 @@ export default function ProviderDashboard() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canMonitorTrading && canExecuteTrades ? (
+            <Button variant="outline" asChild>
+              <Link to={ROUTES.app.terminal.overview}>
+                Trading terminal <ArrowUpRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          ) : null}
           <Button variant="outline" asChild>
             <Link to={ROUTES.app.trader.profile}>
               View profile <ArrowUpRight className="ml-1 h-4 w-4" />

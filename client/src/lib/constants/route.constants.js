@@ -88,6 +88,13 @@ export const TRADER_NAV_SECTIONS = Object.freeze([
     label: 'Trader workspace',
     items: [
       { id: 'trader-dashboard', label: 'Dashboard', path: '/app/trader/dashboard', icon: 'dashboard' },
+      {
+        id: 'trader-terminal',
+        label: 'Trading terminal',
+        path: '/app/terminal',
+        icon: 'terminal',
+        requiresPermissions: ['trading.monitor', 'trading.request_execution'],
+      },
       { id: 'trader-publish', label: 'Publish signal', path: '/app/trader/signals/publish', icon: 'signals' },
       { id: 'trader-history', label: 'Signal history', path: '/app/trader/signals/history', icon: 'terminal' },
       { id: 'trader-subscribers', label: 'Subscribers', path: '/app/trader/subscribers', icon: 'connections' },
