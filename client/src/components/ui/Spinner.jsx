@@ -1,4 +1,5 @@
 import { cn } from '../../lib/utils/cn.util.js';
+import { LogoIcon } from '../../assets/icons/index.js';
 
 const sizes = {
   xs: 'h-3 w-3 border',
@@ -14,10 +15,12 @@ export function Spinner({ size = 'md', className, label = 'Loading' }) {
       role="status"
       aria-label={label}
       className={cn(
-        'inline-block animate-spin rounded-full border-current border-r-transparent text-primary',
+        'inline-flex shrink-0 items-center justify-center animate-pulse',
         sizes[size],
         className,
       )}
-    />
+    >
+      <LogoIcon aria-hidden="true" className="h-full w-full" />
+    </span>
   );
 }
