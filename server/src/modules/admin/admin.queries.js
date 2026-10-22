@@ -1055,6 +1055,65 @@ export function createAdminQueries({ db }) {
       return result.rows[0];
     },
 
+    async subscriptionPayoutSummary() {
+      const result = await db.query(
+        `
+        SELECT currency,
+          count(*) FILTER (WHERE status = 'succeeded')::int AS successful_count,
+          COALESCE(sum(amount_minor) FILTER (WHERE status = 'succeeded'), 0)::text AS total_paid_minor,
+          COALESCE(sum(amount_minor) FILTER (
+            WHERE status = 'succeeded'
+              AND paid_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+          ), 0)::text AS paid_today_minor
+        FROM subscription_payments
+        WHERE status = 'succeeded'
+        GROUP BY currency
+        ORDER BY currency
+        `
+      );
+      return result.rows;
+    },
+
+    async subscriptionsStartedToday({ limit = 5 } = {}) {
+      const result = await db.query(
+        `
+        WITH new_subscriptions AS (
+          SELECT s.id, s.billing_scope_type, s.billing_scope_id, s.status, s.created_at,
+            p.name AS plan_name,
+            CASE
+              WHEN s.billing_scope_type = 'user' THEN u.display_name
+              ELSE w.name
+            END AS subscriber_name,
+            CASE
+              WHEN s.billing_scope_type = 'user' THEN u.avatar_url
+              ELSE NULL
+            END AS avatar_url
+          FROM subscriptions s
+          JOIN subscription_plan_versions pv ON pv.id = s.plan_version_id
+          JOIN subscription_plans p ON p.id = pv.plan_id
+          LEFT JOIN users u
+            ON s.billing_scope_type = 'user' AND u.id = s.billing_scope_id
+          LEFT JOIN workspaces w
+            ON s.billing_scope_type = 'workspace' AND w.id = s.billing_scope_id
+          WHERE s.status IN ('active', 'trialing')
+            AND s.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+        )
+        SELECT (SELECT count(*)::int FROM new_subscriptions) AS today_count,
+          recent.id, recent.subscriber_name, recent.avatar_url, recent.plan_name,
+          recent.status, recent.created_at
+        FROM (SELECT 1) seed
+        LEFT JOIN LATERAL (
+          SELECT id, subscriber_name, avatar_url, plan_name, status, created_at
+          FROM new_subscriptions
+          ORDER BY created_at DESC
+          LIMIT $1
+        ) recent ON true
+        `,
+        [limit]
+      );
+      return result.rows;
+    },
+
     async unresolvedRefunds() {
       const result = await db.query(
         `

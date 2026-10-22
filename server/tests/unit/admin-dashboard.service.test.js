@@ -41,6 +41,21 @@ test('dashboard exposes real growth series and recent signups', async () => {
       recentSignals: async () => [],
       countActiveSubscriptions: async () => 12,
       subscriptionsByStatus: async () => [{ status: 'active', count: 12 }],
+      subscriptionPayoutSummary: async () => [{
+        currency: 'USD',
+        successful_count: 9,
+        total_paid_minor: '12500',
+        paid_today_minor: '2500',
+      }],
+      subscriptionsStartedToday: async () => [{
+        today_count: 2,
+        id: 'subscription-1',
+        subscriber_name: 'New Subscriber',
+        avatar_url: null,
+        plan_name: 'Pro',
+        status: 'active',
+        created_at: since,
+      }],
       paymentMetrics: async () => ({
         successful: 4,
         failed: 1,
@@ -82,4 +97,21 @@ test('dashboard exposes real growth series and recent signups', async () => {
     successfulPayments: 4,
   });
   assert.equal(dashboard.recentSignups[0].displayName, 'Test User');
+  assert.deepEqual(dashboard.subscriptionActivity, {
+    payouts: [{
+      currency: 'USD',
+      successfulCount: 9,
+      totalPaidMinor: '12500',
+      paidTodayMinor: '2500',
+    }],
+    subscribedTodayCount: 2,
+    subscribedToday: [{
+      id: 'subscription-1',
+      subscriberName: 'New Subscriber',
+      avatarUrl: null,
+      planName: 'Pro',
+      status: 'active',
+      createdAt: since,
+    }],
+  });
 });

@@ -20,6 +20,8 @@ export function createDashboardService({ db, queries, logger }) {
       recentSignals,
       activeSubscriptions,
       subscriptionsByStatus,
+      subscriptionPayoutSummary,
+      subscriptionsStartedToday,
       paymentMetrics,
       unresolvedRefunds,
       exchangeHealth,
@@ -42,6 +44,8 @@ export function createDashboardService({ db, queries, logger }) {
       queries.recentSignals({ limit: 5 }),
       queries.countActiveSubscriptions(),
       queries.subscriptionsByStatus(),
+      queries.subscriptionPayoutSummary(),
+      queries.subscriptionsStartedToday({ limit: 5 }),
       queries.paymentMetrics({ since }),
       queries.unresolvedRefunds(),
       queries.exchangeHealthSummary(),
@@ -128,6 +132,25 @@ export function createDashboardService({ db, queries, logger }) {
           (acc, r) => ({ ...acc, [r.status]: r.count }),
           {}
         ),
+      },
+      subscriptionActivity: {
+        payouts: subscriptionPayoutSummary.map((row) => ({
+          currency: row.currency,
+          successfulCount: Number(row.successful_count),
+          totalPaidMinor: row.total_paid_minor,
+          paidTodayMinor: row.paid_today_minor,
+        })),
+        subscribedTodayCount: Number(subscriptionsStartedToday[0]?.today_count) || 0,
+        subscribedToday: subscriptionsStartedToday
+          .filter((row) => row.id)
+          .map((row) => ({
+            id: row.id,
+            subscriberName: row.subscriber_name,
+            avatarUrl: row.avatar_url,
+            planName: row.plan_name,
+            status: row.status,
+            createdAt: row.created_at,
+          })),
       },
       payments: {
         successful: paymentMetrics.successful,

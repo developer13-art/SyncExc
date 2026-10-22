@@ -150,6 +150,7 @@ export default function PlatformOverview() {
         <GrowthPanel data={dashboard.platformGrowth ?? []} />
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
           <SubscriptionPanel subscriptions={dashboard.subscriptions} />
+          <SubscriptionActivityPanel activity={dashboard.subscriptionActivity} />
           <RecentSignups signups={dashboard.recentSignups ?? []} />
           <TopTraders traders={dashboard.topPerformingTraders ?? []} />
         </div>
@@ -343,6 +344,66 @@ function SubscriptionPanel({ subscriptions }) {
           </ul>
         </div>
       ) : <InlineEmpty text="No subscription records yet." />}
+    </section>
+  );
+}
+
+function SubscriptionActivityPanel({ activity }) {
+  const payouts = activity?.payouts ?? [];
+  const subscribers = activity?.subscribedToday ?? [];
+  return (
+    <section className={`${panelClass} p-3`}>
+      <PanelHeading
+        title="Subscription payouts"
+        subtitle="Successful payments collected · totals by currency"
+        href={ROUTES.console.payments.overview}
+      />
+      {payouts.length ? (
+        <ul className="mt-2 space-y-2">
+          {payouts.map((payout) => (
+            <li key={payout.currency} className="flex items-center justify-between gap-2 rounded-md bg-[#07152a] px-2.5 py-2">
+              <div>
+                <p className="text-[10px] font-medium text-slate-200">
+                  {formatMinorCurrency(payout.totalPaidMinor, payout.currency)}
+                  <span className="ml-1.5 text-[9px] font-normal text-slate-500">all time</span>
+                </p>
+                <p className="text-[9px] text-slate-500">
+                  {formatMinorCurrency(payout.paidTodayMinor, payout.currency)} today UTC
+                </p>
+              </div>
+              <span className="text-right text-[9px] text-slate-400">
+                {formatNumber(payout.successfulCount)} payments
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : <InlineEmpty text="No successful subscription payouts yet." />}
+      <div className="mt-3 border-t border-sky-950 pt-2">
+        <PanelHeading
+          title={`Subscribed today (UTC) · ${formatNumber(activity?.subscribedTodayCount ?? 0)}`}
+          href={ROUTES.console.subscriptions.overview}
+        />
+        {subscribers.length ? (
+          <ul className="mt-1 divide-y divide-sky-950">
+            {subscribers.slice(0, 5).map((subscriber) => (
+              <li key={subscriber.id} className="flex items-center gap-2 py-1.5">
+                <Avatar
+                  size="xs"
+                  src={subscriber.avatarUrl}
+                  alt=""
+                  fallback={(subscriber.subscriberName || '?').slice(0, 1).toUpperCase()}
+                  className="h-6 w-6 bg-blue-950 text-[9px] text-blue-200"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[10px] font-medium text-slate-200">{subscriber.subscriberName || 'Workspace subscriber'}</p>
+                  <p className="truncate text-[9px] text-slate-500">{subscriber.planName} · {humanize(subscriber.status)}</p>
+                </div>
+                <span className="shrink-0 text-[9px] text-slate-500">{formatRelativeTime(subscriber.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="py-3 text-center text-[10px] text-slate-500">No new active subscriptions today (UTC).</p>}
+      </div>
     </section>
   );
 }
@@ -651,6 +712,22 @@ function formatCurrency(value) {
       maximumFractionDigits: 0,
     }).format(amount)
     : '—';
+}
+
+function formatMinorCurrency(value, currency) {
+  const amountMinor = Number(value);
+  if (!Number.isFinite(amountMinor)) return '—';
+  try {
+    const formatter = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    });
+    const fractionDigits = formatter.resolvedOptions().maximumFractionDigits;
+    return formatter.format(amountMinor / (10 ** fractionDigits));
+  } catch {
+    return `${currency} ${(amountMinor / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  }
 }
 
 function humanize(value) {
