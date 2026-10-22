@@ -20,13 +20,14 @@ export function createStripeProvider({ config, logger }) {
   return {
     name: 'stripe',
 
-    async createCheckout({ amountMinor, currency, reference, successUrl, cancelUrl }) {
+    async createCheckout({ amountMinor, currency, reference, successUrl, cancelUrl, customer }) {
       const client = await ensureClient();
       const session = await client.checkout.sessions.create({
         mode: 'payment',
         success_url: successUrl,
         cancel_url: cancelUrl,
         payment_method_types: ['card'],
+        customer_email: customer?.email,
         line_items: [
           {
             price_data: {

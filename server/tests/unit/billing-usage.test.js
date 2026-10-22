@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { createBillingService } from '../../src/modules/billing/billing.service.js';
 import { createBillingQueries } from '../../src/modules/billing/billing.queries.js';
+import { ExternalProviderError } from '../../src/lib/errors.js';
 
 describe('billing usage', () => {
   it('combines numeric entitlements with current-period counters', async () => {
@@ -62,5 +63,68 @@ describe('billing usage', () => {
     assert.match(sql, /period_start >= \$3 AND period_start < \$4/);
     assert.deepEqual(params, ['workspace', 'workspace-1', start, end]);
     assert.deepEqual(rows, [{ usage_dimension: 'connections', current_value: '2' }]);
+  });
+
+  it('resolves the account email for user and workspace checkout scopes', async () => {
+    let sql;
+    let params;
+    const queries = createBillingQueries({
+      db: {
+        async query(statement, values) {
+          sql = statement;
+          params = values;
+          return { rows: [{ email: 'buyer@example.com' }] };
+        },
+      },
+    });
+
+    const email = await queries.findCheckoutCustomerEmail('workspace', 'workspace-1');
+
+    assert.equal(email, 'buyer@example.com');
+    assert.match(sql, /owner_id FROM workspaces WHERE id = \$2::uuid/);
+    assert.deepEqual(params, ['workspace', 'workspace-1']);
+  });
+
+  it('marks checkout failed and reports a provider error when initialization fails', async () => {
+    const updates = [];
+    const service = createBillingService({
+      db: { async tx(callback) { return callback({}); } },
+      queries: {
+        async findPlanPriceById() {
+          return { amount_minor: '1200', currency: 'USD' };
+        },
+        async findCheckoutCustomerEmail() {
+          return 'buyer@example.com';
+        },
+        async insertCheckoutSession() {
+          return { id: 'checkout-1' };
+        },
+        async updateCheckoutSession(id, fields) {
+          updates.push({ id, fields });
+        },
+      },
+      providerFactory: {
+        get() {
+          return {
+            async createCheckout() {
+              throw new Error('provider rejected configuration');
+            },
+          };
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.createCheckoutSession({
+        scopeType: 'user',
+        scopeId: 'user-1',
+        planPriceId: 'price-1',
+        providerName: 'paystack',
+        successUrl: 'https://example.com/success',
+        cancelUrl: 'https://example.com/cancel',
+      }),
+      (error) => error instanceof ExternalProviderError && error.status === 502,
+    );
+    assert.deepEqual(updates, [{ id: 'checkout-1', fields: { status: 'failed' } }]);
   });
 });

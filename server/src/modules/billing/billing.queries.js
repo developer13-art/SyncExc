@@ -75,6 +75,20 @@ export function createBillingQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findCheckoutCustomerEmail(scopeType, scopeId) {
+      const result = await db.query(
+        `SELECT u.email
+         FROM users u
+         WHERE u.id = CASE
+           WHEN $1 = 'user' THEN $2::uuid
+           ELSE (SELECT owner_id FROM workspaces WHERE id = $2::uuid)
+         END
+           AND u.deleted_at IS NULL`,
+        [scopeType, scopeId]
+      );
+      return result.rows[0]?.email ?? null;
+    },
+
     /* =========================================================================
      * CHECKOUT
      * ====================================================================== */

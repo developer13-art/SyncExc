@@ -41,6 +41,7 @@
     "pino-http": "^9.0.0",
     "prom-client": "^15.1.1",
     "speakeasy": "^2.0.0",
+    "stripe": "^23.0.0",
     "teleproto": "^1.230.1",
     "uuid": "^9.0.1",
     "web-push": "^3.6.7",

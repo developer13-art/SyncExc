@@ -8,6 +8,7 @@ import {
   ValidationError,
   ConflictError,
   NotFoundError,
+  ExternalProviderError,
 } from '../../lib/errors.js';
 import {
   SUBSCRIPTION_STATUS,
@@ -103,6 +104,10 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
 
     const provider = providerFactory.get(providerName);
     if (!provider) throw new ValidationError(`Unknown provider: ${providerName}`);
+    const customerEmail = await queries.findCheckoutCustomerEmail(scopeType, scopeId);
+    if (!customerEmail) {
+      throw new ValidationError('A valid account email is required to start checkout');
+    }
 
     const expiresAt = new Date(Date.now() + CHECKOUT_TTL_MS);
 
@@ -122,14 +127,36 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     });
 
     // Create the provider-side session
-    const session = await provider.createCheckout({
-      amountMinor: Number(price.amount_minor),
-      currency: price.currency,
-      reference: checkout.id,
-      successUrl,
-      cancelUrl,
-      customer: { scopeType, scopeId },
-    });
+    let session;
+    try {
+      session = await provider.createCheckout({
+        amountMinor: Number(price.amount_minor),
+        currency: price.currency,
+        reference: checkout.id,
+        successUrl,
+        cancelUrl,
+        customer: { scopeType, scopeId, email: customerEmail },
+      });
+      if (!session?.id || !session.redirectUrl) {
+        throw new Error('Provider returned an incomplete checkout session');
+      }
+    } catch (error) {
+      logger?.error(
+        { err: error, checkoutId: checkout.id, provider: providerName },
+        'Payment provider checkout creation failed',
+      );
+      await queries.updateCheckoutSession(checkout.id, { status: 'failed' });
+      if (error instanceof AppError) throw error;
+      throw new ExternalProviderError(
+        `${providerName} could not start checkout. Verify the server payment-provider configuration and try again.`,
+        {
+          provider: providerName,
+          status: 502,
+          retryable: true,
+          details: { stage: 'checkout initialization' },
+        },
+      );
+    }
 
     await queries.updateCheckoutSession(checkout.id, {
       providerCheckoutReference: session.id,

@@ -2,11 +2,13 @@
  * SyncExc Server — Flutterwave payment provider
  */
 
+import { ExternalProviderError } from '../../../lib/errors.js';
+
 export function createFlutterwaveProvider({ config, logger }) {
   return {
     name: 'flutterwave',
 
-    async createCheckout({ amountMinor, currency, reference, successUrl, cancelUrl }) {
+    async createCheckout({ amountMinor, currency, reference, successUrl, customer }) {
       const res = await fetch('https://api.flutterwave.com/v3/payments', {
         method: 'POST',
         headers: {
@@ -18,11 +20,25 @@ export function createFlutterwaveProvider({ config, logger }) {
           amount: amountMinor / 100,
           currency,
           redirect_url: successUrl,
-          customer: { email: 'customer@example.com' },
+          customer: { email: customer.email },
         }),
       });
-      if (!res.ok) throw new Error(`Flutterwave init failed: ${res.status}`);
       const body = await res.json();
+      if (!res.ok || body.status !== 'success' || !body.data?.link) {
+        logger?.error(
+          { provider: 'flutterwave', status: res.status, providerMessage: body.message },
+          'Flutterwave checkout initialization failed',
+        );
+        throw new ExternalProviderError(
+          'Flutterwave could not start checkout. Verify the server Flutterwave secret key, currency, and account settings.',
+          {
+            provider: 'flutterwave',
+            status: 502,
+            retryable: res.status >= 500,
+            details: { stage: 'checkout initialization', providerStatus: res.status },
+          },
+        );
+      }
       return { id: body.data.tx_ref, redirectUrl: body.data.link };
     },
 
