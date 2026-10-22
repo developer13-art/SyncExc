@@ -779,6 +779,13 @@ export function serializePost(row) {
     viewerBookmarked: Boolean(row.bookmark_id),
     bookmarkId: row.bookmark_id || null,
     allowComments: row.allow_comments !== false,
+    attachments: (row.attachments || []).map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name || attachment.file_name || attachment.storage_key || 'Attachment',
+      mimeType: attachment.mimeType || attachment.mime_type || null,
+      sizeBytes: Number(attachment.sizeBytes ?? attachment.size_bytes ?? 0),
+      url: attachment.url || null,
+    })),
     visibility: row.visibility,
     poll: row.poll || null,
     event: row.event || null,

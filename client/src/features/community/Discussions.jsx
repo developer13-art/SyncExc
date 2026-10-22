@@ -10,6 +10,8 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { Input } from '../../components/ui/Input.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { Textarea } from '../../components/ui/Textarea.jsx';
+import { FileUpload } from '../../components/ui/FileUpload.jsx';
+import { AttachmentFiles } from './components/AttachmentFiles.jsx';
 import { communityApi } from '../../api/index.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { useToast } from '../../hooks/useToast.js';
@@ -25,6 +27,7 @@ export default function Discussions() {
   const [channelName, setChannelName] = useState('');
   const [threadTitle, setThreadTitle] = useState('');
   const [message, setMessage] = useState('');
+  const [messageFiles, setMessageFiles] = useState([]);
   const [busy, setBusy] = useState(false);
 
   const channelsQuery = useQuery({
@@ -110,13 +113,25 @@ export default function Discussions() {
 
   const handleSendMessage = async (event) => {
     event.preventDefault();
-    if (!message.trim() || !threadId) return;
+    if ((!message.trim() && messageFiles.length === 0) || !threadId) return;
     setBusy(true);
+    const attachmentIds = [];
     try {
-      await communityApi.createDiscussionMessage(threadId, { content: message.trim() });
+      for (const file of messageFiles) {
+        const uploaded = await communityApi.uploadAttachment(file);
+        attachmentIds.push(uploaded.id);
+      }
+      await communityApi.createDiscussionMessage(threadId, {
+        content: message.trim(),
+        attachmentIds,
+      });
       setMessage('');
+      setMessageFiles([]);
       await invalidateMessages();
     } catch (error) {
+      await Promise.allSettled(
+        attachmentIds.map((id) => communityApi.deletePendingAttachment(id))
+      );
       toast.error('Message failed', { description: getErrorMessage(error) });
     } finally {
       setBusy(false);
@@ -128,79 +143,83 @@ export default function Discussions() {
     return (
       <ErrorState
         title="Unable to load discussions"
-        description="Select an active workspace and try again."
+        description="Try again in a moment."
         onRetry={channelsQuery.refetch}
       />
     );
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[15rem_19rem_minmax(0,1fr)]">
-      <Card>
-        <CardHeader><CardTitle>Channels</CardTitle></CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {channels.map((channel) => (
-            <Button
-              key={channel.id}
-              variant={channel.id === channelId ? 'secondary' : 'ghost'}
-              className="justify-start"
-              onClick={() => {
-                setChannelId(channel.id);
-                setThreadId('');
-              }}
-            >
-              # {channel.name}
-            </Button>
-          ))}
-          <form onSubmit={handleCreateChannel} className="flex gap-2 border-t border-border pt-3">
-            <Input
-              value={channelName}
-              onChange={(event) => setChannelName(event.target.value)}
-              placeholder="New channel"
-              aria-label="New channel name"
-              maxLength={100}
-            />
-            <Button type="submit" size="icon" disabled={busy || !channelName.trim()} aria-label="Create channel">
-              <Plus className="h-4 w-4" />
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Topics</CardTitle></CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {threadsQuery.isLoading ? <LoadingState label="Loading topics" /> : null}
-          {threadsQuery.isError ? (
-            <ErrorState title="Unable to load topics" description="Try again." onRetry={threadsQuery.refetch} />
-          ) : null}
-          {(threadsQuery.data?.items ?? []).map((thread) => (
-            <Button
-              key={thread.id}
-              variant={thread.id === threadId ? 'secondary' : 'ghost'}
-              className="justify-start text-left"
-              onClick={() => setThreadId(thread.id)}
-            >
-              <MessageSquare className="mr-2 h-4 w-4 shrink-0" />
-              <span className="truncate">{thread.title}</span>
-            </Button>
-          ))}
-          {channelId ? (
-            <form onSubmit={handleCreateThread} className="flex gap-2 border-t border-border pt-3">
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        Public community discussions are shared across SyncExc accounts.
+      </p>
+      <div className="grid gap-4 xl:grid-cols-[15rem_19rem_minmax(0,1fr)]">
+        <Card>
+          <CardHeader><CardTitle>Channels</CardTitle></CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {channels.map((channel) => (
+              <Button
+                key={channel.id}
+                variant={channel.id === channelId ? 'secondary' : 'ghost'}
+                className="justify-start"
+                onClick={() => {
+                  setChannelId(channel.id);
+                  setThreadId('');
+                }}
+              >
+                # {channel.name}
+              </Button>
+            ))}
+            <form onSubmit={handleCreateChannel} className="flex gap-2 border-t border-border pt-3">
               <Input
-                value={threadTitle}
-                onChange={(event) => setThreadTitle(event.target.value)}
-                placeholder="Start a topic"
-                aria-label="Discussion topic"
-                maxLength={200}
+                value={channelName}
+                onChange={(event) => setChannelName(event.target.value)}
+                placeholder="New channel"
+                aria-label="New channel name"
+                maxLength={100}
               />
-              <Button type="submit" size="icon" disabled={busy || !threadTitle.trim()} aria-label="Create topic">
+              <Button type="submit" size="icon" disabled={busy || !channelName.trim()} aria-label="Create channel">
                 <Plus className="h-4 w-4" />
               </Button>
             </form>
-          ) : null}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Topics</CardTitle></CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {threadsQuery.isLoading ? <LoadingState label="Loading topics" /> : null}
+            {threadsQuery.isError ? (
+              <ErrorState title="Unable to load topics" description="Try again." onRetry={threadsQuery.refetch} />
+            ) : null}
+            {(threadsQuery.data?.items ?? []).map((thread) => (
+              <Button
+                key={thread.id}
+                variant={thread.id === threadId ? 'secondary' : 'ghost'}
+                className="justify-start text-left"
+                onClick={() => setThreadId(thread.id)}
+              >
+                <MessageSquare className="mr-2 h-4 w-4 shrink-0" />
+                <span className="truncate">{thread.title}</span>
+              </Button>
+            ))}
+            {channelId ? (
+              <form onSubmit={handleCreateThread} className="flex gap-2 border-t border-border pt-3">
+                <Input
+                  value={threadTitle}
+                  onChange={(event) => setThreadTitle(event.target.value)}
+                  placeholder="Start a topic"
+                  aria-label="Discussion topic"
+                  maxLength={200}
+                />
+                <Button type="submit" size="icon" disabled={busy || !threadTitle.trim()} aria-label="Create topic">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </form>
+            ) : null}
+          </CardContent>
+        </Card>
 
       <Card className="min-h-[28rem]">
         <CardHeader>
@@ -220,7 +239,10 @@ export default function Discussions() {
               <div className="flex-1 space-y-3 overflow-y-auto">
                 {(messagesQuery.data?.items ?? []).map((item) => (
                   <div key={item.id} className="rounded-md bg-muted/50 p-3">
-                    <p className="whitespace-pre-wrap break-words text-sm text-foreground">{item.content}</p>
+                    {item.content ? (
+                      <p className="whitespace-pre-wrap break-words text-sm text-foreground">{item.content}</p>
+                    ) : null}
+                    <AttachmentFiles attachments={item.attachments} />
                     <p className="mt-1 text-2xs text-muted-foreground">
                       {item.author_name ?? 'Member'} · {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
                     </p>
@@ -230,7 +252,7 @@ export default function Discussions() {
                   <p className="py-8 text-center text-sm text-muted-foreground">No messages yet.</p>
                 ) : null}
               </div>
-              <form onSubmit={handleSendMessage} className="mt-3 flex items-end gap-2 border-t border-border pt-3">
+              <form onSubmit={handleSendMessage} className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
                 <Textarea
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
@@ -239,14 +261,30 @@ export default function Discussions() {
                   maxLength={10000}
                   aria-label="Message"
                 />
-                <Button type="submit" disabled={busy || !message.trim()} aria-label="Send message">
-                  <Send className="h-4 w-4" />
-                </Button>
+                <div className="flex min-w-0 items-end justify-between gap-2">
+                  <FileUpload
+                    accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
+                    multiple
+                    maxSizeMb={25}
+                    value={messageFiles}
+                    onChange={setMessageFiles}
+                    disabled={busy}
+                  />
+                  <Button
+                    type="submit"
+                    disabled={busy || (!message.trim() && messageFiles.length === 0)}
+                    aria-label="Send message"
+                    className="shrink-0"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
               </form>
             </>
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

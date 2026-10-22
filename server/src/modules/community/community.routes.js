@@ -4,9 +4,16 @@
 
 import { Router } from 'express';
 import Joi from 'joi';
+import multer from 'multer';
 import { UuidSchema, PaginationSchema } from '@syncexc/shared';
 import { createCommunityController } from './community.controller.js';
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 1 },
+});
+
+const AttachmentIdsSchema = Joi.array().items(UuidSchema).max(10).unique().optional();
 const FeedQuerySchema = PaginationSchema.keys({
   following: Joi.boolean().truthy('true').falsy('false').optional(),
 });
@@ -77,22 +84,15 @@ const CreatePostSchema = Joi.object({
       otherwise: UuidSchema.optional(),
     }),
   }).required(),
-  content: Joi.string().trim().min(1).max(10000).required(),
+  content: Joi.string().trim().max(10000).optional().allow(''),
   topics: Joi.array().items(Joi.string().max(64)).max(10).optional(),
-  attachments: Joi.array().items(
-    Joi.object({
-      type: Joi.string().max(64).required(),
-      storageKey: Joi.string().required(),
-      mimeType: Joi.string().optional(),
-      sizeBytes: Joi.number().integer().optional(),
-    })
-  ).max(10).optional(),
+  attachmentIds: AttachmentIdsSchema,
   visibility: Joi.string().valid('public', 'followers', 'group_members', 'workspace_members', 'private').default('public'),
   allowComments: Joi.boolean().default(true),
   poll: PollSchema.optional(),
   event: EventSchema.optional(),
   marketIdea: MarketIdeaSchema.optional(),
-}).oxor('poll', 'event', 'marketIdea');
+}).or('content', 'attachmentIds').oxor('poll', 'event', 'marketIdea');
 
 const UpdatePostSchema = Joi.object({
   content: Joi.string().trim().min(1).max(10000).optional(),
@@ -101,9 +101,10 @@ const UpdatePostSchema = Joi.object({
 }).min(1);
 
 const CommentSchema = Joi.object({
-  content: Joi.string().trim().min(1).max(5000).required(),
+  content: Joi.string().trim().max(5000).optional().allow(''),
+  attachmentIds: AttachmentIdsSchema,
   parentId: UuidSchema.optional(),
-});
+}).or('content', 'attachmentIds');
 
 const UpdateCommentSchema = Joi.object({
   content: Joi.string().trim().min(1).max(5000).required(),
@@ -163,13 +164,15 @@ const CreateThreadSchema = Joi.object({
 });
 
 const MessageSchema = Joi.object({
-  content: Joi.string().trim().min(1).max(10000).required(),
-});
+  content: Joi.string().trim().max(10000).optional().allow(''),
+  attachmentIds: AttachmentIdsSchema,
+}).or('content', 'attachmentIds');
 
 const MessageRequestSchema = Joi.object({
   recipientId: UuidSchema.required(),
-  content: Joi.string().trim().min(1).max(10000).required(),
-});
+  content: Joi.string().trim().max(10000).optional().allow(''),
+  attachmentIds: AttachmentIdsSchema,
+}).or('content', 'attachmentIds');
 
 const MessageRequestDecisionSchema = Joi.object({
   accepted: Joi.boolean().required(),
@@ -514,20 +517,37 @@ export function createCommunityRoutes(services) {
     middleware.asyncHandler(controller.listGroupPosts)
   );
 
+  router.post(
+    '/attachments',
+    middleware.requireAuth(),
+    upload.single('file'),
+    middleware.asyncHandler(controller.uploadAttachment)
+  );
+
+  router.get(
+    '/attachments/:attachmentId',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.downloadAttachment)
+  );
+
+  router.delete(
+    '/attachments/:attachmentId',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.deletePendingAttachment)
+  );
+
   /* ---------------------------------------------------------------------------
    * Discussions
    * ------------------------------------------------------------------------ */
   router.get(
     '/discussions/channels',
     middleware.requireAuth(),
-    middleware.requireWorkspace(),
     middleware.asyncHandler(controller.listChannels)
   );
 
   router.post(
     '/discussions/channels',
     middleware.requireAuth(),
-    middleware.requireWorkspace(),
     middleware.validateBody(CreateChannelSchema),
     middleware.asyncHandler(controller.createChannel)
   );
@@ -535,7 +555,6 @@ export function createCommunityRoutes(services) {
   router.post(
     '/discussions/channels/:channelId/threads',
     middleware.requireAuth(),
-    middleware.requireWorkspace(),
     middleware.validateBody(CreateThreadSchema),
     middleware.asyncHandler(controller.createThread)
   );
@@ -543,14 +562,12 @@ export function createCommunityRoutes(services) {
   router.get(
     '/discussions/channels/:channelId/threads',
     middleware.requireAuth(),
-    middleware.requireWorkspace(),
     middleware.asyncHandler(controller.listThreads)
   );
 
   router.post(
     '/discussions/threads/:threadId/messages',
     middleware.requireAuth(),
-    middleware.requireWorkspace(),
     middleware.validateBody(MessageSchema),
     middleware.asyncHandler(controller.postMessage)
   );
@@ -558,7 +575,6 @@ export function createCommunityRoutes(services) {
   router.get(
     '/discussions/threads/:threadId/messages',
     middleware.requireAuth(),
-    middleware.requireWorkspace(),
     middleware.asyncHandler(controller.listMessages)
   );
 

@@ -152,6 +152,15 @@ export function createMessagingQueries({ db }) {
       };
     },
 
+    async findMessageById(messageId) {
+      const result = await db.query(
+        `SELECT id, conversation_id FROM community_messages
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [messageId]
+      );
+      return result.rows[0] || null;
+    },
+
     async insertMessage(client, data) {
       const result = await client.query(
         `

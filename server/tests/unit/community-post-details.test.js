@@ -27,6 +27,7 @@ test('public post details remain available when the author has no community prof
     },
     events: {},
     realtime: null,
+    attachmentService: { list: async () => [] },
     logger: {},
   });
 

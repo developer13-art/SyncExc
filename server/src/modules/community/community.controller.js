@@ -4,6 +4,7 @@
 
 import { success, created, paginated } from '../../lib/response.js';
 import { serializeCommunityProfile, serializePost, serializeCommunityGroup } from '../../lib/serializers.js';
+import { ValidationError } from '../../lib/errors.js';
 
 export function createCommunityController(services) {
   const {
@@ -21,6 +22,7 @@ export function createCommunityController(services) {
     moderationService,
     messagingService,
     contentService,
+    attachmentService,
   } = services;
 
   return {
@@ -158,7 +160,7 @@ export function createCommunityController(services) {
         destinationRefId: req.body.destination?.refId || null,
         content: req.body.content,
         topics: req.body.topics || [],
-        attachments: req.body.attachments || [],
+        attachmentIds: req.body.attachmentIds || [],
         visibility: req.body.visibility || 'public',
         allowComments: req.body.allowComments ?? true,
         poll: req.body.poll,
@@ -225,6 +227,7 @@ export function createCommunityController(services) {
         postId: req.params.postId,
         parentId: req.body.parentId || null,
         content: req.body.content,
+        attachmentIds: req.body.attachmentIds || [],
       });
       return created(res, comment);
     },
@@ -419,17 +422,13 @@ export function createCommunityController(services) {
     },
 
     /* Discussions */
-    async listChannels(req, res) {
-      const channels = await discussionService.listChannels({
-        workspaceId: req.workspace.id,
-      });
+    async listChannels(_req, res) {
+      const channels = await discussionService.listChannels();
       return success(res, channels);
     },
 
     async createChannel(req, res) {
       const channel = await discussionService.createChannel({
-        userId: req.auth.userId,
-        workspaceId: req.workspace.id,
         name: req.body.name,
         kind: req.body.kind,
       });
@@ -439,7 +438,6 @@ export function createCommunityController(services) {
     async createThread(req, res) {
       const thread = await discussionService.createThread({
         userId: req.auth.userId,
-        workspaceId: req.workspace.id,
         channelId: req.params.channelId,
         title: req.body.title,
       });
@@ -448,7 +446,6 @@ export function createCommunityController(services) {
 
     async listThreads(req, res) {
       const threads = await discussionService.listThreads({
-        workspaceId: req.workspace.id,
         channelId: req.params.channelId,
         limit: Number(req.query.limit) || 50,
       });
@@ -458,9 +455,9 @@ export function createCommunityController(services) {
     async postMessage(req, res) {
       const message = await discussionService.postMessage({
         userId: req.auth.userId,
-        workspaceId: req.workspace.id,
         threadId: req.params.threadId,
         content: req.body.content,
+        attachmentIds: req.body.attachmentIds || [],
       });
       return created(res, message);
     },
@@ -470,6 +467,7 @@ export function createCommunityController(services) {
         userId: req.auth.userId,
         recipientId: req.body.recipientId,
         content: req.body.content,
+        attachmentIds: req.body.attachmentIds || [],
       });
       return created(res, result);
     },
@@ -521,6 +519,7 @@ export function createCommunityController(services) {
         userId: req.auth.userId,
         conversationId: req.params.conversationId,
         content: req.body.content,
+        attachmentIds: req.body.attachmentIds || [],
       });
       return created(res, result);
     },
@@ -547,11 +546,46 @@ export function createCommunityController(services) {
 
     async listMessages(req, res) {
       const messages = await discussionService.listMessages({
-        workspaceId: req.workspace.id,
         threadId: req.params.threadId,
         limit: Number(req.query.limit) || 200,
       });
       return success(res, messages);
+    },
+
+    async uploadAttachment(req, res) {
+      if (!req.file) throw new ValidationError('Choose a file to upload');
+      const attachment = await attachmentService.upload({
+        userId: req.auth.userId,
+        file: req.file,
+      });
+      return created(res, attachment);
+    },
+
+    async downloadAttachment(req, res) {
+      const download = await attachmentService.download({
+        userId: req.auth.userId,
+        attachmentId: req.params.attachmentId,
+        postService,
+        commentService,
+        messagingService,
+        discussionService,
+      });
+      res.setHeader('Content-Type', download.mimeType);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename*=UTF-8''${encodeURIComponent(download.fileName)}`
+      );
+      return res.send(download.buffer);
+    },
+
+    async deletePendingAttachment(req, res) {
+      const result = await attachmentService.deletePending({
+        userId: req.auth.userId,
+        attachmentId: req.params.attachmentId,
+      });
+      return success(res, result);
     },
 
     /* Analysis documents */

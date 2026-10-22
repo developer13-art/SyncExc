@@ -5,6 +5,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { Avatar } from '../../../components/ui/Avatar.jsx';
 import { Button } from '../../../components/ui/Button.jsx';
 import { Textarea } from '../../../components/ui/Textarea.jsx';
+import { FileUpload } from '../../../components/ui/FileUpload.jsx';
 import { IconButton } from '../../../components/ui/IconButton.jsx';
 import {
   DropdownMenu,
@@ -15,6 +16,8 @@ import {
 import { formatRelativeTime } from '../../../lib/formatters/date.formatter.js';
 import { cn } from '../../../lib/utils/cn.util.js';
 import { ROUTES } from '../../../config/routes.config.js';
+import { communityApi } from '../../../api/index.js';
+import { AttachmentFiles } from './AttachmentFiles.jsx';
 
 export function CommentThread({
   comments = [],
@@ -27,18 +30,39 @@ export function CommentThread({
 }) {
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
+  const [replyFiles, setReplyFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmitReply = async (parentId) => {
-    if (!replyText.trim()) {
+    if (!replyText.trim() && replyFiles.length === 0) {
       return;
     }
     setSubmitting(true);
+    const uploadedIds = [];
     try {
-      const posted = await onReply?.({ parentId, content: replyText.trim() });
-      if (posted === false) return;
+      for (const file of replyFiles) {
+        const uploaded = await communityApi.uploadAttachment(file);
+        uploadedIds.push(uploaded.id);
+      }
+      const posted = await onReply?.({
+        parentId,
+        content: replyText.trim(),
+        attachmentIds: uploadedIds,
+      });
+      if (posted === false) {
+        await Promise.allSettled(
+          uploadedIds.map((id) => communityApi.deletePendingAttachment(id))
+        );
+        return;
+      }
       setReplyText('');
+      setReplyFiles([]);
       setReplyingTo(null);
+    } catch (error) {
+      await Promise.allSettled(
+        uploadedIds.map((id) => communityApi.deletePendingAttachment(id))
+      );
+      throw error;
     } finally {
       setSubmitting(false);
     }
@@ -89,6 +113,7 @@ export function CommentThread({
                     <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">
                       {comment.content}
                     </p>
+                    <AttachmentFiles attachments={comment.attachments} />
                   </div>
 
                   <DropdownMenu>
@@ -125,6 +150,14 @@ export function CommentThread({
                       rows={2}
                       placeholder="Write a reply…"
                     />
+                    <FileUpload
+                      accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
+                      multiple
+                      maxSizeMb={25}
+                      value={replyFiles}
+                      onChange={setReplyFiles}
+                      disabled={submitting}
+                    />
                     <div className="flex justify-end gap-2">
                       <Button
                         variant="outline"
@@ -140,7 +173,7 @@ export function CommentThread({
                       <Button
                         size="sm"
                         onClick={() => handleSubmitReply(comment.id)}
-                        disabled={submitting || !replyText.trim()}
+                        disabled={submitting || (!replyText.trim() && replyFiles.length === 0)}
                       >
                         {submitting ? 'Replying…' : 'Reply'}
                       </Button>

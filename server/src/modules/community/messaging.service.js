@@ -5,6 +5,7 @@ export function createMessagingService({
   queries,
   messagingQueries,
   events,
+  attachmentService,
 }) {
   async function assertUnblocked(userId, otherUserId) {
     const blocked =
@@ -13,7 +14,10 @@ export function createMessagingService({
     if (blocked) throw new AuthorizationError('Messaging is not available');
   }
 
-  async function startConversation({ userId, recipientId, content }) {
+  async function startConversation({ userId, recipientId, content, attachmentIds = [] }) {
+    if ((!content || !content.trim()) && attachmentIds.length === 0) {
+      throw new ConflictError('Message text or an attachment is required');
+    }
     if (userId === recipientId) throw new ConflictError('Cannot message yourself');
     await assertUnblocked(userId, recipientId);
 
@@ -45,7 +49,7 @@ export function createMessagingService({
       }
 
       if (conversation.state === 'active') {
-        return sendMessageInTransaction(tx, conversation, userId, content);
+        return sendMessageInTransaction(tx, conversation, userId, content || '', attachmentIds);
       }
       if (conversation.created_by !== userId) {
         throw new AuthorizationError('A message request is already awaiting a response');
@@ -55,7 +59,13 @@ export function createMessagingService({
       const message = await messagingQueries.insertMessage(tx, {
         conversationId: conversation.id,
         senderId: userId,
-        content,
+        content: content || '',
+      });
+      await attachmentService?.attach(tx, {
+        userId,
+        attachmentIds,
+        resourceType: 'direct_message',
+        resourceId: message.id,
       });
       await messagingQueries.touchConversation(tx, conversation.id, userId, message.created_at);
       await events.publish(
@@ -76,11 +86,17 @@ export function createMessagingService({
     });
   }
 
-  async function sendMessageInTransaction(tx, conversation, senderId, content) {
+  async function sendMessageInTransaction(tx, conversation, senderId, content, attachmentIds = []) {
     const message = await messagingQueries.insertMessage(tx, {
       conversationId: conversation.id,
       senderId,
       content,
+    });
+    await attachmentService?.attach(tx, {
+      userId: senderId,
+      attachmentIds,
+      resourceType: 'direct_message',
+      resourceId: message.id,
     });
     await messagingQueries.touchConversation(tx, conversation.id, senderId, message.created_at);
     const recipientId =
@@ -161,13 +177,38 @@ export function createMessagingService({
       throw new AuthorizationError('This conversation is no longer available');
     }
     const result = await messagingQueries.listMessages(conversationId, { limit, cursor });
+    const attachmentRows = queries.listFilesForResources
+      ? await queries.listFilesForResources(
+          'direct_message',
+          result.rows.map((message) => message.id)
+        )
+      : [];
+    const attachmentsByMessage = new Map();
+    for (const row of attachmentRows) {
+      const files = attachmentsByMessage.get(row.resource_id) || [];
+      files.push({
+        id: row.id,
+        name: row.file_name,
+        mimeType: row.mime_type,
+        sizeBytes: Number(row.size_bytes),
+        url: `/api/v1/community/attachments/${row.id}`,
+      });
+      attachmentsByMessage.set(row.resource_id, files);
+    }
+    result.rows = result.rows.map((message) => ({
+      ...message,
+      attachments: attachmentsByMessage.get(message.id) || [],
+    }));
     if (conversation.state === 'active') {
       await messagingQueries.markRead(conversationId, userId);
     }
     return result;
   }
 
-  async function sendMessage({ userId, conversationId, content }) {
+  async function sendMessage({ userId, conversationId, content, attachmentIds = [] }) {
+    if ((!content || !content.trim()) && attachmentIds.length === 0) {
+      throw new ConflictError('Message text or an attachment is required');
+    }
     const conversation = await messagingQueries.findConversationForUser(conversationId, userId);
     if (!conversation) throw new NotFoundError('Conversation');
     const recipientId =
@@ -179,7 +220,26 @@ export function createMessagingService({
       throw new AuthorizationError('Accept the message request before replying');
     }
 
-    return db.tx((tx) => sendMessageInTransaction(tx, conversation, userId, content));
+    return db.tx((tx) =>
+      sendMessageInTransaction(tx, conversation, userId, content || '', attachmentIds)
+    );
+  }
+
+  async function assertCanAccessMessage({ userId, messageId }) {
+    const message = await messagingQueries.findMessageById(messageId);
+    if (!message) throw new NotFoundError('Message');
+    const conversation = await messagingQueries.findConversationForUser(
+      message.conversation_id,
+      userId
+    );
+    if (!conversation) throw new NotFoundError('Message');
+    const recipientId = conversation.participant_low === userId
+      ? conversation.participant_high
+      : conversation.participant_low;
+    await assertUnblocked(userId, recipientId);
+    if (conversation.state === 'rejected' || conversation.state === 'closed') {
+      throw new NotFoundError('Message');
+    }
   }
 
   return {
@@ -189,6 +249,7 @@ export function createMessagingService({
     resolveRequest,
     listMessages,
     sendMessage,
+    assertCanAccessMessage,
   };
 }
 

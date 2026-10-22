@@ -86,3 +86,25 @@ test('discussion topics and messages retain authors without Community profiles',
     assert.match(sql, /COALESCE\(/);
   }
 });
+
+test('discussion channels are listed globally and channel inserts are marked public', async () => {
+  const calls = [];
+  const client = {
+    query: async (sql, params = []) => {
+      calls.push({ sql, params });
+      return { rows: [{ id: 'channel-id', is_public: true }] };
+    },
+  };
+  const queries = createCommunityQueries({ db: client });
+
+  await queries.listPublicChannels();
+  await queries.insertChannel(client, {
+    name: 'general',
+    kind: 'general',
+    isPublic: true,
+  });
+
+  assert.match(calls[0].sql, /is_public = true/);
+  assert.match(calls[1].sql, /INSERT INTO community_channels .*is_public/s);
+  assert.equal(calls[1].params[4], true);
+});

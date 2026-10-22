@@ -3,7 +3,86 @@
  */
 
 export function createCommunityQueries({ db }) {
+  async function includePostAttachments(rows) {
+    if (!rows.length) return rows;
+    const result = await db.query(
+      `SELECT id, resource_id, file_name, mime_type, size_bytes, created_at
+       FROM community_attachments
+       WHERE resource_type = 'post' AND resource_id = ANY($1::uuid[])
+       ORDER BY created_at ASC`,
+      [rows.map((row) => row.id)]
+    );
+    const attachmentsByPost = new Map();
+    for (const row of result.rows) {
+      const attachments = attachmentsByPost.get(row.resource_id) || [];
+      attachments.push({
+        id: row.id,
+        name: row.file_name,
+        mime_type: row.mime_type,
+        size_bytes: Number(row.size_bytes),
+        url: `/api/v1/community/attachments/${row.id}`,
+      });
+      attachmentsByPost.set(row.resource_id, attachments);
+    }
+    return rows.map((row) => ({
+      ...row,
+      attachments: attachmentsByPost.get(row.id) || [],
+    }));
+  }
+
   return {
+    async attachFiles(client, { userId, attachmentIds, resourceType, resourceId }) {
+      const result = await client.query(
+        `UPDATE community_attachments
+         SET resource_type = $3, resource_id = $4
+         WHERE id = ANY($1::uuid[]) AND uploader_id = $2 AND resource_id IS NULL
+         RETURNING id, file_name, mime_type, size_bytes, created_at`,
+        [attachmentIds, userId, resourceType, resourceId]
+      );
+      return result.rows;
+    },
+
+    async listFiles(resourceType, resourceId) {
+      const result = await db.query(
+        `SELECT id, file_name, mime_type, size_bytes, created_at
+         FROM community_attachments
+         WHERE resource_type = $1 AND resource_id = $2
+         ORDER BY created_at ASC`,
+        [resourceType, resourceId]
+      );
+      return result.rows;
+    },
+
+    async listFilesForResources(resourceType, resourceIds) {
+      if (!resourceIds.length) return [];
+      const result = await db.query(
+        `SELECT id, resource_id, file_name, mime_type, size_bytes, created_at
+         FROM community_attachments
+         WHERE resource_type = $1 AND resource_id = ANY($2::uuid[])
+         ORDER BY created_at ASC`,
+        [resourceType, resourceIds]
+      );
+      return result.rows;
+    },
+
+    async findFile(attachmentId) {
+      const result = await db.query(
+        `SELECT * FROM community_attachments WHERE id = $1`,
+        [attachmentId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async deletePendingFile(attachmentId, userId) {
+      const result = await db.query(
+        `DELETE FROM community_attachments
+         WHERE id = $1 AND uploader_id = $2 AND resource_id IS NULL
+         RETURNING storage_key`,
+        [attachmentId, userId]
+      );
+      return result.rows[0] || null;
+    },
+
     /* =========================================================================
      * PROFILES
      * ====================================================================== */
@@ -809,7 +888,9 @@ export function createCommunityQueries({ db }) {
       );
 
       const hasMore = result.rows.length > limit;
-      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const rows = await includePostAttachments(
+        hasMore ? result.rows.slice(0, limit) : result.rows
+      );
       const last = rows[rows.length - 1];
       return {
         rows,
@@ -902,7 +983,9 @@ export function createCommunityQueries({ db }) {
       );
 
       const hasMore = result.rows.length > limit;
-      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const rows = await includePostAttachments(
+        hasMore ? result.rows.slice(0, limit) : result.rows
+      );
       const last = rows[rows.length - 1];
       return {
         rows,
@@ -985,7 +1068,9 @@ export function createCommunityQueries({ db }) {
       );
 
       const hasMore = result.rows.length > limit;
-      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const rows = await includePostAttachments(
+        hasMore ? result.rows.slice(0, limit) : result.rows
+      );
       const last = rows[rows.length - 1];
       return {
         rows,
@@ -1334,17 +1419,23 @@ export function createCommunityQueries({ db }) {
     },
 
     /* =========================================================================
-     * DISCUSSIONS (workspace)
+     * COMMUNITY DISCUSSIONS
      * ====================================================================== */
 
     async insertChannel(client, data) {
       const result = await client.query(
         `
-        INSERT INTO community_channels (group_id, workspace_id, name, kind)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO community_channels (group_id, workspace_id, name, kind, is_public)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING *
         `,
-        [data.groupId || null, data.workspaceId || null, data.name, data.kind || 'general']
+        [
+          data.groupId || null,
+          data.workspaceId || null,
+          data.name,
+          data.kind || 'general',
+          Boolean(data.isPublic),
+        ]
       );
       return result.rows[0];
     },
@@ -1357,10 +1448,11 @@ export function createCommunityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async listChannelsForWorkspace(workspaceId) {
+    async listPublicChannels() {
       const result = await db.query(
-        `SELECT * FROM community_channels WHERE workspace_id = $1 ORDER BY created_at ASC`,
-        [workspaceId]
+        `SELECT * FROM community_channels
+         WHERE is_public = true AND group_id IS NULL
+         ORDER BY created_at ASC`
       );
       return result.rows;
     },
@@ -1380,7 +1472,7 @@ export function createCommunityQueries({ db }) {
     async findDiscussionThreadById(threadId) {
       const result = await db.query(
         `
-        SELECT t.*, c.workspace_id, c.group_id
+        SELECT t.*, c.workspace_id, c.group_id, c.is_public
         FROM community_discussion_threads t
         JOIN community_channels c ON c.id = t.channel_id
         WHERE t.id = $1
@@ -1437,6 +1529,17 @@ export function createCommunityQueries({ db }) {
         [threadId, limit]
       );
       return result.rows;
+    },
+
+    async findDiscussionMessageById(messageId) {
+      const result = await db.query(
+        `SELECT m.id, t.channel_id
+         FROM community_discussion_messages m
+         JOIN community_discussion_threads t ON t.id = m.thread_id
+         WHERE m.id = $1 AND m.deleted_at IS NULL`,
+        [messageId]
+      );
+      return result.rows[0] || null;
     },
 
     /* =========================================================================
@@ -1741,7 +1844,7 @@ export function createCommunityQueries({ db }) {
         `,
         [query, userId, limit]
       );
-      return result.rows;
+      return includePostAttachments(result.rows);
     },
 
     async searchProfiles({ query, userId, limit = 50 }) {

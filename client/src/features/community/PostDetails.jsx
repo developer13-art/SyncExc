@@ -6,10 +6,12 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Textarea } from '../../components/ui/Textarea.jsx';
+import { FileUpload } from '../../components/ui/FileUpload.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { PostCard } from './components/PostCard.jsx';
 import { CommentThread } from './components/CommentThread.jsx';
+import { AttachmentFiles } from './components/AttachmentFiles.jsx';
 import { PostStructuredContent } from './components/PostStructuredContent.jsx';
 import { ReportDialog } from './components/ReportDialog.jsx';
 import { useCommunityPost, useCommunityProfile } from '../../hooks/useCommunity.js';
@@ -27,6 +29,7 @@ export default function PostDetails() {
   const postQuery = useCommunityPost(postId);
   const [reportTarget, setReportTarget] = useState(null);
   const [commentText, setCommentText] = useState('');
+  const [commentFiles, setCommentFiles] = useState([]);
   const [commentSubmitting, setCommentSubmitting] = useState(false);
 
   useEffect(() => {
@@ -70,15 +73,24 @@ export default function PostDetails() {
   const handleCreateComment = async (event) => {
     event.preventDefault();
     const content = commentText.trim();
-    if (!content) return;
+    if (!content && commentFiles.length === 0) return;
 
     setCommentSubmitting(true);
+    const uploadedIds = [];
     try {
-      await postQuery.addComment({ content });
+      for (const file of commentFiles) {
+        const uploaded = await communityApi.uploadAttachment(file);
+        uploadedIds.push(uploaded.id);
+      }
+      await postQuery.addComment({ content, attachmentIds: uploadedIds });
       toast.success('Comment posted');
       setCommentText('');
+      setCommentFiles([]);
       await postQuery.refetchComments();
     } catch (err) {
+      await Promise.allSettled(
+        uploadedIds.map((id) => communityApi.deletePendingAttachment(id))
+      );
       toast.error('Comment failed', { description: getErrorMessage(err) });
     } finally {
       setCommentSubmitting(false);
@@ -144,8 +156,19 @@ export default function PostDetails() {
                 maxLength={5000}
                 aria-label="Write a comment"
               />
+              <FileUpload
+                accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
+                multiple
+                maxSizeMb={25}
+                value={commentFiles}
+                onChange={setCommentFiles}
+                disabled={commentSubmitting}
+              />
               <div className="flex justify-end">
-                <Button type="submit" disabled={commentSubmitting || !commentText.trim()}>
+                <Button
+                  type="submit"
+                  disabled={commentSubmitting || (!commentText.trim() && commentFiles.length === 0)}
+                >
                   {commentSubmitting ? 'Posting…' : 'Comment'}
                 </Button>
               </div>

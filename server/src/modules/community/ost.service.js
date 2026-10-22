@@ -4,7 +4,7 @@
 
 import { NotFoundError, ConflictError, AuthorizationError } from '../../lib/errors.js';
 
-export function createPostService({ db, queries, events, realtime, logger }) {
+export function createPostService({ db, queries, events, realtime, attachmentService, logger }) {
   async function createPost({
     userId,
     workspaceId = null,
@@ -13,16 +13,17 @@ export function createPostService({ db, queries, events, realtime, logger }) {
     content,
     topics,
     attachments,
+    attachmentIds = [],
     visibility,
     allowComments,
     poll,
     event,
     marketIdea,
   }) {
-    if (!content || content.trim().length === 0) {
+    if ((!content || content.trim().length === 0) && attachmentIds.length === 0) {
       throw new ConflictError('Content is required', 'EMPTY_CONTENT');
     }
-    if (content.length > 10000) {
+    if ((content || '').length > 10000) {
       throw new ConflictError('Content exceeds maximum length', 'CONTENT_TOO_LONG');
     }
     if ([poll, event, marketIdea].filter(Boolean).length > 1) {
@@ -48,7 +49,7 @@ export function createPostService({ db, queries, events, realtime, logger }) {
         authorId: userId,
         destinationType,
         destinationRefId,
-        content,
+        content: content || '',
         topics,
         visibility,
         allowComments,
@@ -57,7 +58,7 @@ export function createPostService({ db, queries, events, realtime, logger }) {
       await queries.insertPostVersion(tx, {
         postId: post.id,
         version: 1,
-        content,
+        content: content || '',
       });
 
       if (attachments && attachments.length > 0) {
@@ -70,6 +71,14 @@ export function createPostService({ db, queries, events, realtime, logger }) {
             sizeBytes: attachment.sizeBytes,
           });
         }
+      }
+      if (attachmentIds.length > 0) {
+        await attachmentService?.attach(tx, {
+          userId,
+          attachmentIds,
+          resourceType: 'post',
+          resourceId: post.id,
+        });
       }
 
       if (poll) {
@@ -220,7 +229,20 @@ export function createPostService({ db, queries, events, realtime, logger }) {
       }
     }
 
-    const attachments = await queries.listPostAttachments(postId);
+    const [legacyAttachments, uploadedAttachments] = await Promise.all([
+      queries.listPostAttachments(postId),
+      attachmentService?.list ? attachmentService.list('post', postId) : [],
+    ]);
+    const attachments = [
+      ...legacyAttachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.file_name || attachment.storage_key,
+        mimeType: attachment.mime_type,
+        sizeBytes: Number(attachment.size_bytes || 0),
+        url: null,
+      })),
+      ...uploadedAttachments,
+    ];
     const reactionsCount = await queries.countReactions('post', postId);
     const viewerReaction = await queries.hasReaction(viewerId, 'post', postId);
     const bookmark = await queries.findPostBookmark(viewerId, postId);

@@ -38,6 +38,18 @@ export const communityApi = {
 
   getFeed: (params) => api.getPaged(endpoints.community.feed, { params }),
 
+  uploadAttachment: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.upload(endpoints.community.attachments, formData);
+  },
+
+  downloadAttachment: (attachmentId) =>
+    api.download(endpoints.community.attachment(attachmentId)),
+
+  deletePendingAttachment: (attachmentId) =>
+    api.delete(endpoints.community.attachment(attachmentId)),
+
   listPosts: (params = {}) => {
     const query = { ...params };
     const authorId = query.authorId;

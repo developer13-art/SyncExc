@@ -4,9 +4,9 @@
 
 import { NotFoundError, ConflictError, AuthorizationError } from '../../lib/errors.js';
 
-export function createCommentService({ db, queries, events, realtime, logger }) {
-  async function createComment({ userId, postId, parentId, content }) {
-    if (!content || content.trim().length === 0) {
+export function createCommentService({ db, queries, events, realtime, attachmentService, logger }) {
+  async function createComment({ userId, postId, parentId, content, attachmentIds = [] }) {
+    if ((!content || content.trim().length === 0) && attachmentIds.length === 0) {
       throw new ConflictError('Content is required', 'EMPTY_CONTENT');
     }
 
@@ -24,13 +24,19 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
         postId,
         parentId,
         authorId: userId,
-        content,
+        content: content || '',
       });
 
       await queries.insertCommentVersion(tx, {
         commentId: comment.id,
         version: 1,
-        content,
+        content: content || '',
+      });
+      await attachmentService?.attach(tx, {
+        userId,
+        attachmentIds,
+        resourceType: 'comment',
+        resourceId: comment.id,
       });
 
       // Update post engagement count
@@ -66,6 +72,21 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
 
   async function listComments({ postId, limit }) {
     const rows = await queries.listCommentsForPost(postId, { limit });
+    const attachmentRows = queries.listFilesForResources
+      ? await queries.listFilesForResources('comment', rows.map((row) => row.id))
+      : [];
+    const attachmentsByComment = new Map();
+    for (const row of attachmentRows) {
+      const list = attachmentsByComment.get(row.resource_id) || [];
+      list.push({
+        id: row.id,
+        name: row.file_name,
+        mimeType: row.mime_type,
+        sizeBytes: Number(row.size_bytes),
+        url: `/api/v1/community/attachments/${row.id}`,
+      });
+      attachmentsByComment.set(row.resource_id, list);
+    }
     const commentsById = new Map();
     const roots = [];
     for (const row of rows) {
@@ -80,6 +101,7 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
           avatarUrl: row.author_avatar,
         },
         content: row.content,
+        attachments: attachmentsByComment.get(row.id) || [],
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         replies: [],
@@ -92,6 +114,12 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
       else roots.push(comment);
     }
     return roots;
+  }
+
+  async function getComment(commentId) {
+    const comment = await queries.findCommentById(commentId);
+    if (!comment) throw new NotFoundError('Comment');
+    return comment;
   }
 
   async function updateComment({ userId, commentId, content }) {
@@ -140,6 +168,7 @@ export function createCommentService({ db, queries, events, realtime, logger }) 
   return {
     createComment,
     listComments,
+    getComment,
     updateComment,
     deleteComment,
   };

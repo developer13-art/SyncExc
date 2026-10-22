@@ -6,6 +6,7 @@ import { Textarea } from '../../../components/ui/Textarea.jsx';
 import { Input } from '../../../components/ui/Input.jsx';
 import { Card, CardContent } from '../../../components/ui/Card.jsx';
 import { Avatar } from '../../../components/ui/Avatar.jsx';
+import { FileUpload } from '../../../components/ui/FileUpload.jsx';
 import {
   Select,
   SelectContent,
@@ -14,6 +15,7 @@ import {
   SelectValue,
 } from '../../../components/ui/Select.jsx';
 import { cn } from '../../../lib/utils/cn.util.js';
+import { communityApi } from '../../../api/index.js';
 
 const MAX_LENGTH = 5000;
 
@@ -27,6 +29,7 @@ export function PostComposer({
   className,
 }) {
   const [content, setContent] = useState('');
+  const [files, setFiles] = useState([]);
   const [destination, setDestination] = useState(defaultDestination);
   const [topics, setTopics] = useState('');
   const [contentKind, setContentKind] = useState('post');
@@ -52,7 +55,7 @@ export function PostComposer({
 
   const remaining = MAX_LENGTH - content.length;
   const isOverLimit = remaining < 0;
-  const isEmpty = content.trim().length === 0;
+  const isEmpty = content.trim().length === 0 && files.length === 0;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -81,9 +84,15 @@ export function PostComposer({
       return;
     }
 
+    const uploadedIds = [];
     try {
+      for (const file of files) {
+        const uploaded = await communityApi.uploadAttachment(file);
+        uploadedIds.push(uploaded.id);
+      }
       await onSubmit?.({
         content: content.trim(),
+        attachmentIds: uploadedIds,
         destination,
         topics: topics
           .split(',')
@@ -121,6 +130,7 @@ export function PostComposer({
         } : {}),
       });
       setContent('');
+      setFiles([]);
       setTopics('');
       setContentKind('post');
       setPollQuestion('');
@@ -142,6 +152,9 @@ export function PostComposer({
       setMarketTarget('');
       setMarketInvalidation('');
     } catch (err) {
+      await Promise.allSettled(
+        uploadedIds.map((id) => communityApi.deletePendingAttachment(id))
+      );
       setError(err?.message ?? 'Failed to publish post');
     }
   };
@@ -170,6 +183,14 @@ export function PostComposer({
                 'resize-none',
                 isOverLimit && 'border-destructive focus-visible:ring-destructive',
               )}
+              disabled={isSubmitting}
+            />
+            <FileUpload
+              accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
+              multiple
+              maxSizeMb={25}
+              value={files}
+              onChange={setFiles}
               disabled={isSubmitting}
             />
 

@@ -448,6 +448,8 @@ export const apiConfig = Object.freeze({
       removeGroupMember: (groupId, userId) =>
         `/community/groups/${groupId}/members/${userId}/remove`,
       groupThreads: (groupId) => `/community/groups/${groupId}/threads`,
+      attachments: '/community/attachments',
+      attachment: (attachmentId) => `/community/attachments/${attachmentId}`,
       discussionChannels: '/community/discussions/channels',
       discussionChannelThreads: (channelId) =>
         `/community/discussions/channels/${channelId}/threads`,

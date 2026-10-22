@@ -6,7 +6,7 @@
  *   - social graph (follows, blocks)
  *   - posts, comments, reactions
  *   - groups and memberships
- *   - private workspace discussions
+ *   - public community discussions
  *   - structured analysis documents
  *   - AI-assisted recommendations
  *   - moderation and reporting
@@ -19,6 +19,7 @@
  */
 
 import { createCommunityQueries } from './community.queries.js';
+import { createCommunityAttachmentService } from './attachment.service.js';
 import { createProfileService } from './profile.service.js';
 import { createSocialGraphService } from './social-graph.service.js';
 import { createPostService } from './ost.service.js';
@@ -43,6 +44,11 @@ export function createCommunityModule({ services }) {
 
   const queries = createCommunityQueries({ db: services.db });
   const messagingQueries = createMessagingQueries({ db: services.db });
+  const attachmentService = createCommunityAttachmentService({
+    db: services.db,
+    queries,
+    storage: services.storage,
+  });
 
   const profileService = createProfileService({
     db: services.db,
@@ -63,6 +69,7 @@ export function createCommunityModule({ services }) {
     queries,
     events: services.events,
     realtime: services.realtime,
+    attachmentService,
     logger,
   });
 
@@ -71,6 +78,7 @@ export function createCommunityModule({ services }) {
     queries,
     events: services.events,
     realtime: services.realtime,
+    attachmentService,
     logger,
   });
 
@@ -79,6 +87,7 @@ export function createCommunityModule({ services }) {
     queries,
     messagingQueries,
     events: services.events,
+    attachmentService,
   });
 
   const contentService = createCommunityContentService({
@@ -106,6 +115,7 @@ export function createCommunityModule({ services }) {
     queries,
     events: services.events,
     realtime: services.realtime,
+    attachmentService,
     logger,
   });
 
@@ -161,6 +171,7 @@ export function createCommunityModule({ services }) {
     moderationService,
     messagingService,
     contentService,
+    attachmentService,
     middleware: services.middleware,
   });
 
@@ -190,6 +201,7 @@ export function createCommunityModule({ services }) {
     socialGraph: socialGraphService,
     post: postService,
     comment: commentService,
+    attachment: attachmentService,
     reaction: reactionService,
     group: groupService,
     discussion: discussionService,

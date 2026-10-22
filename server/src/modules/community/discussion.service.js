@@ -2,29 +2,27 @@
  * SyncExc Server — Workspace discussion service
  */
 
-import { NotFoundError, AuthorizationError } from '../../lib/errors.js';
+import { NotFoundError, ConflictError } from '../../lib/errors.js';
 
-export function createDiscussionService({ db, queries, events, realtime, logger }) {
-  async function createChannel({ userId, workspaceId, name, kind }) {
-    // Verify workspace membership via workspaces module
-    const { services } = arguments.length > 1 ? arguments[1] : { services: null };
-    // Membership is verified by middleware before hitting this service
+export function createDiscussionService({ db, queries, events, realtime, attachmentService, logger }) {
+  async function createChannel({ name, kind }) {
     return db.tx(async (tx) => {
       return queries.insertChannel(tx, {
-        workspaceId,
+        workspaceId: null,
+        isPublic: true,
         name,
         kind: kind || 'general',
       });
     });
   }
 
-  async function listChannels({ workspaceId }) {
-    return queries.listChannelsForWorkspace(workspaceId);
+  async function listChannels() {
+    return queries.listPublicChannels();
   }
 
-  async function createThread({ userId, workspaceId, channelId, title }) {
+  async function createThread({ userId, channelId, title }) {
     const channel = await queries.findChannelById(channelId);
-    if (!channel || channel.workspace_id !== workspaceId || channel.group_id) {
+    if (!channel || !channel.is_public || channel.group_id) {
       throw new NotFoundError('Channel');
     }
     return db.tx(async (tx) => {
@@ -49,21 +47,30 @@ export function createDiscussionService({ db, queries, events, realtime, logger 
     });
   }
 
-  async function listThreads({ workspaceId, channelId, limit }) {
+  async function listThreads({ channelId, limit }) {
     const channel = await queries.findChannelById(channelId);
-    if (!channel || channel.workspace_id !== workspaceId || channel.group_id) {
+    if (!channel || !channel.is_public || channel.group_id) {
       throw new NotFoundError('Channel');
     }
     return queries.listDiscussionThreads(channelId, { limit });
   }
 
-  async function postMessage({ userId, workspaceId, threadId, content }) {
-    await requireWorkspaceThread(threadId, workspaceId);
+  async function postMessage({ userId, threadId, content, attachmentIds = [] }) {
+    if ((!content || !content.trim()) && attachmentIds.length === 0) {
+      throw new ConflictError('Message text or an attachment is required');
+    }
+    await requirePublicThread(threadId);
     return db.tx(async (tx) => {
       const message = await queries.insertDiscussionMessage(tx, {
         threadId,
         authorId: userId,
-        content,
+        content: content || '',
+      });
+      await attachmentService?.attach(tx, {
+        userId,
+        attachmentIds,
+        resourceType: 'discussion_message',
+        resourceId: message.id,
       });
 
       return message;
@@ -78,16 +85,42 @@ export function createDiscussionService({ db, queries, events, realtime, logger 
     });
   }
 
-  async function listMessages({ workspaceId, threadId, limit }) {
-    await requireWorkspaceThread(threadId, workspaceId);
-    return queries.listDiscussionMessages(threadId, { limit });
+  async function listMessages({ threadId, limit }) {
+    await requirePublicThread(threadId);
+    const rows = await queries.listDiscussionMessages(threadId, { limit });
+    const attachmentRows = queries.listFilesForResources
+      ? await queries.listFilesForResources(
+          'discussion_message',
+          rows.map((row) => row.id)
+        )
+      : [];
+    const filesByMessage = new Map();
+    for (const row of attachmentRows) {
+      const files = filesByMessage.get(row.resource_id) || [];
+      files.push({
+        id: row.id,
+        name: row.file_name,
+        mimeType: row.mime_type,
+        sizeBytes: Number(row.size_bytes),
+        url: `/api/v1/community/attachments/${row.id}`,
+      });
+      filesByMessage.set(row.resource_id, files);
+    }
+    return rows.map((row) => ({ ...row, attachments: filesByMessage.get(row.id) || [] }));
   }
 
-  async function requireWorkspaceThread(threadId, workspaceId) {
+  async function requirePublicThread(threadId) {
     const thread = await queries.findDiscussionThreadById(threadId);
-    if (!thread || thread.workspace_id !== workspaceId || thread.group_id) {
+    if (!thread || !thread.is_public || thread.group_id) {
       throw new NotFoundError('Discussion thread');
     }
+  }
+
+  async function assertCanAccessMessage(messageId) {
+    const message = await queries.findDiscussionMessageById(messageId);
+    if (!message) throw new NotFoundError('Discussion message');
+    const channel = await queries.findChannelById(message.channel_id);
+    if (!channel?.is_public || channel.group_id) throw new NotFoundError('Discussion message');
   }
 
   return {
@@ -97,6 +130,7 @@ export function createDiscussionService({ db, queries, events, realtime, logger 
     listThreads,
     postMessage,
     listMessages,
+    assertCanAccessMessage,
   };
 }
 

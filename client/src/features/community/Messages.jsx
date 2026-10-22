@@ -9,6 +9,8 @@ import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Input } from '../../components/ui/Input.jsx';
 import { Textarea } from '../../components/ui/Textarea.jsx';
+import { FileUpload } from '../../components/ui/FileUpload.jsx';
+import { AttachmentFiles } from './components/AttachmentFiles.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
@@ -30,6 +32,8 @@ export default function Messages() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [draft, setDraft] = useState('');
+  const [files, setFiles] = useState([]);
+  const [uploadError, setUploadError] = useState('');
   const [recipient, setRecipient] = useState(recipientId);
 
   useEffect(() => {
@@ -69,19 +73,25 @@ export default function Messages() {
   };
 
   const startMessage = useMutation({
-    mutationFn: (content) =>
-      communityApi.startMessageConversation({ recipientId: recipient.trim(), content }),
+    mutationFn: ({ content, attachmentIds }) =>
+      communityApi.startMessageConversation({
+        recipientId: recipient.trim(),
+        content,
+        attachmentIds,
+      }),
     onSuccess: async (result) => {
       setDraft('');
+      setFiles([]);
       await refreshLists();
       navigate(ROUTES.app.community.messageConversation(result.conversation.id));
     },
   });
   const sendMessage = useMutation({
-    mutationFn: (content) =>
-      communityApi.sendDirectMessage(conversationId, { content }),
+    mutationFn: ({ content, attachmentIds }) =>
+      communityApi.sendDirectMessage(conversationId, { content, attachmentIds }),
     onSuccess: async () => {
       setDraft('');
+      setFiles([]);
       await queryClient.invalidateQueries({
         queryKey: queryKeys.community.directMessages(conversationId, {}),
       });
@@ -128,11 +138,24 @@ export default function Messages() {
   const submit = async (event) => {
     event.preventDefault();
     const content = draft.trim();
-    if (!content) return;
-    if (conversationId) {
-      await sendMessage.mutateAsync(content);
-    } else if (recipient.trim()) {
-      await startMessage.mutateAsync(content);
+    if (!content && files.length === 0) return;
+    const attachmentIds = [];
+    setUploadError('');
+    try {
+      for (const file of files) {
+        const uploaded = await communityApi.uploadAttachment(file);
+        attachmentIds.push(uploaded.id);
+      }
+      if (conversationId) {
+        await sendMessage.mutateAsync({ content, attachmentIds });
+      } else if (recipient.trim()) {
+        await startMessage.mutateAsync({ content, attachmentIds });
+      }
+    } catch (error) {
+      await Promise.allSettled(
+        attachmentIds.map((id) => communityApi.deletePendingAttachment(id))
+      );
+      setUploadError(errorMessage(error));
     }
   };
 
@@ -222,6 +245,7 @@ export default function Messages() {
               {errorMessage(mutationError)}
             </p>
           ) : null}
+          {uploadError ? <p role="alert" className="text-xs text-destructive">{uploadError}</p> : null}
           {conversationId && messagesQuery.isError ? (
             <ErrorState
               title="Unable to load this conversation"
@@ -251,6 +275,7 @@ export default function Messages() {
                 }`}
               >
                 <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                <AttachmentFiles attachments={message.attachments} className="text-primary" />
                 <time className="mt-1 block text-right text-[10px] opacity-70">
                   {message.created_at ? formatDateTime(message.created_at) : ''}
                 </time>
@@ -273,9 +298,17 @@ export default function Messages() {
                 maxLength={10000}
                 aria-label="Message"
               />
+              <FileUpload
+                accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv"
+                multiple
+                maxSizeMb={25}
+                value={files}
+                onChange={setFiles}
+                disabled={startMessage.isPending || sendMessage.isPending}
+              />
               <Button
                 type="submit"
-                disabled={!draft.trim() || (!conversationId && !recipient.trim()) ||
+                disabled={(!draft.trim() && files.length === 0) || (!conversationId && !recipient.trim()) ||
                   startMessage.isPending || sendMessage.isPending}
                 className="self-end"
               >

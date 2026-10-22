@@ -20,6 +20,7 @@ import { ReportDialog } from './ReportDialog.jsx';
 import { communityApi } from '../../../api/index.js';
 import { useToast } from '../../../hooks/useToast.js';
 import { getErrorMessage } from '../../../api/errors.js';
+import { AttachmentFiles } from './AttachmentFiles.jsx';
 
 export function PostCard({
   post,
@@ -139,19 +140,7 @@ export function PostCard({
         </div>
 
         {post.attachments?.length > 0 ? (
-          <div className="mt-3 grid gap-2">
-            {post.attachments.slice(0, 4).map((attachment) => (
-              <a
-                key={attachment.id}
-                href={attachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-2xs text-primary hover:underline"
-              >
-                {attachment.name}
-              </a>
-            ))}
-          </div>
+          <AttachmentFiles attachments={post.attachments.slice(0, 10)} />
         ) : null}
 
         {post.topics?.length > 0 ? (
