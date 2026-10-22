@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, ExternalLink, RefreshCw, XCircle } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
@@ -10,6 +10,9 @@ import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { SubscriptionStatusBadge } from '../../components/domain/subscription/SubscriptionStatusBadge.jsx';
 import { useSubscription } from '../../hooks/useSubscription.js';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { billingApi } from '../../api/index.js';
+import { queryKeys } from '../../hooks/queryKeys.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
@@ -20,7 +23,16 @@ import { ROUTES } from '../../config/routes.config.js';
 export default function Subscription() {
   const dispatch = useDispatch();
   const toast = useToast();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const subscription = useSubscription();
+  const checkoutId = searchParams.get('checkoutId');
+  const checkoutQuery = useQuery({
+    queryKey: queryKeys.billing.checkout(checkoutId),
+    queryFn: () => billingApi.getCheckoutStatus(checkoutId),
+    enabled: Boolean(checkoutId),
+    refetchInterval: (query) => query.state.data?.status === 'pending' ? 3000 : false,
+  });
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -34,6 +46,18 @@ export default function Subscription() {
       ]),
     );
   }, [dispatch]);
+
+  useEffect(() => {
+    if (checkoutQuery.data?.status === 'completed') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.billing.subscription });
+      queryClient.invalidateQueries({ queryKey: queryKeys.billing.entitlements });
+      queryClient.invalidateQueries({ queryKey: queryKeys.billing.usage });
+      toast.success('Subscription activated');
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('checkoutId');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [checkoutQuery.data?.status, queryClient, searchParams, setSearchParams, toast]);
 
   const handleCancel = async () => {
     setProcessing(true);
@@ -67,19 +91,31 @@ export default function Subscription() {
   }
 
   const sub = subscription.subscription;
+  const checkoutNotice = checkoutId && checkoutQuery.data?.status === 'pending' ? (
+    <Card><CardContent className="py-4 text-sm text-muted-foreground">
+      Payment is being confirmed. This page will update automatically when confirmation arrives.
+    </CardContent></Card>
+  ) : checkoutQuery.data?.status === 'failed' ? (
+    <Card><CardContent className="py-4 text-sm text-destructive">
+      Payment was not completed. You can try selecting a plan again.
+    </CardContent></Card>
+  ) : null;
 
   if (!sub) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-          <p className="text-sm text-muted-foreground">
-            You don't have an active subscription.
-          </p>
-          <Button asChild>
-            <Link to={ROUTES.app.billing.plans}>Browse plans</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {checkoutNotice}
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <p className="text-sm text-muted-foreground">
+              You don't have an active subscription.
+            </p>
+            <Button asChild>
+              <Link to={ROUTES.app.billing.plans}>Browse plans</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -88,6 +124,7 @@ export default function Subscription() {
 
   return (
     <div className="flex flex-col gap-6">
+      {checkoutNotice}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">

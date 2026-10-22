@@ -49,6 +49,13 @@ export function createBillingRoutes({ service, middleware }) {
   );
 
   router.get(
+    '/checkout/:checkoutId',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ checkoutId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.getCheckoutStatus)
+  );
+
+  router.get(
     '/subscription',
     middleware.requireAuth(),
     middleware.asyncHandler(controller.getSubscription)
@@ -71,6 +78,12 @@ export function createBillingRoutes({ service, middleware }) {
     middleware.requireAuth(),
     middleware.validateBody(CancelSubscriptionRequestSchema),
     middleware.asyncHandler(controller.cancelSubscription)
+  );
+
+  router.post(
+    '/subscription/reactivate',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.reactivateSubscription)
   );
 
   router.get(

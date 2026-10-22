@@ -174,12 +174,28 @@ export function serializePlanPrice(row) {
 
 export function serializeSubscription(row) {
   if (!row) return null;
+  let fractionDigits = 2;
+  if (row.currency) {
+    try {
+      fractionDigits = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: row.currency,
+      }).resolvedOptions().maximumFractionDigits;
+    } catch {
+      fractionDigits = 2;
+    }
+  }
   return {
     id: row.id,
     scopeType: row.billing_scope_type,
     scopeId: row.billing_scope_id,
+    planId: row.plan_id,
+    planName: row.plan_name,
     planVersionId: row.plan_version_id,
     planPriceId: row.plan_price_id,
+    price: row.amount_minor == null ? null : Number(row.amount_minor) / (10 ** fractionDigits),
+    currency: row.currency,
+    billingInterval: row.billing_interval === 'yearly' ? 'year' : 'month',
     status: row.status,
     currentPeriodStart: row.current_period_start,
     currentPeriodEnd: row.current_period_end,

@@ -127,13 +127,15 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     });
 
     // Create the provider-side session
+    const providerSuccessUrl = new URL(successUrl);
+    providerSuccessUrl.searchParams.set('checkoutId', checkout.id);
     let session;
     try {
       session = await provider.createCheckout({
         amountMinor: Number(price.amount_minor),
         currency: price.currency,
         reference: checkout.id,
-        successUrl,
+        successUrl: providerSuccessUrl.toString(),
         cancelUrl,
         customer: { scopeType, scopeId, email: customerEmail },
       });
@@ -160,6 +162,7 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
 
     await queries.updateCheckoutSession(checkout.id, {
       providerCheckoutReference: session.id,
+      metadata: { checkoutUrl: session.redirectUrl },
     });
 
     return {
@@ -179,6 +182,32 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
 
   async function getActiveSubscriptionForScope(scopeType, scopeId) {
     return queries.findActiveSubscriptionForScope(scopeType, scopeId);
+  }
+
+  async function getCheckoutStatus({ checkoutId, scopeType, scopeId }) {
+    const checkout = await queries.findCheckoutSessionForScope(checkoutId, scopeType, scopeId);
+    if (!checkout) throw new NotFoundError('Checkout');
+
+    let fractionDigits = 2;
+    try {
+      fractionDigits = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: checkout.currency,
+      }).resolvedOptions().maximumFractionDigits;
+    } catch (error) {
+      logger?.warn({ err: error, currency: checkout.currency }, 'Unknown checkout currency precision');
+    }
+
+    return {
+      id: checkout.id,
+      status: checkout.status,
+      planName: checkout.plan_name,
+      amount: Number(checkout.amount_minor) / (10 ** fractionDigits),
+      currency: checkout.currency,
+      billingInterval: checkout.billing_interval,
+      checkoutUrl: checkout.metadata?.checkoutUrl ?? null,
+      expiresAt: checkout.expires_at,
+    };
   }
 
   async function listSubscriptionsForScope({ scopeType, scopeId }) {
@@ -336,6 +365,36 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
         await queries.revokeEntitlementsForSubscription(subscriptionId);
       }
 
+      return updated;
+    });
+  }
+
+  async function reactivateSubscription({ userId, subscriptionId }) {
+    const sub = await queries.findSubscriptionById(subscriptionId);
+    if (!sub) throw new NotFoundError('Subscription');
+    if (sub.status !== SUBSCRIPTION_STATUS.CANCEL_SCHEDULED) {
+      throw new ConflictError('Subscription is not scheduled for cancellation', 'INVALID_STATE');
+    }
+    if (new Date(sub.current_period_end) <= new Date()) {
+      throw new ConflictError('The subscription period has ended', 'INVALID_STATE');
+    }
+
+    return db.tx(async (tx) => {
+      const updated = await queries.updateSubscription(subscriptionId, {
+        status: SUBSCRIPTION_STATUS.ACTIVE,
+        cancelAtPeriodEnd: false,
+        clearCanceledAt: true,
+      });
+      await events.publish(
+        tx,
+        'billing.subscription_activated',
+        { subscriptionId },
+        {
+          actorId: userId,
+          resourceType: 'subscription',
+          resourceId: subscriptionId,
+        }
+      );
       return updated;
     });
   }
@@ -672,6 +731,7 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
 
     // Checkout
     createCheckoutSession,
+    getCheckoutStatus,
 
     // Subscriptions
     getActiveSubscriptionForScope,
@@ -681,6 +741,7 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     checkEntitlement,
     recordUsage,
     cancelSubscription,
+    reactivateSubscription,
 
     // Payments / invoices
     listPaymentsForScope,

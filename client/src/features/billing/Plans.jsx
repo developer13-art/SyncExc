@@ -76,7 +76,7 @@ export default function Plans() {
         planId: plan.id,
         planPriceId: price.id,
         provider,
-        successUrl: new URL(ROUTES.app.billing.overview, window.location.origin).toString(),
+        successUrl: new URL(ROUTES.app.billing.subscription, window.location.origin).toString(),
         cancelUrl: new URL(ROUTES.app.billing.plans, window.location.origin).toString(),
       });
       if (checkout?.redirectUrl) {

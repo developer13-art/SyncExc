@@ -127,4 +127,40 @@ describe('billing usage', () => {
     );
     assert.deepEqual(updates, [{ id: 'checkout-1', fields: { status: 'failed' } }]);
   });
+
+  it('returns checkout details only for the requesting billing scope', async () => {
+    let requestedScope;
+    const service = createBillingService({
+      queries: {
+        async findCheckoutSessionForScope(id, scopeType, scopeId) {
+          requestedScope = { id, scopeType, scopeId };
+          return {
+            id,
+            status: 'pending',
+            plan_name: 'Professional',
+            amount_minor: '5000',
+            currency: 'USD',
+            billing_interval: 'monthly',
+            metadata: { checkoutUrl: 'https://payments.example/checkout' },
+            expires_at: new Date('2026-10-22T10:00:00.000Z'),
+          };
+        },
+      },
+    });
+
+    const checkout = await service.getCheckoutStatus({
+      checkoutId: 'checkout-1',
+      scopeType: 'user',
+      scopeId: 'user-1',
+    });
+
+    assert.deepEqual(requestedScope, {
+      id: 'checkout-1',
+      scopeType: 'user',
+      scopeId: 'user-1',
+    });
+    assert.equal(checkout.planName, 'Professional');
+    assert.equal(checkout.amount, 50);
+    assert.equal(checkout.checkoutUrl, 'https://payments.example/checkout');
+  });
 });

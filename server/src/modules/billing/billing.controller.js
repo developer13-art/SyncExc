@@ -36,6 +36,17 @@ export function createBillingController({ service }) {
       return created(res, session);
     },
 
+    async getCheckoutStatus(req, res) {
+      const scopeType = req.workspace?.id ? 'workspace' : 'user';
+      const scopeId = req.workspace?.id || req.auth.userId;
+      const checkout = await service.getCheckoutStatus({
+        checkoutId: req.params.checkoutId,
+        scopeType,
+        scopeId,
+      });
+      return success(res, checkout);
+    },
+
     async getSubscription(req, res) {
       const scopeType = req.workspace?.id ? 'workspace' : 'user';
       const scopeId = req.workspace?.id || req.auth.userId;
@@ -76,6 +87,18 @@ export function createBillingController({ service }) {
         subscriptionId: sub.id,
         reason: req.body.reason,
         immediate: req.body.immediate,
+      });
+      return success(res, serializeSubscription(updated));
+    },
+
+    async reactivateSubscription(req, res) {
+      const scopeType = req.workspace?.id ? 'workspace' : 'user';
+      const scopeId = req.workspace?.id || req.auth.userId;
+      const sub = await service.getActiveSubscriptionForScope(scopeType, scopeId);
+      if (!sub) return success(res, null);
+      const updated = await service.reactivateSubscription({
+        userId: req.auth.userId,
+        subscriptionId: sub.id,
       });
       return success(res, serializeSubscription(updated));
     },

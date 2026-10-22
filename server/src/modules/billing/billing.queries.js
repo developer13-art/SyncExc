@@ -125,11 +125,38 @@ export function createBillingQueries({ db }) {
         UPDATE checkout_sessions
         SET provider_checkout_reference = COALESCE($2, provider_checkout_reference),
             status = COALESCE($3, status),
-            completed_at = COALESCE($4, completed_at)
+            completed_at = COALESCE($4, completed_at),
+            metadata = CASE
+              WHEN $5::jsonb IS NULL THEN metadata
+              ELSE COALESCE(metadata, '{}'::jsonb) || $5::jsonb
+            END
         WHERE id = $1
         RETURNING *
         `,
-        [id, fields.providerCheckoutReference || null, fields.status || null, fields.completedAt || null]
+        [
+          id,
+          fields.providerCheckoutReference || null,
+          fields.status || null,
+          fields.completedAt || null,
+          fields.metadata ? JSON.stringify(fields.metadata) : null,
+        ]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findCheckoutSessionForScope(id, scopeType, scopeId) {
+      const result = await db.query(
+        `
+        SELECT cs.*, p.name AS plan_name, pp.billing_interval
+        FROM checkout_sessions cs
+        JOIN subscription_plan_prices pp ON pp.id = cs.plan_price_id
+        JOIN subscription_plan_versions pv ON pv.id = pp.plan_version_id
+        JOIN subscription_plans p ON p.id = pv.plan_id
+        WHERE cs.id = $1
+          AND cs.billing_scope_type = $2
+          AND cs.billing_scope_id = $3
+        `,
+        [id, scopeType, scopeId]
       );
       return result.rows[0] || null;
     },
@@ -175,10 +202,15 @@ export function createBillingQueries({ db }) {
     async findActiveSubscriptionForScope(scopeType, scopeId) {
       const result = await db.query(
         `
-        SELECT * FROM subscriptions
-        WHERE billing_scope_type = $1 AND billing_scope_id = $2
-          AND status IN ('active', 'trialing', 'past_due', 'grace_period', 'cancel_scheduled')
-        ORDER BY created_at DESC
+        SELECT s.*, p.id AS plan_id, p.name AS plan_name,
+          pp.amount_minor, pp.currency, pp.billing_interval
+        FROM subscriptions s
+        JOIN subscription_plan_versions pv ON pv.id = s.plan_version_id
+        JOIN subscription_plans p ON p.id = pv.plan_id
+        JOIN subscription_plan_prices pp ON pp.id = s.plan_price_id
+        WHERE s.billing_scope_type = $1 AND s.billing_scope_id = $2
+          AND s.status IN ('active', 'trialing', 'past_due', 'grace_period', 'cancel_scheduled')
+        ORDER BY s.created_at DESC
         LIMIT 1
         `,
         [scopeType, scopeId]
@@ -230,7 +262,7 @@ export function createBillingQueries({ db }) {
             current_period_end = COALESCE($4, current_period_end),
             next_billing_at = COALESCE($5, next_billing_at),
             cancel_at_period_end = COALESCE($6, cancel_at_period_end),
-            canceled_at = COALESCE($7, canceled_at),
+            canceled_at = CASE WHEN $9 THEN NULL ELSE COALESCE($7, canceled_at) END,
             ended_at = COALESCE($8, ended_at),
             updated_at = now()
         WHERE id = $1
@@ -245,6 +277,7 @@ export function createBillingQueries({ db }) {
           fields.cancelAtPeriodEnd ?? null,
           fields.canceledAt ?? null,
           fields.endedAt ?? null,
+          fields.clearCanceledAt === true,
         ]
       );
       return result.rows[0] || null;

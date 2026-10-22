@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from '../layouts/AppLayout.jsx';
 import { LoadingState } from '../components/ui/LoadingState.jsx';
@@ -59,7 +59,14 @@ const CommunityDiscussions = lazy(() => import('../features/community/Discussion
 const CommunityMessages = lazy(() => import('../features/community/Messages.jsx'));
 const CommunityModerationCenter = lazy(() => import('../features/community/ModerationCenter.jsx'));
 const Referral = lazy(() => import('../features/referral/ReferralDashboard.jsx'));
-const Billing = lazy(() => import('../features/billing/Plans.jsx'));
+const BillingPlans = lazy(() => import('../features/billing/Plans.jsx'));
+const BillingSubscription = lazy(() => import('../features/billing/Subscription.jsx'));
+const BillingUsage = lazy(() => import('../features/billing/Usage.jsx'));
+const BillingInvoices = lazy(() => import('../features/billing/Invoices.jsx'));
+const BillingInvoiceDetails = lazy(() => import('../features/billing/InvoiceDetails.jsx'));
+const BillingPayments = lazy(() => import('../features/billing/Payments.jsx'));
+const BillingRefunds = lazy(() => import('../features/billing/Refunds.jsx'));
+const BillingCheckout = lazy(() => import('../features/billing/Checkout.jsx'));
 const Support = lazy(() => import('../features/support/SupportCenter.jsx'));
 const Notifications = lazy(() => import('../features/notifications/NotificationCenter.jsx'));
 const Settings = lazy(() => import('../features/settings/ProfileSettings.jsx'));
@@ -154,7 +161,18 @@ export function AppRoutes() {
           <Route path="community/*" element={<Fallback><CommunityFeed /></Fallback>} />
         </Route>
         <Route path="referral/*" element={<Fallback><Referral /></Fallback>} />
-        <Route path="billing/*" element={<Fallback><Billing /></Fallback>} />
+        <Route path="billing" element={<Outlet />}>
+          <Route index element={<Navigate to="subscription" replace />} />
+          <Route path="plans" element={<Fallback><BillingPlans /></Fallback>} />
+          <Route path="subscription" element={<Fallback><BillingSubscription /></Fallback>} />
+          <Route path="usage" element={<Fallback><BillingUsage /></Fallback>} />
+          <Route path="invoices" element={<Fallback><BillingInvoices /></Fallback>} />
+          <Route path="invoices/:invoiceId" element={<Fallback><BillingInvoiceDetails /></Fallback>} />
+          <Route path="payments" element={<Fallback><BillingPayments /></Fallback>} />
+          <Route path="refunds" element={<Fallback><BillingRefunds /></Fallback>} />
+          <Route path="checkout/:checkoutId" element={<Fallback><BillingCheckout /></Fallback>} />
+          <Route path="*" element={<Navigate to="/app/billing/subscription" replace />} />
+        </Route>
         <Route path="support/*" element={<Fallback><Support /></Fallback>} />
         <Route path="notifications/*" element={<Fallback><Notifications /></Fallback>} />
         <Route path="settings" element={<Fallback><SettingsOverview /></Fallback>} />
