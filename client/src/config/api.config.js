@@ -420,6 +420,7 @@ export const apiConfig = Object.freeze({
       following: (userId) => `/community/users/${userId}/following`,
       feed: '/community/feed',
       posts: '/community/feed',
+      createPost: '/community/posts',
       groupPosts: (groupId) => `/community/groups/${groupId}/posts`,
       post: (postId) => `/community/posts/${postId}`,
       postComments: (postId) => `/community/posts/${postId}/comments`,

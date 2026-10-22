@@ -56,7 +56,7 @@ export const communityApi = {
   },
 
   createPost: ({ destination, ...payload }) =>
-    api.post(endpoints.community.posts, {
+    api.post(endpoints.community.createPost, {
       ...payload,
       destination: typeof destination === 'string'
         ? { type: destination === 'workspace' ? 'workspace_discussion' : 'public_feed' }
