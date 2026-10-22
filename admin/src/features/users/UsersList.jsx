@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
-import { RefreshCw, Search, Users } from 'lucide-react';
+import { Activity, BadgeCheck, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
@@ -19,7 +19,6 @@ import { usePagination } from '../../hooks/usePagination.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
-import { cn } from '../../lib/utils/cn.util.js';
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'All' },
@@ -69,6 +68,8 @@ export default function UsersList() {
   }, [dispatch]);
 
   const users = usersQuery.data?.items ?? [];
+  const activeOnPage = users.filter((user) => user.status === 'active').length;
+  const mfaOnPage = users.filter((user) => user.mfaEnabled).length;
 
   useEffect(() => {
     const total = usersQuery.data?.meta?.total;
@@ -165,48 +166,107 @@ export default function UsersList() {
   ];
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Users</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Search and inspect user accounts. Sensitive fields are masked by default. Passwords,
-            MFA secrets, recovery codes, session tokens, and exchange API secrets are never
-            displayed.
-          </p>
+    <div className="flex flex-col gap-5">
+      <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-primary/10">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+              <Users className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                  Platform directory
+                </p>
+                <Badge variant="muted" size="sm">Identity & access</Badge>
+              </div>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Users</h1>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Review account status, verification, and security posture across the platform.
+              </p>
+            </div>
+          </div>
+          <IconButton
+            label="Refresh users"
+            onClick={() => usersQuery.refetch()}
+            disabled={usersQuery.isLoading}
+            className="border border-border bg-background/70"
+          >
+            <RefreshCw className={usersQuery.isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+          </IconButton>
         </div>
-        <IconButton
-          label="Refresh"
-          onClick={() => usersQuery.refetch()}
-          disabled={usersQuery.isLoading}
-          className="border border-border"
-        >
-          <RefreshCw className={usersQuery.isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-        </IconButton>
+        <div className="grid border-t border-border/70 bg-background/30 sm:grid-cols-3">
+          <div className="border-b border-border/70 p-4 sm:border-b-0 sm:border-r">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Matching accounts
+            </p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
+              {pagination.total.toLocaleString()}
+            </p>
+          </div>
+          <div className="border-b border-border/70 p-4 sm:border-b-0 sm:border-r">
+            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <Activity className="h-3.5 w-3.5 text-success" />
+              Active on this page
+            </p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-success">
+              {activeOnPage.toLocaleString()}
+            </p>
+          </div>
+          <div className="p-4">
+            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              MFA enabled on this page
+            </p>
+            <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">
+              {mfaOnPage.toLocaleString()}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">
+                / {users.length}
+              </span>
+            </p>
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <SearchInput
-          value={query}
-          onChange={(v) => {
-            setQuery(v);
-            pagination.goToPage(1);
-          }}
-          placeholder="Search by email, name, or user ID…"
-          className="w-full max-w-md"
-        />
-        <SegmentedControl
-          options={STATUS_FILTERS}
-          value={status}
-          onChange={(v) => {
-            setStatus(v);
-            pagination.goToPage(1);
-          }}
-        />
-      </div>
-
-      <Card>
-        <CardContent className="p-5 pt-5">
+      <Card className="overflow-hidden">
+        <div className="flex flex-col gap-4 border-b border-border bg-muted/20 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Account directory</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {usersQuery.isFetching
+                  ? 'Refreshing account data…'
+                  : `Showing ${users.length.toLocaleString()} of ${pagination.total.toLocaleString()} matching accounts`}
+              </p>
+            </div>
+            <Badge variant="info" size="sm">
+              <BadgeCheck className="mr-1 h-3 w-3" />
+              Audited access
+            </Badge>
+          </div>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <SearchInput
+              value={query}
+              onChange={(v) => {
+                setQuery(v);
+                pagination.goToPage(1);
+              }}
+              placeholder="Search by email, name, or user ID…"
+              className="w-full xl:max-w-md"
+            />
+            <div className="overflow-x-auto">
+              <SegmentedControl
+                options={STATUS_FILTERS}
+                value={status}
+                onChange={(v) => {
+                  setStatus(v);
+                  pagination.goToPage(1);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        <CardContent className="p-4">
           <DataTable
             columns={columns}
             rows={users}
