@@ -110,16 +110,16 @@ export default function ProviderDashboard() {
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         {metrics.map(({ label, value, icon: Icon }) => (
           <Card key={label} className="overflow-hidden">
-            <CardContent className="flex items-center justify-between gap-3 p-5">
+            <CardContent className="flex min-w-0 items-start justify-between gap-2 p-3 sm:items-center sm:gap-3 sm:p-5">
               <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
+                <p className="break-words text-[10px] font-medium uppercase leading-tight tracking-wide text-muted-foreground sm:text-xs">{label}</p>
+                <p className="mt-2 text-lg font-semibold leading-tight tracking-tight text-foreground sm:text-2xl">{value}</p>
               </div>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Icon className="h-5 w-5" />
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary sm:h-10 sm:w-10 sm:rounded-xl">
+                <Icon className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
               </span>
             </CardContent>
           </Card>
