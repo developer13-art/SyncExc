@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
@@ -9,6 +9,8 @@ import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { PostCard } from './components/PostCard.jsx';
 import { CommentThread } from './components/CommentThread.jsx';
+import { PostStructuredContent } from './components/PostStructuredContent.jsx';
+import { ReportDialog } from './components/ReportDialog.jsx';
 import { useCommunityPost, useCommunityProfile } from '../../hooks/useCommunity.js';
 import { communityApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
@@ -22,6 +24,7 @@ export default function PostDetails() {
   const toast = useToast();
   const profileQuery = useCommunityProfile();
   const postQuery = useCommunityPost(postId);
+  const [reportTarget, setReportTarget] = useState(null);
 
   useEffect(() => {
     if (postQuery.post) {
@@ -70,6 +73,22 @@ export default function PostDetails() {
     }
   };
 
+  const submitReport = async ({ reason, details }) => {
+    try {
+      await communityApi.submitReport({
+        resourceType: reportTarget.type,
+        resourceId: reportTarget.id,
+        reason,
+        details,
+      });
+      toast.success('Report submitted');
+      setReportTarget(null);
+    } catch (err) {
+      toast.error('Report failed', { description: getErrorMessage(err) });
+      throw err;
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
@@ -83,7 +102,10 @@ export default function PostDetails() {
       <PostCard
         post={postQuery.post}
         currentUserId={profileQuery.profile?.userId}
+        onReport={(post) => setReportTarget({ type: 'post', id: post.id })}
       />
+
+      <PostStructuredContent post={postQuery.post} onRefresh={postQuery.refetch} />
 
       <Card>
         <CardHeader>
@@ -95,9 +117,15 @@ export default function PostDetails() {
             currentUserId={profileQuery.profile?.userId}
             onReply={handleReply}
             onDelete={handleDelete}
+            onReport={(comment) => setReportTarget({ type: 'comment', id: comment.id })}
           />
         </CardContent>
       </Card>
+      <ReportDialog
+        open={Boolean(reportTarget)}
+        onOpenChange={(open) => { if (!open) setReportTarget(null); }}
+        onSubmit={submitReport}
+      />
     </div>
   );
 }

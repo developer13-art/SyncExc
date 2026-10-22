@@ -11,6 +11,7 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { SegmentedControl } from '../../components/navigation/SegmentedControl.jsx';
 import { PostCard } from './components/PostCard.jsx';
 import { PostComposer } from './components/PostComposer.jsx';
+import { ReportDialog } from './components/ReportDialog.jsx';
 import { useCommunityFeed, useCommunityPosts, useCommunityProfile } from '../../hooks/useCommunity.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
@@ -28,6 +29,7 @@ export default function Feed() {
   const dispatch = useDispatch();
   const toast = useToast();
   const [tab, setTab] = useState('following');
+  const [reportTarget, setReportTarget] = useState(null);
 
   const profileQuery = useCommunityProfile();
   const feedQuery = useCommunityFeed({ following: tab === 'following' });
@@ -77,6 +79,22 @@ export default function Feed() {
       postsQuery.refetch?.();
     } catch (err) {
       toast.error('Bookmark failed', { description: getErrorMessage(err) });
+    }
+  };
+
+  const submitReport = async ({ reason, details }) => {
+    try {
+      await communityApi.submitReport({
+        resourceType: 'post',
+        resourceId: reportTarget.id,
+        reason,
+        details,
+      });
+      toast.success('Report submitted');
+      setReportTarget(null);
+    } catch (err) {
+      toast.error('Report failed', { description: getErrorMessage(err) });
+      throw err;
     }
   };
 
@@ -149,10 +167,16 @@ export default function Feed() {
               currentUserId={profileQuery.profile?.userId}
               onReact={handleReact}
               onBookmark={handleBookmark}
+              onReport={setReportTarget}
             />
           ))}
         </div>
       )}
+      <ReportDialog
+        open={Boolean(reportTarget)}
+        onOpenChange={(open) => { if (!open) setReportTarget(null); }}
+        onSubmit={submitReport}
+      />
     </div>
   );
 }

@@ -23,6 +23,9 @@ import { createProfileService } from './profile.service.js';
 import { createSocialGraphService } from './social-graph.service.js';
 import { createPostService } from './ost.service.js';
 import { createCommentService } from './comment.service.js';
+import { createMessagingQueries } from './messaging.queries.js';
+import { createMessagingService } from './messaging.service.js';
+import { createCommunityContentService } from './content.service.js';
 import { createReactionService } from './reaction.service.js';
 import { createGroupService } from './group.service.js';
 import { createDiscussionService } from './discussion.service.js';
@@ -39,6 +42,7 @@ export function createCommunityModule({ services }) {
   const logger = createLogger({ component: 'community' });
 
   const queries = createCommunityQueries({ db: services.db });
+  const messagingQueries = createMessagingQueries({ db: services.db });
 
   const profileService = createProfileService({
     db: services.db,
@@ -68,6 +72,19 @@ export function createCommunityModule({ services }) {
     events: services.events,
     realtime: services.realtime,
     logger,
+  });
+
+  const messagingService = createMessagingService({
+    db: services.db,
+    queries,
+    messagingQueries,
+    events: services.events,
+  });
+
+  const contentService = createCommunityContentService({
+    db: services.db,
+    queries,
+    postService,
   });
 
   const reactionService = createReactionService({
@@ -142,6 +159,8 @@ export function createCommunityModule({ services }) {
     recommendationService,
     searchService,
     moderationService,
+    messagingService,
+    contentService,
     middleware: services.middleware,
   });
 

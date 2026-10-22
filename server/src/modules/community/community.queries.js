@@ -416,6 +416,7 @@ export function createCommunityQueries({ db }) {
             topics = COALESCE($3, topics),
             allow_comments = COALESCE($4, allow_comments),
             engagement = COALESCE($5, engagement),
+            current_version = COALESCE($6, current_version),
             updated_at = now()
         WHERE id = $1 AND deleted_at IS NULL
         RETURNING *
@@ -426,6 +427,7 @@ export function createCommunityQueries({ db }) {
           fields.topics ?? null,
           fields.allowComments ?? null,
           fields.engagement ? JSON.stringify(fields.engagement) : null,
+          fields.currentVersion ?? null,
         ]
       );
       return result.rows[0] || null;
@@ -477,6 +479,228 @@ export function createCommunityQueries({ db }) {
         [data.postId, data.type, data.storageKey, data.mimeType || null, data.sizeBytes || null]
       );
       return result.rows[0];
+    },
+
+    async insertPostPoll(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO community_post_polls (post_id, question, allow_multiple, closes_at)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+        `,
+        [data.postId, data.question, data.allowMultiple, data.closesAt || null]
+      );
+      return result.rows[0];
+    },
+
+    async insertPollOption(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO community_poll_options (poll_post_id, position, label)
+        VALUES ($1, $2, $3)
+        RETURNING *
+        `,
+        [data.postId, data.position, data.label]
+      );
+      return result.rows[0];
+    },
+
+    async getPollForPost(postId, viewerId = null, client = db) {
+      const result = await client.query(
+        `
+        SELECT poll.post_id, poll.question, poll.allow_multiple, poll.closes_at,
+               poll_option.id AS option_id, poll_option.label AS option_label,
+               poll_option.position,
+               count(vote.user_id)::int AS vote_count,
+               COALESCE(bool_or(vote.user_id = $2), false) AS viewer_voted
+        FROM community_post_polls poll
+        JOIN community_poll_options poll_option ON poll_option.poll_post_id = poll.post_id
+        LEFT JOIN community_poll_votes vote
+          ON vote.poll_post_id = poll_option.poll_post_id AND vote.option_id = poll_option.id
+        WHERE poll.post_id = $1
+        GROUP BY poll.post_id, poll.question, poll.allow_multiple, poll.closes_at,
+                 poll_option.id, poll_option.label, poll_option.position
+        ORDER BY poll_option.position
+        `,
+        [postId, viewerId]
+      );
+      if (result.rows.length === 0) return null;
+      const first = result.rows[0];
+      return {
+        question: first.question,
+        allowMultiple: first.allow_multiple,
+        closesAt: first.closes_at,
+        options: result.rows.map((row) => ({
+          id: row.option_id,
+          label: row.option_label,
+          position: row.position,
+          voteCount: row.vote_count,
+          viewerVoted: row.viewer_voted,
+        })),
+      };
+    },
+
+    async lockPoll(postId, client) {
+      const result = await client.query(
+        `SELECT * FROM community_post_polls WHERE post_id = $1 FOR UPDATE`,
+        [postId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listPollOptionIds(postId, optionIds, client) {
+      const result = await client.query(
+        `SELECT id FROM community_poll_options WHERE poll_post_id = $1 AND id = ANY($2::uuid[])`,
+        [postId, optionIds]
+      );
+      return result.rows.map((row) => row.id);
+    },
+
+    async replacePollVotes(client, postId, userId, optionIds) {
+      await client.query(
+        `DELETE FROM community_poll_votes WHERE poll_post_id = $1 AND user_id = $2`,
+        [postId, userId]
+      );
+      for (const optionId of optionIds) {
+        await client.query(
+          `INSERT INTO community_poll_votes (poll_post_id, option_id, user_id) VALUES ($1, $2, $3)`,
+          [postId, optionId, userId]
+        );
+      }
+    },
+
+    async insertPostEvent(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO community_post_events (post_id, starts_at, ends_at, timezone, location, capacity)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+        `,
+        [
+          data.postId,
+          data.startsAt,
+          data.endsAt || null,
+          data.timezone || 'UTC',
+          data.location || null,
+          data.capacity || null,
+        ]
+      );
+      return result.rows[0];
+    },
+
+    async getEventForPost(postId, viewerId = null, client = db) {
+      const result = await client.query(
+        `
+        SELECT event.*,
+               count(rsvp.user_id) FILTER (WHERE rsvp.status = 'going')::int AS going_count,
+               count(rsvp.user_id) FILTER (WHERE rsvp.status = 'interested')::int AS interested_count,
+               (SELECT status FROM community_event_rsvps
+                WHERE post_id = event.post_id AND user_id = $2) AS viewer_rsvp
+        FROM community_post_events event
+        LEFT JOIN community_event_rsvps rsvp ON rsvp.post_id = event.post_id
+        WHERE event.post_id = $1
+        GROUP BY event.post_id
+        `,
+        [postId, viewerId]
+      );
+      const row = result.rows[0];
+      return row
+        ? {
+            startsAt: row.starts_at,
+            endsAt: row.ends_at,
+            timezone: row.timezone,
+            location: row.location,
+            capacity: row.capacity,
+            goingCount: row.going_count,
+            interestedCount: row.interested_count,
+            viewerRsvp: row.viewer_rsvp,
+          }
+        : null;
+    },
+
+    async lockEvent(postId, client) {
+      const result = await client.query(
+        `SELECT * FROM community_post_events WHERE post_id = $1 FOR UPDATE`,
+        [postId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async countGoingRsvps(postId, client) {
+      const result = await client.query(
+        `SELECT count(*)::int AS count FROM community_event_rsvps WHERE post_id = $1 AND status = 'going'`,
+        [postId]
+      );
+      return result.rows[0]?.count || 0;
+    },
+
+    async upsertEventRsvp(client, postId, userId, status) {
+      const result = await client.query(
+        `
+        INSERT INTO community_event_rsvps (post_id, user_id, status)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (post_id, user_id)
+        DO UPDATE SET status = EXCLUDED.status, updated_at = now()
+        RETURNING *
+        `,
+        [postId, userId, status]
+      );
+      return result.rows[0];
+    },
+
+    async findEventRsvp(postId, userId, client = db) {
+      const result = await client.query(
+        `SELECT * FROM community_event_rsvps WHERE post_id = $1 AND user_id = $2`,
+        [postId, userId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertMarketIdea(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO community_market_ideas (
+          post_id, instrument, market_type, direction, timeframe, thesis,
+          entry_price, stop_loss, take_profit, invalidation
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+        `,
+        [
+          data.postId,
+          data.instrument,
+          data.marketType,
+          data.direction,
+          data.timeframe,
+          data.thesis,
+          data.entryPrice || null,
+          data.stopLoss || null,
+          data.takeProfit || null,
+          data.invalidation || null,
+        ]
+      );
+      return result.rows[0];
+    },
+
+    async getMarketIdeaForPost(postId, client = db) {
+      const result = await client.query(
+        `SELECT * FROM community_market_ideas WHERE post_id = $1`,
+        [postId]
+      );
+      const row = result.rows[0];
+      return row
+        ? {
+            instrument: row.instrument,
+            marketType: row.market_type,
+            direction: row.direction,
+            timeframe: row.timeframe,
+            thesis: row.thesis,
+            entryPrice: row.entry_price,
+            stopLoss: row.stop_loss,
+            takeProfit: row.take_profit,
+            invalidation: row.invalidation,
+          }
+        : null;
     },
 
     async listPostAttachments(postId) {
@@ -1594,6 +1818,86 @@ export function createCommunityQueries({ db }) {
       };
     },
 
+    async listModerationCasesForOwner(userId, { limit = 50, cursor = null } = {}) {
+      const params = [userId, limit + 1];
+      let cursorClause = '';
+      if (cursor) {
+        params.push(cursor);
+        cursorClause = `AND moderation_case.opened_at < $${params.length}`;
+      }
+      const result = await db.query(
+        `
+        SELECT moderation_case.*,
+               appeal.id AS appeal_id,
+               appeal.status AS appeal_status
+        FROM community_moderation_cases moderation_case
+        LEFT JOIN LATERAL (
+          SELECT id, status FROM community_moderation_appeals
+          WHERE case_id = moderation_case.id AND appellant_id = $1
+          ORDER BY created_at DESC LIMIT 1
+        ) appeal ON true
+        WHERE (
+          (moderation_case.resource_type = 'post' AND EXISTS (
+            SELECT 1 FROM community_posts
+            WHERE id = moderation_case.resource_id AND author_id = $1
+          ))
+          OR (moderation_case.resource_type = 'comment' AND EXISTS (
+            SELECT 1 FROM community_comments
+            WHERE id = moderation_case.resource_id AND author_id = $1
+          ))
+          OR (moderation_case.resource_type = 'profile' AND EXISTS (
+            SELECT 1 FROM community_profiles
+            WHERE id = moderation_case.resource_id AND user_id = $1
+          ))
+          OR (moderation_case.resource_type = 'group' AND EXISTS (
+            SELECT 1 FROM community_groups
+            WHERE id = moderation_case.resource_id AND owner_id = $1
+          ))
+          OR (moderation_case.resource_type = 'analysis' AND EXISTS (
+            SELECT 1 FROM community_analysis_documents
+            WHERE id = moderation_case.resource_id AND author_id = $1
+          ))
+        )
+        ${cursorClause}
+        ORDER BY moderation_case.opened_at DESC, moderation_case.id DESC
+        LIMIT $2
+        `,
+        params
+      );
+      const hasMore = result.rows.length > limit;
+      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const last = rows[rows.length - 1];
+      return {
+        rows,
+        nextCursor: hasMore && last ? last.opened_at.toISOString() : null,
+      };
+    },
+
+    async listModerationCasesByReporter(userId, { limit = 50, cursor = null } = {}) {
+      const params = [userId, limit + 1];
+      let cursorClause = '';
+      if (cursor) {
+        params.push(cursor);
+        cursorClause = `AND opened_at < $${params.length}`;
+      }
+      const result = await db.query(
+        `
+        SELECT * FROM community_moderation_cases
+        WHERE reporter_id = $1 ${cursorClause}
+        ORDER BY opened_at DESC, id DESC
+        LIMIT $2
+        `,
+        params
+      );
+      const hasMore = result.rows.length > limit;
+      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const last = rows[rows.length - 1];
+      return {
+        rows,
+        nextCursor: hasMore && last ? last.opened_at.toISOString() : null,
+      };
+    },
+
     async insertModerationAction(client, data) {
       const result = await client.query(
         `
@@ -1611,7 +1915,6 @@ export function createCommunityQueries({ db }) {
         `
         INSERT INTO community_moderation_appeals (case_id, appellant_id, reason)
         VALUES ($1, $2, $3)
-        ON CONFLICT (case_id, appellant_id) WHERE status = 'pending' DO NOTHING
         RETURNING *
         `,
         [data.caseId, data.appellantId, data.reason]
@@ -1619,8 +1922,8 @@ export function createCommunityQueries({ db }) {
       return result.rows[0];
     },
 
-    async findPendingModerationAppeal(caseId, appellantId) {
-      const result = await db.query(
+    async findPendingModerationAppeal(caseId, appellantId, client = db) {
+      const result = await client.query(
         `SELECT id FROM community_moderation_appeals WHERE case_id = $1 AND appellant_id = $2 AND status = 'pending'`,
         [caseId, appellantId]
       );

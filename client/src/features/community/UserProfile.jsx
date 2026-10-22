@@ -88,6 +88,7 @@ export default function UserProfile() {
         isOwnProfile={false}
         isFollowing={profile.viewerIsFollowing}
         hasPendingFollowRequest={profile.viewerHasPendingFollowRequest}
+        canMessage={profile.viewerCanMessage}
         onFollow={handleFollow}
         onUnfollow={handleUnfollow}
       />

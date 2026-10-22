@@ -51,6 +51,7 @@ export function useCommunityPosts(params = {}) {
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
     createPost: create.mutateAsync,
+    refetch: listQuery.refetch,
   };
 }
 

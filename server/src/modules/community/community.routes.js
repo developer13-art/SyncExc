@@ -11,6 +11,35 @@ const FeedQuerySchema = PaginationSchema.keys({
   following: Joi.boolean().truthy('true').falsy('false').optional(),
 });
 
+const PollSchema = Joi.object({
+  question: Joi.string().trim().min(1).max(500).required(),
+  options: Joi.array().items(Joi.string().trim().min(1).max(200)).min(2).max(10).unique().required(),
+  allowMultiple: Joi.boolean().default(false),
+  closesAt: Joi.date().iso().optional(),
+});
+
+const EventSchema = Joi.object({
+  startsAt: Joi.date().iso().required(),
+  endsAt: Joi.date().iso().greater(Joi.ref('startsAt')).optional(),
+  timezone: Joi.string().trim().max(100).default('UTC'),
+  location: Joi.string().trim().max(300).optional().allow(''),
+  capacity: Joi.number().integer().min(1).optional(),
+});
+
+const PriceSchema = Joi.string().pattern(/^(?=.*[1-9])\d+(?:\.\d{1,18})?$/).optional().allow('');
+
+const MarketIdeaSchema = Joi.object({
+  instrument: Joi.string().trim().min(1).max(64).required(),
+  marketType: Joi.string().valid('spot', 'futures', 'options', 'forex', 'equities', 'other').default('spot'),
+  direction: Joi.string().valid('long', 'short', 'neutral').required(),
+  timeframe: Joi.string().trim().min(1).max(64).required(),
+  thesis: Joi.string().trim().min(1).max(5000).required(),
+  entryPrice: PriceSchema,
+  stopLoss: PriceSchema,
+  takeProfit: PriceSchema,
+  invalidation: Joi.string().trim().max(2000).optional().allow(''),
+});
+
 const GroupsQuerySchema = PaginationSchema.keys({
   filter: Joi.string().valid('all', 'mine', 'public', 'private').optional(),
   q: Joi.string().trim().max(200).optional().allow(''),
@@ -60,7 +89,10 @@ const CreatePostSchema = Joi.object({
   ).max(10).optional(),
   visibility: Joi.string().valid('public', 'followers', 'group_members', 'workspace_members', 'private').default('public'),
   allowComments: Joi.boolean().default(true),
-});
+  poll: PollSchema.optional(),
+  event: EventSchema.optional(),
+  marketIdea: MarketIdeaSchema.optional(),
+}).oxor('poll', 'event', 'marketIdea');
 
 const UpdatePostSchema = Joi.object({
   content: Joi.string().trim().min(1).max(10000).optional(),
@@ -75,6 +107,14 @@ const CommentSchema = Joi.object({
 
 const UpdateCommentSchema = Joi.object({
   content: Joi.string().trim().min(1).max(5000).required(),
+});
+
+const PollVoteSchema = Joi.object({
+  optionIds: Joi.array().items(UuidSchema).min(1).max(10).unique().required(),
+});
+
+const EventRsvpSchema = Joi.object({
+  status: Joi.string().valid('going', 'interested', 'declined').required(),
 });
 
 const ReactionSchema = Joi.object({
@@ -124,6 +164,15 @@ const CreateThreadSchema = Joi.object({
 
 const MessageSchema = Joi.object({
   content: Joi.string().trim().min(1).max(10000).required(),
+});
+
+const MessageRequestSchema = Joi.object({
+  recipientId: UuidSchema.required(),
+  content: Joi.string().trim().min(1).max(10000).required(),
+});
+
+const MessageRequestDecisionSchema = Joi.object({
+  accepted: Joi.boolean().required(),
 });
 
 const CreateAnalysisSchema = Joi.object({
@@ -329,6 +378,20 @@ export function createCommunityRoutes(services) {
     middleware.asyncHandler(controller.listComments)
   );
 
+  router.post(
+    '/posts/:postId/poll/votes',
+    middleware.requireAuth(),
+    middleware.validateBody(PollVoteSchema),
+    middleware.asyncHandler(controller.voteInPoll)
+  );
+
+  router.post(
+    '/posts/:postId/event/rsvp',
+    middleware.requireAuth(),
+    middleware.validateBody(EventRsvpSchema),
+    middleware.asyncHandler(controller.updateEventRsvp)
+  );
+
   router.delete(
     '/comments/:commentId',
     middleware.requireAuth(),
@@ -500,6 +563,51 @@ export function createCommunityRoutes(services) {
   );
 
   /* ---------------------------------------------------------------------------
+   * Direct messages
+   * ------------------------------------------------------------------------ */
+  router.get(
+    '/messages/conversations',
+    middleware.requireAuth(),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listMessageConversations)
+  );
+
+  router.post(
+    '/messages/requests',
+    middleware.requireAuth(),
+    middleware.validateBody(MessageRequestSchema),
+    middleware.asyncHandler(controller.startMessageConversation)
+  );
+
+  router.get(
+    '/messages/requests',
+    middleware.requireAuth(),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listMessageRequests)
+  );
+
+  router.post(
+    '/messages/requests/:conversationId/resolve',
+    middleware.requireAuth(),
+    middleware.validateBody(MessageRequestDecisionSchema),
+    middleware.asyncHandler(controller.resolveMessageRequest)
+  );
+
+  router.get(
+    '/messages/conversations/:conversationId/messages',
+    middleware.requireAuth(),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listDirectMessages)
+  );
+
+  router.post(
+    '/messages/conversations/:conversationId/messages',
+    middleware.requireAuth(),
+    middleware.validateBody(MessageSchema),
+    middleware.asyncHandler(controller.sendDirectMessage)
+  );
+
+  /* ---------------------------------------------------------------------------
    * Analysis documents
    * ------------------------------------------------------------------------ */
   router.get(
@@ -602,6 +710,20 @@ export function createCommunityRoutes(services) {
     middleware.requireAuth(),
     middleware.validateBody(ReportSchema),
     middleware.asyncHandler(controller.submitReport)
+  );
+
+  router.get(
+    '/reports/mine',
+    middleware.requireAuth(),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listMyReports)
+  );
+
+  router.get(
+    '/moderation/my-cases',
+    middleware.requireAuth(),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listMyModerationCases)
   );
 
   router.post(

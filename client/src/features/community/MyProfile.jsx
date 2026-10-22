@@ -12,6 +12,7 @@ import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ProfileHeader } from './components/ProfileHeader.jsx';
 import { PostCard } from './components/PostCard.jsx';
 import { communityApi } from '../../api/index.js';
+import { queryKeys } from '../../hooks/queryKeys.js';
 import { useCommunityProfile, useCommunityPosts } from '../../hooks/useCommunity.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
@@ -31,7 +32,14 @@ export default function MyProfile() {
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ displayName: '', bio: '', website: '' });
+  const [privacy, setPrivacy] = useState({
+    allowFollows: true,
+    allowMentions: true,
+    allowDirectMessages: false,
+    allowRecommendations: true,
+  });
   const [saving, setSaving] = useState(false);
+  const [privacySaving, setPrivacySaving] = useState(false);
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('My Profile'));
@@ -49,6 +57,12 @@ export default function MyProfile() {
         displayName: profileQuery.profile.displayName ?? '',
         bio: profileQuery.profile.bio ?? '',
         website: profileQuery.profile.website ?? '',
+      });
+      setPrivacy({
+        allowFollows: profileQuery.profile.privacy?.allowFollows ?? true,
+        allowMentions: profileQuery.profile.privacy?.allowMentions ?? true,
+        allowDirectMessages: profileQuery.profile.privacy?.allowDirectMessages ?? false,
+        allowRecommendations: profileQuery.profile.privacy?.allowRecommendations ?? true,
       });
     }
   }, [profileQuery.profile]);
@@ -81,8 +95,24 @@ export default function MyProfile() {
     }
   };
 
+  const handlePrivacySave = async () => {
+    setPrivacySaving(true);
+    try {
+      await communityApi.updateMyPrivacy(privacy);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.community.myProfile });
+      toast.success('Privacy settings updated');
+    } catch (err) {
+      toast.error('Privacy update failed', { description: getErrorMessage(err) });
+    } finally {
+      setPrivacySaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
+      <Button variant="outline" asChild className="self-start">
+        <Link to={ROUTES.app.community.moderation}>Reports and appeals</Link>
+      </Button>
       <ProfileHeader
         profile={profileQuery.profile}
         isOwnProfile
@@ -129,6 +159,36 @@ export default function MyProfile() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader><CardTitle>Privacy and messaging</CardTitle></CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {[
+            ['allowFollows', 'Allow people to follow you'],
+            ['allowMentions', 'Allow people to mention you'],
+            ['allowDirectMessages', 'Accept direct-message requests'],
+            ['allowRecommendations', 'Allow personalized community recommendations'],
+          ].map(([key, label]) => (
+            <label key={key} className="flex items-center gap-3 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={privacy[key]}
+                onChange={(event) =>
+                  setPrivacy((current) => ({ ...current, [key]: event.target.checked }))
+                }
+              />
+              {label}
+            </label>
+          ))}
+          <Button
+            className="self-start"
+            onClick={handlePrivacySave}
+            disabled={privacySaving}
+          >
+            {privacySaving ? 'Saving…' : 'Save privacy settings'}
+          </Button>
+        </CardContent>
+      </Card>
 
       {(followRequestsQuery.data ?? []).length > 0 ? (
         <Card>

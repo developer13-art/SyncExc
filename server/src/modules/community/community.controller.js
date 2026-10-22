@@ -19,6 +19,8 @@ export function createCommunityController(services) {
     recommendationService,
     searchService,
     moderationService,
+    messagingService,
+    contentService,
   } = services;
 
   return {
@@ -156,6 +158,9 @@ export function createCommunityController(services) {
         attachments: req.body.attachments || [],
         visibility: req.body.visibility || 'public',
         allowComments: req.body.allowComments ?? true,
+        poll: req.body.poll,
+        event: req.body.event,
+        marketIdea: req.body.marketIdea,
       });
       return created(res, serializePost(post));
     },
@@ -457,6 +462,86 @@ export function createCommunityController(services) {
       return created(res, message);
     },
 
+    async startMessageConversation(req, res) {
+      const result = await messagingService.startConversation({
+        userId: req.auth.userId,
+        recipientId: req.body.recipientId,
+        content: req.body.content,
+      });
+      return created(res, result);
+    },
+
+    async listMessageConversations(req, res) {
+      const { rows, nextCursor } = await messagingService.listConversations({
+        userId: req.auth.userId,
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows, {
+        nextCursor,
+        limit: Number(req.query.limit) || 50,
+      });
+    },
+
+    async listMessageRequests(req, res) {
+      const requests = await messagingService.listRequests({
+        userId: req.auth.userId,
+        limit: Number(req.query.limit) || 50,
+      });
+      return success(res, requests);
+    },
+
+    async resolveMessageRequest(req, res) {
+      const conversation = await messagingService.resolveRequest({
+        userId: req.auth.userId,
+        conversationId: req.params.conversationId,
+        accepted: req.body.accepted,
+      });
+      return success(res, conversation);
+    },
+
+    async listDirectMessages(req, res) {
+      const { rows, nextCursor } = await messagingService.listMessages({
+        userId: req.auth.userId,
+        conversationId: req.params.conversationId,
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows, {
+        nextCursor,
+        limit: Number(req.query.limit) || 50,
+      });
+    },
+
+    async sendDirectMessage(req, res) {
+      const result = await messagingService.sendMessage({
+        userId: req.auth.userId,
+        conversationId: req.params.conversationId,
+        content: req.body.content,
+      });
+      return created(res, result);
+    },
+
+    async voteInPoll(req, res) {
+      const poll = await contentService.votePoll({
+        userId: req.auth.userId,
+        postId: req.params.postId,
+        optionIds: req.body.optionIds,
+        workspaceId: req.workspace?.id || null,
+      });
+      return success(res, poll);
+    },
+
+    async updateEventRsvp(req, res) {
+      const event = await contentService.updateEventRsvp({
+        userId: req.auth.userId,
+        postId: req.params.postId,
+        status: req.body.status,
+        workspaceId: req.workspace?.id || null,
+      });
+      return success(res, event);
+    },
+
     async listMessages(req, res) {
       const messages = await discussionService.listMessages({
         workspaceId: req.workspace.id,
@@ -620,6 +705,22 @@ export function createCommunityController(services) {
       return created(res, result);
     },
 
+    async listMyReports(req, res) {
+      const { rows, nextCursor } = await moderationService.listMyReports(req.auth.userId, {
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+    },
+
+    async listMyModerationCases(req, res) {
+      const { rows, nextCursor } = await moderationService.listMyCases(req.auth.userId, {
+        limit: Number(req.query.limit) || 50,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, rows, { nextCursor, limit: Number(req.query.limit) || 50 });
+    },
+
     async submitAppeal(req, res) {
       const result = await moderationService.submitAppeal({
         userId: req.auth.userId,
@@ -680,7 +781,17 @@ export function createCommunityController(services) {
       followingCount: result.followingCount,
       viewerIsFollowing: result.isFollowing,
       viewerHasPendingFollowRequest: result.viewerHasPendingFollowRequest,
-      ...(result.privacy ? { privacy: result.privacy } : {}),
+      viewerCanMessage: result.viewerCanMessage,
+      ...(result.privacy
+        ? {
+            privacy: {
+              allowFollows: result.privacy.allow_follows,
+              allowMentions: result.privacy.allow_mentions,
+              allowDirectMessages: result.privacy.allow_direct_messages,
+              allowRecommendations: result.privacy.allow_recommendations,
+            },
+          }
+        : {}),
     };
   }
 }

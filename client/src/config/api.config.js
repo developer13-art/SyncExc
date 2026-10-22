@@ -407,6 +407,7 @@ export const apiConfig = Object.freeze({
     },
     community: {
       profilesMe: '/community/profiles/me',
+      profilePrivacy: '/community/profiles/me/privacy',
       profile: (userId) => `/community/profiles/${userId}`,
       profilePosts: (userId) => `/community/users/${userId}/posts`,
       follows: (userId) => `/community/follows/${userId}`,
@@ -422,6 +423,8 @@ export const apiConfig = Object.freeze({
       groupPosts: (groupId) => `/community/groups/${groupId}/posts`,
       post: (postId) => `/community/posts/${postId}`,
       postComments: (postId) => `/community/posts/${postId}/comments`,
+      pollVotes: (postId) => `/community/posts/${postId}/poll/votes`,
+      eventRsvp: (postId) => `/community/posts/${postId}/event/rsvp`,
       comment: (commentId) => `/community/comments/${commentId}`,
       reactions: '/community/reactions',
       reaction: (targetType, targetId) =>
@@ -449,6 +452,12 @@ export const apiConfig = Object.freeze({
         `/community/discussions/channels/${channelId}/threads`,
       discussionThreadMessages: (threadId) =>
         `/community/discussions/threads/${threadId}/messages`,
+      messageConversations: '/community/messages/conversations',
+      messageRequests: '/community/messages/requests',
+      messageRequest: (conversationId) =>
+        `/community/messages/requests/${conversationId}/resolve`,
+      conversationMessages: (conversationId) =>
+        `/community/messages/conversations/${conversationId}/messages`,
       analysis: '/community/analysis',
       analysisDoc: (documentId) => `/community/analysis/${documentId}`,
       analysisVersions: (documentId) => `/community/analysis/${documentId}/versions`,
@@ -459,14 +468,16 @@ export const apiConfig = Object.freeze({
       search: '/community/search',
       notifications: '/notifications',
       notification: (notificationId) => `/notifications/${notificationId}`,
-      notificationPreferences: '/notification-preferences',
+      notificationPreferences: '/notifications/preferences',
       reports: '/community/reports',
+      myReports: '/community/reports/mine',
+      myModerationCases: '/community/moderation/my-cases',
       moderationCases: '/community/moderation/cases',
       moderationActions: (caseId) => `/community/moderation/cases/${caseId}/decide`,
       moderationAppeals: (caseId) => `/community/moderation/cases/${caseId}/appeal`,
       moderationAppealDecision: (appealId) =>
         `/community/moderation/appeals/${appealId}/decide`,
-      audit: '/community/audit',
+      audit: '/community/moderation/audit',
     },
     notifications: {
       list: '/notifications',

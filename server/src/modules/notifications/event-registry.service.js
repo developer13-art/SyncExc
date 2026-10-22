@@ -96,6 +96,10 @@ export function createEventRegistry({ queries, logger }) {
     { eventType: 'community.follow_created', category: 'community', defaultPriority: 'low', defaultChannels: ['in_app'] },
     { eventType: 'community.follow_request_created', category: 'community', defaultPriority: 'low', defaultChannels: ['in_app'] },
     { eventType: 'community.follow_request_accepted', category: 'community', defaultPriority: 'low', defaultChannels: ['in_app'] },
+    { eventType: 'community.message_request_created', category: 'community', defaultPriority: 'normal', defaultChannels: ['in_app'] },
+    { eventType: 'community.message_request_accepted', category: 'community', defaultPriority: 'low', defaultChannels: ['in_app'] },
+    { eventType: 'community.message_request_rejected', category: 'community', defaultPriority: 'low', defaultChannels: ['in_app'] },
+    { eventType: 'community.message_received', category: 'community', defaultPriority: 'normal', defaultChannels: ['in_app'] },
     { eventType: 'community.moderation_action', category: 'community', defaultPriority: 'high', defaultChannels: ['in_app', 'email'] },
   ];
 

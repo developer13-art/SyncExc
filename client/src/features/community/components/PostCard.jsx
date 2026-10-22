@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bookmark, Heart, MessageCircle, MoreHorizontal, Share2 } from 'lucide-react';
 
@@ -15,6 +16,10 @@ import {
 import { formatRelativeTime } from '../../../lib/formatters/date.formatter.js';
 import { cn } from '../../../lib/utils/cn.util.js';
 import { ROUTES } from '../../../config/routes.config.js';
+import { ReportDialog } from './ReportDialog.jsx';
+import { communityApi } from '../../../api/index.js';
+import { useToast } from '../../../hooks/useToast.js';
+import { getErrorMessage } from '../../../api/errors.js';
 
 export function PostCard({
   post,
@@ -25,6 +30,9 @@ export function PostCard({
   currentUserId,
   className,
 }) {
+  const [reportOpen, setReportOpen] = useState(false);
+  const toast = useToast();
+
   if (!post) {
     return null;
   }
@@ -43,6 +51,26 @@ export function PostCard({
 
   const isReacted = post.viewerReacted;
   const isBookmarked = post.viewerBookmarked;
+  const handleReport = (target) => {
+    if (onReport) onReport(target);
+    else setReportOpen(true);
+  };
+
+  const submitReport = async ({ reason, details }) => {
+    try {
+      await communityApi.submitReport({
+        resourceType: 'post',
+        resourceId: post.id,
+        reason,
+        details,
+      });
+      toast.success('Report submitted');
+      setReportOpen(false);
+    } catch (error) {
+      toast.error('Report failed', { description: getErrorMessage(error) });
+      throw error;
+    }
+  };
 
   return (
     <Card className={cn('overflow-hidden transition hover:border-border', className)}>
@@ -97,7 +125,7 @@ export function PostCard({
               ) : (
                 <>
                   <DropdownSeparator />
-                  <DropdownItem onSelect={() => onReport?.(post)}>Report</DropdownItem>
+                  <DropdownItem onSelect={() => handleReport(post)}>Report</DropdownItem>
                 </>
               )}
             </DropdownContent>
@@ -183,6 +211,13 @@ export function PostCard({
           </button>
         </div>
       </CardContent>
+      {!onReport ? (
+        <ReportDialog
+          open={reportOpen}
+          onOpenChange={setReportOpen}
+          onSubmit={submitReport}
+        />
+      ) : null}
     </Card>
   );
 }

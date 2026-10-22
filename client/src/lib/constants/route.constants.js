@@ -54,6 +54,7 @@ export const NAV_SECTIONS = Object.freeze([
     items: [
       { id: 'developer', label: 'Developer', path: '/app/developer', icon: 'developer' },
       { id: 'community', label: 'Community', path: '/app/community', icon: 'community' },
+      { id: 'community-messages', label: 'Community messages', path: '/app/community/messages', icon: 'community' },
       { id: 'referral', label: 'Referral', path: '/app/referral', icon: 'referral' },
     ],
   },

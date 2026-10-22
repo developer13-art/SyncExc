@@ -771,6 +771,9 @@ export function serializePost(row) {
     viewerBookmarked: Boolean(row.bookmark_id),
     bookmarkId: row.bookmark_id || null,
     visibility: row.visibility,
+    poll: row.poll || null,
+    event: row.event || null,
+    marketIdea: row.market_idea || null,
     createdAt: row.created_at,
   };
 }

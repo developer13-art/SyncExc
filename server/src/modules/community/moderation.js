@@ -34,6 +34,14 @@ export function createModerationService({ db, queries, events, logger }) {
         details,
       });
 
+      await queries.insertAuditEvent(tx, {
+        actorId: userId,
+        action: 'moderation.report_submitted',
+        resourceType,
+        resourceId,
+        after: { caseId: moderationCase.id, reason },
+      });
+
       await events.publish(
         tx,
         'community.report_submitted',
@@ -56,6 +64,10 @@ export function createModerationService({ db, queries, events, logger }) {
 
     const moderationCase = await queries.findModerationCaseById(caseId);
     if (!moderationCase) throw new NotFoundError('Case');
+    const ownerId = await findResourceOwner(
+      moderationCase.resource_type,
+      moderationCase.resource_id
+    );
     if (
       action === 'remove_content' &&
       !['post', 'comment'].includes(moderationCase.resource_type)
@@ -120,6 +132,7 @@ export function createModerationService({ db, queries, events, logger }) {
           action,
           resourceType: moderationCase.resource_type,
           resourceId: moderationCase.resource_id,
+          ...(ownerId ? { userId: ownerId } : {}),
         },
         {
           actorId,
@@ -145,10 +158,13 @@ export function createModerationService({ db, queries, events, logger }) {
     if (ownerId !== userId) {
       throw new AuthorizationError('Only the affected content owner can appeal');
     }
-    const pendingAppeal = await queries.findPendingModerationAppeal(caseId, userId);
-    if (pendingAppeal) throw new ConflictError('An appeal is already pending');
-
     return db.tx(async (tx) => {
+      await tx.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+        [caseId, userId]
+      );
+      const pendingAppeal = await queries.findPendingModerationAppeal(caseId, userId, tx);
+      if (pendingAppeal) throw new ConflictError('An appeal is already pending');
       const appeal = await queries.insertModerationAppeal(tx, {
         caseId,
         appellantId: userId,
@@ -225,6 +241,14 @@ export function createModerationService({ db, queries, events, logger }) {
     return queries.listAuditEvents({ limit, cursor, resourceType, resourceId });
   }
 
+  async function listMyCases(userId, { limit, cursor }) {
+    return queries.listModerationCasesForOwner(userId, { limit, cursor });
+  }
+
+  async function listMyReports(userId, { limit, cursor }) {
+    return queries.listModerationCasesByReporter(userId, { limit, cursor });
+  }
+
   return {
     submitReport,
     decide,
@@ -232,6 +256,8 @@ export function createModerationService({ db, queries, events, logger }) {
     decideAppeal,
     listCases,
     listAudit,
+    listMyCases,
+    listMyReports,
   };
 }
 

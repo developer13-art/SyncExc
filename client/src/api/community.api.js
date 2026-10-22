@@ -12,6 +12,9 @@ export const communityApi = {
       ...(bio !== undefined ? { biography: bio } : {}),
     }),
 
+  updateMyPrivacy: (payload) =>
+    api.patch(endpoints.community.profilePrivacy, payload),
+
   getProfile: (userId) => api.get(endpoints.community.profile(userId)),
 
   getProfilePosts: (userId, params) =>
@@ -76,6 +79,12 @@ export const communityApi = {
     api.patch(endpoints.community.comment(commentId), payload),
 
   deleteComment: (commentId) => api.delete(endpoints.community.comment(commentId)),
+
+  voteInPoll: (postId, optionIds) =>
+    api.post(endpoints.community.pollVotes(postId), { optionIds }),
+
+  updateEventRsvp: (postId, status) =>
+    api.post(endpoints.community.eventRsvp(postId), { status }),
 
   addReaction: (payload) =>
     api.post(endpoints.community.reactions, {
@@ -149,6 +158,23 @@ export const communityApi = {
   createDiscussionMessage: (threadId, payload) =>
     api.post(endpoints.community.discussionThreadMessages(threadId), payload),
 
+  listMessageConversations: (params) =>
+    api.getPaged(endpoints.community.messageConversations, { params }),
+
+  listMessageRequests: () => api.get(endpoints.community.messageRequests),
+
+  startMessageConversation: (payload) =>
+    api.post(endpoints.community.messageRequests, payload),
+
+  resolveMessageRequest: (conversationId, accepted) =>
+    api.post(endpoints.community.messageRequest(conversationId), { accepted }),
+
+  listDirectMessages: (conversationId, params) =>
+    api.getPaged(endpoints.community.conversationMessages(conversationId), { params }),
+
+  sendDirectMessage: (conversationId, payload) =>
+    api.post(endpoints.community.conversationMessages(conversationId), payload),
+
   listAnalysis: (params) => api.getPaged(endpoints.community.analysis, { params }),
 
   createAnalysis: (payload) => api.post(endpoints.community.analysis, payload),
@@ -185,6 +211,11 @@ export const communityApi = {
     api.patch(endpoints.community.notificationPreferences, payload),
 
   submitReport: (payload) => api.post(endpoints.community.reports, payload),
+
+  listMyReports: (params) => api.getPaged(endpoints.community.myReports, { params }),
+
+  listMyModerationCases: (params) =>
+    api.getPaged(endpoints.community.myModerationCases, { params }),
 
   listModerationCases: (params) =>
     api.getPaged(endpoints.community.moderationCases, { params }),

@@ -55,6 +55,8 @@ const CommunityAnalysisVersions = lazy(() => import('../features/community/Analy
 const CommunitySaved = lazy(() => import('../features/community/Saved.jsx'));
 const CommunityRecommendations = lazy(() => import('../features/community/Recommendations.jsx'));
 const CommunityDiscussions = lazy(() => import('../features/community/Discussions.jsx'));
+const CommunityMessages = lazy(() => import('../features/community/Messages.jsx'));
+const CommunityModerationCenter = lazy(() => import('../features/community/ModerationCenter.jsx'));
 const Referral = lazy(() => import('../features/referral/ReferralDashboard.jsx'));
 const Billing = lazy(() => import('../features/billing/Plans.jsx'));
 const Support = lazy(() => import('../features/support/SupportCenter.jsx'));
@@ -144,6 +146,9 @@ export function AppRoutes() {
         <Route path="community/saved" element={<Fallback><CommunitySaved /></Fallback>} />
         <Route path="community/recommendations" element={<Fallback><CommunityRecommendations /></Fallback>} />
         <Route path="community/discussions" element={<Fallback><CommunityDiscussions /></Fallback>} />
+        <Route path="community/messages/:conversationId" element={<Fallback><CommunityMessages /></Fallback>} />
+        <Route path="community/messages" element={<Fallback><CommunityMessages /></Fallback>} />
+        <Route path="community/moderation" element={<Fallback><CommunityModerationCenter /></Fallback>} />
         <Route path="community/*" element={<Fallback><CommunityFeed /></Fallback>} />
         <Route path="referral/*" element={<Fallback><Referral /></Fallback>} />
         <Route path="billing/*" element={<Fallback><Billing /></Fallback>} />

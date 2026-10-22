@@ -15,12 +15,18 @@ export function createPostService({ db, queries, events, realtime, logger }) {
     attachments,
     visibility,
     allowComments,
+    poll,
+    event,
+    marketIdea,
   }) {
     if (!content || content.trim().length === 0) {
       throw new ConflictError('Content is required', 'EMPTY_CONTENT');
     }
     if (content.length > 10000) {
       throw new ConflictError('Content exceeds maximum length', 'CONTENT_TOO_LONG');
+    }
+    if ([poll, event, marketIdea].filter(Boolean).length > 1) {
+      throw new ConflictError('A post can contain only one structured content type');
     }
 
     // Verify membership for group/workspace destinations
@@ -66,6 +72,26 @@ export function createPostService({ db, queries, events, realtime, logger }) {
         }
       }
 
+      if (poll) {
+        const record = await queries.insertPostPoll(tx, {
+          postId: post.id,
+          question: poll.question,
+          allowMultiple: Boolean(poll.allowMultiple),
+          closesAt: poll.closesAt,
+        });
+        for (const [position, label] of poll.options.entries()) {
+          await queries.insertPollOption(tx, {
+            postId: record.post_id,
+            position,
+            label,
+          });
+        }
+      } else if (event) {
+        await queries.insertPostEvent(tx, { postId: post.id, ...event });
+      } else if (marketIdea) {
+        await queries.insertMarketIdea(tx, { postId: post.id, ...marketIdea });
+      }
+
       await events.publish(
         tx,
         'community.post_published',
@@ -101,17 +127,24 @@ export function createPostService({ db, queries, events, realtime, logger }) {
     if (post.author_id !== userId) throw new AuthorizationError('Not the author');
 
     return db.tx(async (tx) => {
+      const hasContentUpdate = content !== undefined;
+      const nextVersion = hasContentUpdate
+        ? (post.current_version || 1) + 1
+        : post.current_version || 1;
       const updated = await queries.updatePost(postId, {
         content,
         topics,
         allowComments,
+        currentVersion: nextVersion,
       }, tx);
 
-      await queries.insertPostVersion(tx, {
-        postId,
-        version: post.current_version + 1,
-        content,
-      });
+      if (hasContentUpdate) {
+        await queries.insertPostVersion(tx, {
+          postId,
+          version: nextVersion,
+          content,
+        });
+      }
 
       return updated;
     });
@@ -191,12 +224,18 @@ export function createPostService({ db, queries, events, realtime, logger }) {
     const reactionsCount = await queries.countReactions('post', postId);
     const viewerReaction = await queries.hasReaction(viewerId, 'post', postId);
     const bookmark = await queries.findPostBookmark(viewerId, postId);
+    const poll = await queries.getPollForPost(postId, viewerId);
+    const event = await queries.getEventForPost(postId, viewerId);
+    const marketIdea = await queries.getMarketIdeaForPost(postId);
 
     return {
       post: {
         ...post,
         viewer_reaction: viewerReaction ? post.viewer_reaction || 'like' : null,
         bookmark_id: bookmark?.id || null,
+        poll,
+        event,
+        market_idea: marketIdea,
       },
       attachments,
       reactionsCount,

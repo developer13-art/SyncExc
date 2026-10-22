@@ -15,6 +15,7 @@ export function ProfileHeader({
   hasPendingFollowRequest,
   onFollow,
   onUnfollow,
+  canMessage = false,
   className,
 }) {
   if (!profile) {
@@ -107,6 +108,13 @@ export function ProfileHeader({
             ) : (
               <Button onClick={onFollow}>Follow</Button>
             )}
+            {!isOwnProfile && canMessage ? (
+              <Button variant="outline" asChild>
+                <Link to={`${ROUTES.app.community.messages}?recipientId=${profile.userId}`}>
+                  Message
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
       </CardContent>

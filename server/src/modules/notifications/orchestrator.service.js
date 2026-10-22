@@ -125,7 +125,7 @@ export function createOrchestratorService({
     // Actor (the person who caused the event) if it's a self-notification
     if (
       event.actorId &&
-      event.eventType !== 'community.follow_request_accepted' &&
+      !event.eventType.startsWith('community.') &&
       !recipients.some((r) => r.userId === event.actorId)
     ) {
       recipients.push({ userId: event.actorId });

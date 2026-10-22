@@ -247,6 +247,14 @@ export const queryKeys = {
       threadId,
       params,
     ],
+    messageConversations: (params) => ['community', 'message-conversations', params],
+    messageRequests: ['community', 'message-requests'],
+    directMessages: (conversationId, params) => [
+      'community',
+      'direct-messages',
+      conversationId,
+      params,
+    ],
     analysis: (params) => ['community', 'analysis', params],
     analysisDoc: (documentId) => ['community', 'analysis-doc', documentId],
     recommendationsPeople: (params) => ['community', 'rec-people', params],
@@ -254,6 +262,8 @@ export const queryKeys = {
     search: (params) => ['community', 'search', params],
     notifications: (params) => ['community', 'notifications', params],
     moderationCase: (caseId) => ['community', 'moderation-case', caseId],
+    myReports: (params) => ['community', 'my-reports', params],
+    myModerationCases: (params) => ['community', 'my-moderation-cases', params],
     audit: (params) => ['community', 'audit', params],
   },
 

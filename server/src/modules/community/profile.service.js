@@ -106,7 +106,9 @@ export function createProfileService({ db, queries, events, logger }) {
 
     return {
       profile: visibleProfile,
-      privacy,
+      privacy: isOwner ? privacy : null,
+      viewerCanMessage: Boolean(privacy?.allow_direct_messages),
+      isOwner,
       followersCount,
       followingCount,
       isFollowing,
