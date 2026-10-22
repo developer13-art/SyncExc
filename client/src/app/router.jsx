@@ -21,9 +21,17 @@ export function WorkspaceRouteGuard() {
   }
 
   const traderRoute = location.pathname.startsWith('/app/trader');
+  const traderTerminalRoute = location.pathname === ROUTES.app.terminal.overview ||
+    location.pathname.startsWith(`${ROUTES.app.terminal.overview}/`);
   const sharedSettingsRoute = location.pathname.startsWith('/app/settings');
   const sharedMarketplaceRoute = location.pathname.startsWith('/app/marketplace');
-  if (activeWorkspace?.type === 'trader' && !traderRoute && !sharedSettingsRoute && !sharedMarketplaceRoute) {
+  if (
+    activeWorkspace?.type === 'trader' &&
+    !traderRoute &&
+    !traderTerminalRoute &&
+    !sharedSettingsRoute &&
+    !sharedMarketplaceRoute
+  ) {
     return <Navigate to={ROUTES.app.trader.overview} replace />;
   }
   if (activeWorkspace?.type !== 'trader' && traderRoute) {
