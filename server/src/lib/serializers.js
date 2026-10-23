@@ -589,6 +589,9 @@ export function serializePublishedSignal(row) {
     disclosures: row.disclosures || row.metadata?.disclosures || null,
     sourceEvidence: row.metadata?.sourceEvidence || null,
     copyCount: Number(row.copy_count || 0),
+    ...(Object.hasOwn(row, 'trader_executions')
+      ? { traderExecutions: row.trader_executions || [] }
+      : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

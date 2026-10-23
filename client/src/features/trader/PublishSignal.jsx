@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Send } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -12,6 +12,7 @@ import { Label } from '../../components/ui/Label.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ROUTES } from '../../config/routes.config.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
+import { useUserPreferences } from '../settings/useUserPreferences.js';
 
 const profileKey = (workspaceId) => ['marketplace', 'my-provider', workspaceId];
 const signalsKey = (workspaceId) => ['marketplace', 'my-signals', workspaceId];
@@ -20,7 +21,13 @@ export default function PublishSignal() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const {
+    query: preferencesQuery,
+    save: savePreferences,
+    isSaving: isSavingExecutionPreference,
+  } = useUserPreferences();
   const [validationError, setValidationError] = useState('');
+  const [executionPercentage, setExecutionPercentage] = useState('');
   const [form, setForm] = useState({
     instrument: '',
     marketType: 'spot',
@@ -36,6 +43,10 @@ export default function PublishSignal() {
     enabled: activeWorkspace?.type === 'trader',
   });
   const provider = profileQuery.data;
+  useEffect(() => {
+    const savedPercentage = preferencesQuery.data?.trading?.signalExecutionPercentage;
+    setExecutionPercentage(savedPercentage == null ? '' : String(savedPercentage));
+  }, [preferencesQuery.data?.trading?.signalExecutionPercentage]);
 
   const publishMutation = useMutation({
     mutationFn: (payload) => marketplaceApi.publishSignal(payload),
@@ -102,6 +113,17 @@ export default function PublishSignal() {
       targets: [form.takeProfit.trim()],
     });
   };
+  const saveExecutionPreference = async (event) => {
+    event.preventDefault();
+    const percentage = executionPercentage === '' ? null : Number(executionPercentage);
+    if (
+      percentage !== null &&
+      (!Number.isFinite(percentage) || percentage < 0.01 || percentage > 100)
+    ) {
+      return;
+    }
+    await savePreferences({ trading: { signalExecutionPercentage: percentage } });
+  };
 
   if (profileQuery.isLoading) return <LoadingState label="Checking Trader profile" />;
   if (profileQuery.isError) {
@@ -151,6 +173,56 @@ export default function PublishSignal() {
               {getErrorMessage(autoPublishMutation.error)}
             </p>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Trader account execution</CardTitle>
+          <CardDescription>
+            Set the share of available balance used for each new signal on your active connected accounts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="flex flex-wrap items-end gap-3" onSubmit={saveExecutionPreference}>
+            <Field label="Balance allocation per signal (%)" id="signal-execution-percentage">
+              <Input
+                id="signal-execution-percentage"
+                type="number"
+                min="0.01"
+                max="100"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="Disabled"
+                value={executionPercentage}
+                disabled={preferencesQuery.isLoading || isSavingExecutionPreference}
+                onChange={(event) => setExecutionPercentage(event.target.value)}
+              />
+            </Field>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={
+                preferencesQuery.isLoading ||
+                preferencesQuery.isError ||
+                isSavingExecutionPreference ||
+                (executionPercentage !== '' &&
+                  (!Number.isFinite(Number(executionPercentage)) ||
+                    Number(executionPercentage) < 0.01 ||
+                    Number(executionPercentage) > 100))
+              }
+            >
+              {isSavingExecutionPreference ? 'Saving…' : 'Save execution size'}
+            </Button>
+          </form>
+          {preferencesQuery.isError ? (
+            <p className="mt-2 text-sm text-destructive" role="alert">
+              Could not load your execution setting: {getErrorMessage(preferencesQuery.error)}
+            </p>
+          ) : null}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Leave blank to disable automatic trader-side orders. Orders still require active matching accounts, exchange support for attached stop-loss and take-profit at this order type, and passing risk/permission checks. Bybit Spot protection is currently supported for limit orders; unsupported combinations are blocked and shown in Signal History.
+          </p>
         </CardContent>
       </Card>
 

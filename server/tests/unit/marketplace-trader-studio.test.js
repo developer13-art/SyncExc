@@ -623,6 +623,49 @@ describe('Trader Studio API', () => {
     assert.equal(signal.copyCount, 3);
   });
 
+  it('serializes trader-only execution diagnostics without adding them to public signals', () => {
+    const signal = serializePublishedSignal({
+      id: 'signal-1',
+      trader_executions: [{
+        status: 'skipped_not_configured',
+        errorMessage: 'Set a trader signal execution percentage in trading preferences.',
+      }],
+    });
+    const publicSignal = serializePublishedSignal({ id: 'public-signal-1' });
+
+    assert.deepEqual(signal.traderExecutions, [{
+      status: 'skipped_not_configured',
+      errorMessage: 'Set a trader signal execution percentage in trading preferences.',
+    }]);
+    assert.equal(Object.hasOwn(publicSignal, 'traderExecutions'), false);
+  });
+
+  it('counts only successful subscriber copies and loads private execution diagnostics on request', async () => {
+    let executedOnlyQuery;
+    let privateQuery;
+    const queries = createMarketplaceQueries({
+      db: {
+        async query(query) {
+          if (query.includes('trader_executions')) privateQuery = query;
+          else executedOnlyQuery = query;
+          return { rows: [] };
+        },
+      },
+    });
+
+    await queries.listPublishedSignals({ providerId: 'provider-1', publicOnly: true });
+    await queries.listPublishedSignals({
+      providerId: 'provider-1',
+      includeTraderExecution: true,
+    });
+
+    assert.match(executedOnlyQuery, /processing\.outcome = 'executed'/);
+    assert.match(executedOnlyQuery, /processing\.subscriber_user_id <> provider\.user_id/);
+    assert.doesNotMatch(executedOnlyQuery, /trader_executions/);
+    assert.match(privateQuery, /marketplace_trader_signal_executions/);
+    assert.match(privateQuery, /AS trader_executions/);
+  });
+
   it('creates new Trader profiles as approved', async () => {
     let insertQuery;
     const client = {
@@ -688,6 +731,7 @@ describe('Trader Studio API', () => {
     assert.deepEqual(signalLookup, {
       providerId: 'provider-1',
       status: 'published',
+      includeTraderExecution: true,
       limit: 25,
       cursor: null,
     });

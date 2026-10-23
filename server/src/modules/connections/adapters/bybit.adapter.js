@@ -55,7 +55,11 @@ export function createBybitAdapter({ config, logger }) {
       hasMargin: false,
       hasSubaccounts: true,
       hasWebsocket: true,
-      hasAttachedBracketProtectionMarkets: ['futures'],
+      hasAttachedBracketProtectionMarkets: ['spot', 'futures'],
+      hasAttachedBracketProtectionOrderTypes: {
+        spot: ['limit'],
+        futures: ['market', 'limit'],
+      },
       supportedOrderTypes: [
         'market',
         'limit',
@@ -195,10 +199,19 @@ export function createBybitAdapter({ config, logger }) {
       };
       if (order.price) body.price = order.price;
       if (order.stopLoss || order.takeProfit) {
-        if (order.marketType !== 'futures' || !order.stopLoss || !order.takeProfit) {
-          throw new Error('Bybit attached bracket protection requires futures with both stop-loss and take-profit prices');
+        if (
+          !order.stopLoss ||
+          !order.takeProfit ||
+          !this.capabilities.hasAttachedBracketProtectionOrderTypes[order.marketType]?.includes(order.type)
+        ) {
+          throw new Error('Bybit attached stop-loss and take-profit protection is not supported for this market and order type');
         }
-        body.tpslMode = 'Full';
+        if (order.marketType === 'spot') {
+          body.tpOrderType = 'Market';
+          body.slOrderType = 'Market';
+        } else {
+          body.tpslMode = 'Full';
+        }
         body.stopLoss = order.stopLoss;
         body.takeProfit = order.takeProfit;
       }

@@ -330,6 +330,71 @@ test('submits futures entry orders with attached stop-loss and take-profit prote
   }
 });
 
+test('submits supported Bybit Spot limit orders with native market TP/SL protection', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ retCode: 0, result: { orderId: 'spot-protected-order' } }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    assert.deepEqual(
+      adapter.capabilities.hasAttachedBracketProtectionOrderTypes.spot,
+      ['limit'],
+    );
+    await adapter.placeOrder({
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'testnet',
+      order: {
+        instrument: 'BTCUSDT',
+        marketType: 'spot',
+        side: 'buy',
+        type: 'limit',
+        quantity: '0.01',
+        price: '28000',
+        stopLoss: '27000',
+        takeProfit: '35000',
+      },
+    });
+
+    assert.equal(requestBody.category, 'spot');
+    assert.equal(requestBody.orderType, 'Limit');
+    assert.equal(requestBody.tpOrderType, 'Market');
+    assert.equal(requestBody.slOrderType, 'Market');
+    assert.equal(requestBody.stopLoss, '27000');
+    assert.equal(requestBody.takeProfit, '35000');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('rejects unsupported Bybit Spot market orders with attached TP/SL', async () => {
+  const adapter = createBybitAdapter({ config: {}, logger: {} });
+  await assert.rejects(
+    adapter.placeOrder({
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'testnet',
+      order: {
+        instrument: 'BTCUSDT',
+        marketType: 'spot',
+        side: 'buy',
+        type: 'market',
+        quantity: '0.01',
+        stopLoss: '27000',
+        takeProfit: '35000',
+      },
+    }),
+    /not supported for this market and order type/,
+  );
+});
+
 test('submits Bybit stop-market orders with a validated trigger direction', async () => {
   const originalFetch = globalThis.fetch;
   const requestBodies = [];

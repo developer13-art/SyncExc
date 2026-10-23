@@ -231,6 +231,7 @@ export function createMarketplaceController(services) {
       const { rows, nextCursor } = await publicationService.listSignals({
         providerId: provider.id,
         status: req.query.status,
+        includeTraderExecution: true,
         limit: Number(req.query.limit) || 50,
         cursor: req.query.cursor || null,
       });

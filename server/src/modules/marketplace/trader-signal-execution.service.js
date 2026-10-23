@@ -58,17 +58,37 @@ export function createTraderSignalExecutionService({
     if (!signal || !['published', 'updated'].includes(signal.status)) return;
     if (signal.source_order_id) return;
 
-    const percentageValue = await queries.getTraderSignalExecutionPercentage(signal.user_id);
-    const percentage = Number(percentageValue);
-    if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
-      logger.info({ signalId: signal.id }, 'Trader signal auto-execution is not configured');
-      return;
-    }
-
     const accounts = await queries.listTraderSignalExecutionAccounts(
       signal.user_id,
       signal.workspace_id,
     );
+    if (accounts.length === 0) {
+      logger.info(
+        { signalId: signal.id, workspaceId: signal.workspace_id },
+        'Trader signal execution skipped: no active exchange accounts are connected',
+      );
+      return;
+    }
+
+    const percentageValue = await queries.getTraderSignalExecutionPercentage(signal.user_id);
+    const percentage = Number(percentageValue);
+    if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
+      await Promise.all(accounts.map((account) => recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_not_configured',
+        errorMessage: 'Set a trader signal execution percentage in trading preferences.',
+      })));
+      logger.info(
+        { signalId: signal.id },
+        'Trader signal execution skipped: balance percentage is not configured',
+      );
+      return;
+    }
+
     const marketType = signal.market_type === 'spot' ? 'spot' : 'futures';
     for (const account of accounts) {
       try {
@@ -140,8 +160,15 @@ export function createTraderSignalExecutionService({
     }
     const stopLoss = signal.stop_loss == null ? null : String(signal.stop_loss);
     const takeProfit = resolveTakeProfit(signal.targets);
+    const orderType = signal.order_type === 'limit' ? 'limit' : 'market';
+    const bracketMarkets = adapter.capabilities?.hasAttachedBracketProtectionMarkets || [];
+    const bracketOrderTypes = adapter.capabilities?.hasAttachedBracketProtectionOrderTypes?.[marketType];
+    const supportsBracketOrder = bracketMarkets.includes(marketType) &&
+      (Array.isArray(bracketOrderTypes)
+        ? bracketOrderTypes.includes(orderType)
+        : ['market', 'limit'].includes(orderType));
     if (
-      !adapter.capabilities?.hasAttachedBracketProtectionMarkets?.includes(marketType) ||
+      !supportsBracketOrder ||
       !stopLoss ||
       !takeProfit
     ) {
@@ -152,6 +179,7 @@ export function createTraderSignalExecutionService({
         connectionId: account.connection_id,
         accountId: account.account_id,
         status: 'skipped_protection_unsupported',
+        errorMessage: `Automatic ${orderType} trader execution requires attached stop-loss and take-profit support for ${marketType} on this exchange.`,
       });
       logger.warn(
         {
@@ -225,7 +253,6 @@ export function createTraderSignalExecutionService({
       return;
     }
 
-    const orderType = signal.order_type === 'limit' ? 'limit' : 'market';
     const result = await terminal.submitOrder({
       userId: signal.user_id,
       workspaceId: signal.workspace_id,

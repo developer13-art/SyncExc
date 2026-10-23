@@ -19,6 +19,7 @@ export default function SignalHistory() {
   const signalsQuery = useQuery({
     queryKey: ['marketplace', 'my-signals', activeWorkspaceId],
     queryFn: () => marketplaceApi.listMySignals({ limit: 100 }),
+    refetchInterval: 5000,
   });
   const signals = signalsQuery.data?.items ?? [];
 
@@ -55,7 +56,7 @@ export default function SignalHistory() {
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-left text-sm">
+              <table className="w-full min-w-[900px] text-left text-sm">
                 <thead className="border-b border-border text-muted-foreground">
                   <tr>
                     <th className="px-3 py-3 font-medium">Date</th>
@@ -63,6 +64,7 @@ export default function SignalHistory() {
                     <th className="px-3 py-3 font-medium">Market</th>
                     <th className="px-3 py-3 font-medium">Direction</th>
                     <th className="px-3 py-3 font-medium">Entry</th>
+                    <th className="px-3 py-3 font-medium">Trader account execution</th>
                     <th className="px-3 py-3 font-medium">Status</th>
                   </tr>
                 </thead>
@@ -79,6 +81,44 @@ export default function SignalHistory() {
                         {signal.entry ?? (signal.entryRange
                           ? `${signal.entryRange.min} – ${signal.entryRange.max}`
                           : '—')}
+                      </td>
+                      <td className="px-3 py-4">
+                        {signal.traderExecutions?.length ? (
+                          <ul className="space-y-1">
+                            {signal.traderExecutions.map((execution, index) => (
+                              <li key={`${execution.status}-${index}`}>
+                                {execution.exchangeCode ? (
+                                  <span className="mr-2 text-xs capitalize text-muted-foreground">
+                                    {execution.exchangeCode}
+                                    {execution.accountType ? ` ${execution.accountType}` : ''}:
+                                  </span>
+                                ) : null}
+                                <Badge
+                                  variant={['submitted', 'filled', 'partially_filled'].includes(execution.status)
+                                    ? 'success'
+                                    : execution.status === 'awaiting_confirmation'
+                                      ? 'warning'
+                                      : 'muted'}
+                                >
+                                  {execution.status?.replaceAll('_', ' ') ?? 'unknown'}
+                                </Badge>
+                                {execution.errorMessage ? (
+                                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                                    {execution.errorMessage}
+                                  </p>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            No attempt recorded; check{' '}
+                            <Link className="text-primary underline" to={ROUTES.app.settings.trading}>
+                              execution settings
+                            </Link>{' '}
+                            and active accounts.
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-4">
                         <Badge variant={['published', 'updated'].includes(signal.status) ? 'success' : 'muted'}>

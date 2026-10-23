@@ -138,7 +138,7 @@ export default function TradingPreferences() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                When set, new signals are considered for every active matching account in this workspace. Automatic execution requires an exchange that supports an attached stop-loss and take-profit and a signal with both values. Leave blank to disable it. Risk checks can still block an order or require approval.
+                When set, new signals are sized using this share of available balance on every active matching account in this workspace. The exchange must support attached stop-loss and take-profit for that market and order type. Bybit Spot currently supports protected limit entries; unsupported combinations are blocked. Leave blank to disable automatic execution. Risk and permission checks can still block an order or require approval.
               </p>
             </div>
             <div className="flex flex-col gap-2">

@@ -6,6 +6,11 @@ function createDependencies({
   signal,
   percentage = '10',
   accounts = [],
+  capabilities = {
+    hasSpot: true,
+    hasFutures: true,
+    hasAttachedBracketProtectionMarkets: ['futures'],
+  },
   marketData = { async getSpotPrice() { return 100; } },
 }) {
   const submitted = [];
@@ -37,11 +42,7 @@ function createDependencies({
     connections: {
       async getAdapter() {
         return {
-          capabilities: {
-            hasSpot: true,
-            hasFutures: true,
-            hasAttachedBracketProtectionMarkets: ['futures'],
-          },
+          capabilities,
           async fetchAccountState({ accountType }) {
             assert.equal(accountType, 'unified');
             return {
@@ -178,6 +179,51 @@ test('sizes market signals from a live market price without sending an entry lim
   assert.equal(submitted[0].takeProfit, '110');
 });
 
+test('executes protected Bybit Spot limit signals with the configured balance allocation', async () => {
+  const { service, submitted } = createDependencies({
+    signal: {
+      id: 'spot-limit-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'limit',
+      entry: '100',
+      stop_loss: '90',
+      targets: ['110'],
+      status: 'published',
+      source_order_id: null,
+    },
+    capabilities: {
+      hasSpot: true,
+      hasFutures: true,
+      hasAttachedBracketProtectionMarkets: ['spot', 'futures'],
+      hasAttachedBracketProtectionOrderTypes: {
+        spot: ['limit'],
+        futures: ['market', 'limit'],
+      },
+    },
+    accounts: [{
+      connection_id: 'connection-1',
+      account_id: 'account-1',
+      account_type: 'unified',
+      exchange_code: 'bybit',
+      environment: 'testnet',
+    }],
+  });
+
+  await service.executePublishedSignal({ publishedSignalId: 'spot-limit-signal' });
+
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].marketType, 'spot');
+  assert.equal(submitted[0].type, 'limit');
+  assert.equal(submitted[0].price, '100');
+  assert.equal(submitted[0].quantity, '1');
+  assert.equal(submitted[0].stopLoss, '90');
+  assert.equal(submitted[0].takeProfit, '110');
+});
+
 test('does not execute a terminal fill that was already traded before auto-publication', async () => {
   const { service, submitted } = createDependencies({
     signal: {
@@ -193,14 +239,64 @@ test('does not execute a terminal fill that was already traded before auto-publi
 });
 
 test('does not execute when the trader has not configured a balance percentage', async () => {
+  const accounts = [{
+    connection_id: 'connection-1',
+    account_id: 'account-1',
+    account_type: 'unified',
+    exchange_code: 'bybit',
+    environment: 'testnet',
+  }];
   const { service, submitted } = createDependencies({
-    signal: { id: 'signal-3', status: 'published', source_order_id: null },
+    signal: {
+      id: 'signal-3',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      status: 'published',
+      source_order_id: null,
+    },
     percentage: null,
+    accounts,
   });
 
   await service.executePublishedSignal({ publishedSignalId: 'signal-3' });
 
   assert.equal(submitted.length, 0);
+});
+
+test('records why spot trader-side execution was skipped when bracket protection is unsupported', async () => {
+  const accounts = [{
+    connection_id: 'connection-1',
+    account_id: 'account-1',
+    account_type: 'unified',
+    exchange_code: 'bybit',
+    environment: 'testnet',
+  }];
+  const { service, submitted, records } = createDependencies({
+    signal: {
+      id: 'spot-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'market',
+      entry: null,
+      stop_loss: '90',
+      targets: ['110'],
+      status: 'published',
+      source_order_id: null,
+    },
+    accounts,
+    marketData: {
+      async getSpotPrice() { return 100; },
+    },
+  });
+
+  await service.executePublishedSignal({ publishedSignalId: 'spot-signal' });
+
+  assert.equal(submitted.length, 0);
+  assert.equal(records[0].status, 'skipped_protection_unsupported');
+  assert.match(records[0].errorMessage, /attached stop-loss and take-profit support for spot/);
 });
 
 test('records realized signal PnL only after an exact exchange order link', async () => {

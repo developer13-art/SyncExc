@@ -122,14 +122,20 @@ export function createOrderSubmissionService({
 
     const adapter = await connections.getAdapter(connection.exchange_code);
     if (!adapter) throw new NotFoundError('Exchange adapter');
+    const bracketMarkets = adapter.capabilities?.hasAttachedBracketProtectionMarkets || [];
+    const bracketOrderTypes = adapter.capabilities?.hasAttachedBracketProtectionOrderTypes?.[marketType];
+    const supportsBracketOrder = bracketMarkets.includes(marketType) &&
+      (Array.isArray(bracketOrderTypes)
+        ? bracketOrderTypes.includes(type)
+        : ['market', 'limit'].includes(type));
     if (
       (stopLoss || takeProfit) &&
       (!stopLoss ||
         !takeProfit ||
-        !adapter.capabilities?.hasAttachedBracketProtectionMarkets?.includes(marketType))
+        !supportsBracketOrder)
     ) {
       throw new ConflictError(
-        'The selected exchange does not support this attached stop-loss and take-profit combination',
+        'The selected exchange does not support attached stop-loss and take-profit protection for this market and order type',
         'ATTACHED_PROTECTION_UNSUPPORTED',
       );
     }

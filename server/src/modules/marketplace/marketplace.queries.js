@@ -590,7 +590,14 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0];
     },
 
-    async listPublishedSignals({ providerId, status, publicOnly = false, limit = 50, cursor = null } = {}) {
+    async listPublishedSignals({
+      providerId,
+      status,
+      publicOnly = false,
+      includeTraderExecution = false,
+      limit = 50,
+      cursor = null,
+    } = {}) {
       const params = [limit + 1];
       const conditions = [];
       if (providerId) {
@@ -616,7 +623,26 @@ export function createMarketplaceQueries({ db }) {
                latest_version.snapshot->'disclosures' AS disclosures,
                (SELECT count(DISTINCT processing.subscriber_user_id)::int
                 FROM copy_signal_processing_records processing
-                WHERE processing.published_signal_id = signal.id) AS copy_count
+                JOIN marketplace_provider_profiles provider ON provider.id = signal.provider_id
+                WHERE processing.published_signal_id = signal.id
+                  AND processing.outcome = 'executed'
+                  AND processing.subscriber_user_id <> provider.user_id) AS copy_count
+               ${includeTraderExecution ? `,
+               (SELECT COALESCE(
+                 json_agg(
+                   json_build_object(
+                     'status', execution.status,
+                     'errorMessage', execution.error_message,
+                     'exchangeCode', connection.exchange_code,
+                     'accountType', account.account_type
+                   ) ORDER BY execution.created_at
+                 ),
+                 '[]'::json
+               )
+                FROM marketplace_trader_signal_executions execution
+                JOIN exchange_connections connection ON connection.id = execution.connection_id
+                JOIN exchange_accounts account ON account.id = execution.account_id
+                WHERE execution.signal_id = signal.id) AS trader_executions` : ''}
         FROM marketplace_published_signals signal
         LEFT JOIN LATERAL (
           SELECT snapshot
