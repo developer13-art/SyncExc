@@ -786,7 +786,7 @@ describe('Trader Studio API', () => {
     await queries.listProviders();
 
     assert.match(statements[0], /AS subscriber_count/);
-    assert.match(statements[0], /AS signal_count/);
+    assert.match(statements[0], /AS signal_count\s+FROM/);
     assert.doesNotMatch(statements[0], /marketplace_signal_closed_trades/);
     assert.match(statements[0], /subscription\.status IN \('active', 'trialing'\)/);
     assert.match(statements[1], /schema_migrations/);

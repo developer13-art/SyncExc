@@ -337,7 +337,7 @@ export function createMarketplaceQueries({ db }) {
                (SELECT count(*)::int
                 FROM marketplace_published_signals signal
                 WHERE signal.provider_id = provider.id
-                  AND signal.status IN ('published', 'updated')) AS signal_count,
+                  AND signal.status IN ('published', 'updated')) AS signal_count
         FROM marketplace_provider_profiles provider
         WHERE ${conditions.join(' AND ')}
         ORDER BY provider.created_at DESC
@@ -353,7 +353,7 @@ export function createMarketplaceQueries({ db }) {
           `SELECT EXISTS (
              SELECT 1 FROM schema_migrations WHERE name = $1
            ) AS applied`,
-          ['040_marketplace_trader_signal_execution.sql'],
+          ['042_marketplace_signal_pnl_asset.sql'],
         );
         if (migrationResult.rows[0]?.applied) {
           const pnlResult = await db.query(
