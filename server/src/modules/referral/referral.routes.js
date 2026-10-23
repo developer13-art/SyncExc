@@ -19,7 +19,7 @@ const CreateLinkSchema = Joi.object({
 });
 
 const ClickSchema = Joi.object({
-  code: Joi.string().min(6).max(32).required(),
+  code: Joi.string().trim().alphanum().min(6).max(32).uppercase().required(),
   referrer: Joi.string().uri().optional(),
 });
 

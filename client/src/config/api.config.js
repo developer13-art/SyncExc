@@ -364,6 +364,7 @@ export const apiConfig = Object.freeze({
       usage: '/simulation/usage',
     },
     referral: {
+      trackClick: '/referral/track/click',
       profile: '/referral/affiliate/profile',
       enroll: '/referral/affiliate/enrollment',
       referralLinks: '/referral/affiliate/referral-links',

@@ -58,6 +58,7 @@ export function createIdentityController({ service }) {
           displayName: req.body.displayName,
           preferredLanguage: req.body.preferredLanguage,
           timezone: req.body.timezone,
+          referralCode: req.body.referralCode,
           termsVersion: req.body.termsVersion || 'v1',
           privacyVersion: req.body.privacyVersion || 'v1',
           ip,

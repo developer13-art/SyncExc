@@ -52,7 +52,7 @@ function normalizeUsername(username) {
   return String(username).trim().toLowerCase();
 }
 
-export function createIdentityService({ db, queries, rateLimiter, mailer, push, events, audit, profileImages, logger }) {
+export function createIdentityService({ db, queries, rateLimiter, mailer, push, events, audit, profileImages, logger, referralAttribution }) {
   /* ===========================================================================
    * HELPERS
    * ======================================================================== */
@@ -98,7 +98,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
    * REGISTRATION
    * ======================================================================== */
 
-  async function register({ email, password, username, displayName, preferredLanguage, timezone, termsVersion, privacyVersion, ip, userAgent }, context = {}) {
+  async function register({ email, password, username, displayName, preferredLanguage, timezone, termsVersion, privacyVersion, referralCode, ip, userAgent }, context = {}) {
     const emailNormalized = normalizeEmail(email);
     const usernameNormalized = normalizeUsername(username);
 
@@ -166,6 +166,19 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       deviceMetadata: { userAgent },
       metadata: { action: 'account_created' },
     });
+
+    if (referralCode && referralAttribution) {
+      try {
+        await referralAttribution({
+          userId: result.user.id,
+          referralCode: String(referralCode).trim().toUpperCase(),
+          ipAddress: ip,
+          userAgent,
+        });
+      } catch (err) {
+        logger?.error?.({ err, userId: result.user.id }, 'Failed to attribute referral registration');
+      }
+    }
 
     return result.user;
   }

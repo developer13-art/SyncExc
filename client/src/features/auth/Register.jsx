@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Check } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
@@ -13,11 +13,44 @@ import { isValidEmail, normalizeEmail } from '../../lib/validators/email.validat
 import { validatePassword } from '../../lib/validators/password.validator.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { referralApi } from '../../api/referral.api.js';
+import { storage } from '../../lib/utils/storage.util.js';
+
+const REFERRAL_CODE_STORAGE_KEY = 'syncexc:referral-code';
+
+function normalizeReferralCode(value) {
+  const code = String(value ?? '').trim().toUpperCase();
+  return /^[A-Z0-9]{6,32}$/.test(code) ? code : null;
+}
 
 export default function Register() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const toast = useToast();
   const { register } = useAuthContext();
+  const trackedCode = useRef(null);
+  const queryReferralCode = normalizeReferralCode(searchParams.get('ref'));
+  const [referralCode, setReferralCode] = useState(
+    () => queryReferralCode ?? normalizeReferralCode(storage.get(REFERRAL_CODE_STORAGE_KEY, null, { parse: false })),
+  );
+
+  useEffect(() => {
+    if (!queryReferralCode) return;
+
+    storage.set(REFERRAL_CODE_STORAGE_KEY, queryReferralCode, { stringify: false });
+    setReferralCode(queryReferralCode);
+    if (trackedCode.current === queryReferralCode) return;
+    trackedCode.current = queryReferralCode;
+
+    referralApi.trackClick({
+      code: queryReferralCode,
+      referrer: document.referrer || undefined,
+    }).catch((error) => {
+      toast.error('Referral link tracking failed', {
+        description: getErrorMessage(error),
+      });
+    });
+  }, [queryReferralCode, toast]);
 
   const [form, setForm] = useState({
     displayName: '',
@@ -108,7 +141,9 @@ export default function Register() {
         password: form.password,
         acceptedTerms: true,
         acceptedPrivacy: true,
+        ...(referralCode ? { referralCode } : {}),
       });
+      storage.remove(REFERRAL_CODE_STORAGE_KEY);
 
       toast.success('Account created', {
         description: 'Please check your email to verify your address.',

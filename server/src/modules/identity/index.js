@@ -39,6 +39,8 @@ export function createIdentityModule({ services }) {
     audit: services.audit,
     idempotency: services.idempotency,
     profileImages: services.profileImages,
+    referralAttribution: (params) =>
+      services.referral?.attribution?.attributeRegistration(params),
     logger,
   });
 

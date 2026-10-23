@@ -117,6 +117,7 @@ export const RegisterRequestSchema = Joi.object({
   password: PasswordSchema.required(),
   username: UsernameSchema.required(),
   displayName: Joi.string().trim().min(1).max(100).required(),
+  referralCode: Joi.string().trim().alphanum().min(6).max(32).uppercase().optional(),
   acceptedTerms: Joi.boolean().valid(true).required(),
   acceptedPrivacy: Joi.boolean().valid(true).required(),
   timezone: Joi.string().max(64).default('UTC'),

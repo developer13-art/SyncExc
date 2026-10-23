@@ -101,9 +101,25 @@ export function createReferralQueries({ db }) {
     async listLinksForAffiliate(affiliateId) {
       const result = await db.query(
         `
-        SELECT * FROM affiliate_referral_links
-        WHERE affiliate_id = $1
-        ORDER BY created_at DESC
+        SELECT links.*,
+          COALESCE(click_stats.clicks, 0)::int AS clicks,
+          COALESCE(attribution_stats.registrations, 0)::int AS registrations,
+          COALESCE(attribution_stats.conversions, 0)::int AS conversions
+        FROM affiliate_referral_links AS links
+        LEFT JOIN LATERAL (
+          SELECT count(*) AS clicks
+          FROM referral_click_events
+          WHERE link_id = links.id
+        ) AS click_stats ON true
+        LEFT JOIN LATERAL (
+          SELECT
+            count(*) FILTER (WHERE state IN ('attributed', 'converted')) AS registrations,
+            count(*) FILTER (WHERE state = 'converted') AS conversions
+          FROM referral_attributions
+          WHERE link_id = links.id
+        ) AS attribution_stats ON true
+        WHERE links.affiliate_id = $1
+        ORDER BY links.created_at DESC
         `,
         [affiliateId]
       );

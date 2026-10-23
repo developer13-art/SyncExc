@@ -4,6 +4,8 @@ import { apiConfig } from '../config/api.config.js';
 const { endpoints } = apiConfig;
 
 export const referralApi = {
+  trackClick: (payload) => api.post(endpoints.referral.trackClick, payload),
+
   getProfile: () => api.get(endpoints.referral.profile),
 
   enroll: (payload) => api.post(endpoints.referral.enroll, payload),
