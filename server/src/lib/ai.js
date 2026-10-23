@@ -20,6 +20,38 @@ const logger = createLogger({ component: 'ai' });
 
 const rateBuckets = new Map();
 
+export function createOpenAIProviderError(status, payload, requestId) {
+  const providerError = payload?.error || {};
+  const providerCode = typeof providerError.code === 'string' ? providerError.code : null;
+  const providerType = typeof providerError.type === 'string' ? providerError.type : null;
+  const quotaExhausted = status === 429 && (
+    providerType === 'insufficient_quota' ||
+    providerCode === 'credit_balance_exhausted'
+  );
+
+  return new AppError(
+    quotaExhausted
+      ? 'OpenAI quota is exhausted; restore API billing to resume AI interpretation'
+      : `OpenAI request failed: ${status}`,
+    {
+      code: quotaExhausted ? 'AI_QUOTA_EXHAUSTED' : 'AI_PROVIDER_ERROR',
+      status: quotaExhausted ? 503 : 502,
+      expose: false,
+      details: {
+        status,
+        ...(providerType ? { providerType } : {}),
+        ...(providerCode ? { providerCode } : {}),
+        ...(typeof providerError.param === 'string' ? { providerParameter: providerError.param } : {}),
+        ...(requestId ? { requestId } : {}),
+      },
+    }
+  );
+}
+
+export function shouldRetryAIError(error) {
+  return error?.code !== 'AI_QUOTA_EXHAUSTED';
+}
+
 function checkRateLimit(key) {
   const now = Date.now();
   const windowStart = now - 60_000;
@@ -66,13 +98,12 @@ async function callOpenAI({ system, messages, maxTokens, temperature = 0 }) {
     });
 
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new AppError(`OpenAI request failed: ${res.status}`, {
-        code: 'AI_PROVIDER_ERROR',
-        status: 502,
-        expose: false,
-        details: { status: res.status, body: text.slice(0, 500) },
-      });
+      const payload = await res.json().catch(() => null);
+      throw createOpenAIProviderError(
+        res.status,
+        payload,
+        res.headers.get('x-request-id')
+      );
     }
 
     const json = await res.json();
@@ -274,7 +305,12 @@ export async function initAI() {
 
       return retry(
         async () => provider({ system, messages, maxTokens, temperature }),
-        { attempts: config.ai.maxRetries + 1, baseMs: 500, maxMs: 8000 }
+        {
+          attempts: config.ai.maxRetries + 1,
+          baseMs: 500,
+          maxMs: 8000,
+          shouldRetry: shouldRetryAIError,
+        }
       );
     },
 
