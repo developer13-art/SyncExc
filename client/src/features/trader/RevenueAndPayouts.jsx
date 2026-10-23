@@ -1,12 +1,14 @@
 import { CircleDollarSign } from 'lucide-react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { marketplaceApi } from '../../api/index.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { getErrorMessage } from '../../api/errors.js';
+import { ROUTES } from '../../config/routes.config.js';
 
 export default function RevenueAndPayouts() {
   const { activeWorkspaceId } = useWorkspaceContext();
@@ -28,6 +30,7 @@ export default function RevenueAndPayouts() {
     },
   });
   const status = payoutQuery.data;
+  const capabilityUnavailable = onboarding.error?.code === 'STRIPE_CAPABILITY_UNAVAILABLE';
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -62,6 +65,20 @@ export default function RevenueAndPayouts() {
               {getErrorMessage(onboarding.error)}
             </p>
           ) : null}
+          {capabilityUnavailable ? (
+            <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-foreground">
+              <p>
+                Stripe rejected the transfers capability for SyncExc’s connected-account
+                configuration. Retrying will not resolve this until SyncExc updates its Stripe
+                settings. Keep your actual business country selected.
+              </p>
+              <Button variant="link" className="mt-1 h-auto p-0" asChild>
+                <Link to={ROUTES.app.support.createTicket}>
+                  Contact SyncExc support and include the reference above
+                </Link>
+              </Button>
+            </div>
+          ) : null}
           <p>
             SyncExc retains a {status?.platformFeePercent ?? 2}% platform fee on paid subscriptions. Stripe processes subscriber payments and transfers the remaining subscription revenue to your connected account. Payout timing and eligibility are controlled by Stripe.
           </p>
@@ -82,10 +99,18 @@ export default function RevenueAndPayouts() {
                 </label>
               ) : null}
               <Button
-                disabled={onboarding.isPending || (!status?.country && country.length !== 2)}
+                disabled={
+                  onboarding.isPending ||
+                  capabilityUnavailable ||
+                  (!status?.country && country.length !== 2)
+                }
                 onClick={() => onboarding.mutate()}
               >
-                {onboarding.isPending ? 'Connecting…' : 'Continue with Stripe'}
+                {capabilityUnavailable
+                  ? 'Waiting for Stripe configuration'
+                  : onboarding.isPending
+                    ? 'Connecting…'
+                    : 'Continue with Stripe'}
               </Button>
             </div>
           ) : (
