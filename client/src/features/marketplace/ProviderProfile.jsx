@@ -36,6 +36,7 @@ export default function ProviderProfile() {
 
   const [subscribePlan, setSubscribePlan] = useState(null);
   const [subscribing, setSubscribing] = useState(false);
+  const [failedCoverImageUrl, setFailedCoverImageUrl] = useState(null);
 
   useEffect(() => {
     if (provider) {
@@ -119,7 +120,7 @@ export default function ProviderProfile() {
       </div>
 
       <Card>
-        {provider.coverImageUrl ? (
+        {provider.coverImageUrl && provider.coverImageUrl !== failedCoverImageUrl ? (
           <img
             src={resolveProfileImageUrl(
               provider.coverImageUrl,
@@ -128,6 +129,7 @@ export default function ProviderProfile() {
             )}
             alt=""
             className="h-48 w-full rounded-t-xl object-cover"
+            onError={() => setFailedCoverImageUrl(provider.coverImageUrl)}
           />
         ) : null}
         <CardContent className="p-6 pt-6">
