@@ -1,12 +1,29 @@
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useState } from 'react';
-import { Menu, X } from 'lucide-react';
+import { ChevronDown, Menu, X } from 'lucide-react';
 
 import { cn } from '../lib/utils/cn.util.js';
-import { PUBLIC_LINKS } from '../lib/constants/route.constants.js';
 import { ROUTES } from '../config/routes.config.js';
 import { Button } from '../components/ui/Button.jsx';
 import * as Icons from '../assets/icons/index.js';
+
+const PRIMARY_LINKS = [
+  { label: 'Home', path: ROUTES.public.home, end: true },
+  { label: 'Markets', path: `${ROUTES.public.home}#market-preview`, hashAnchor: true },
+  { label: 'Trading', path: ROUTES.app.terminal.overview },
+  { label: 'Copy Trading', path: ROUTES.app.marketplace.browse },
+  { label: 'Signals', path: ROUTES.app.signals.overview },
+  { label: 'Pricing', path: ROUTES.public.pricing },
+];
+
+const RESOURCE_LINKS = [
+  { label: 'Features', path: ROUTES.public.features },
+  { label: 'About', path: ROUTES.public.about },
+  { label: 'Contact', path: ROUTES.public.contact },
+  { label: 'FAQ', path: ROUTES.public.faq },
+  { label: 'Privacy', path: ROUTES.public.privacy },
+  { label: 'Terms', path: ROUTES.public.terms },
+];
 
 export function PublicLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -22,23 +39,46 @@ export function PublicLayout() {
             <span className="text-base font-semibold tracking-tight text-foreground">SyncExc</span>
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex">
-            {PUBLIC_LINKS.map((link) => (
-              <NavLink
-                key={link.path}
-                to={link.path}
-                className={({ isActive }) =>
-                  cn(
-                    'rounded-md px-3 py-1.5 text-sm transition',
-                    isActive
-                      ? 'font-medium text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )
-                }
-              >
-                {link.label}
-              </NavLink>
-            ))}
+          <nav className="client-public-nav hidden items-center gap-1 md:flex">
+            {PRIMARY_LINKS.map((link) =>
+              link.hashAnchor ? (
+                <a
+                  key={link.path}
+                  href={link.path}
+                  className="client-nav-item rounded-md px-2.5 py-2 text-xs text-muted-foreground transition hover:text-foreground lg:px-3 lg:text-sm"
+                >
+                  {link.label}
+                </a>
+              ) : (
+                <NavLink
+                  key={link.path}
+                  to={link.path}
+                  end={link.end}
+                  className={({ isActive }) =>
+                    cn(
+                      'client-nav-item rounded-md px-2.5 py-2 text-xs transition lg:px-3 lg:text-sm',
+                      isActive
+                        ? 'client-nav-active font-medium text-primary'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )
+                  }
+                >
+                  {link.label}
+                </NavLink>
+              ),
+            )}
+            <details className="client-resources-menu relative">
+              <summary className="client-nav-item flex cursor-pointer list-none items-center gap-1 rounded-md px-2.5 py-2 text-xs text-muted-foreground transition hover:text-foreground lg:px-3 lg:text-sm">
+                Resources <ChevronDown className="h-3.5 w-3.5" />
+              </summary>
+              <div className="client-resources-dropdown">
+                {RESOURCE_LINKS.map((link) => (
+                  <Link key={link.path} to={link.path} className="client-resource-link">
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+            </details>
           </nav>
 
           <div className="hidden items-center gap-2 md:flex">
@@ -62,24 +102,51 @@ export function PublicLayout() {
 
         {mobileOpen ? (
           <div className="border-t border-border bg-card/95 md:hidden">
-            <nav className="flex flex-col px-6 py-3">
-              {PUBLIC_LINKS.map((link) => (
-                <NavLink
-                  key={link.path}
-                  to={link.path}
-                  onClick={() => setMobileOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      'rounded-md px-2 py-2 text-sm transition',
-                      isActive
-                        ? 'font-medium text-foreground'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )
-                  }
-                >
-                  {link.label}
-                </NavLink>
-              ))}
+            <nav className="client-mobile-nav flex flex-col px-6 py-3">
+              {PRIMARY_LINKS.map((link) =>
+                link.hashAnchor ? (
+                  <a
+                    key={link.path}
+                    href={link.path}
+                    onClick={() => setMobileOpen(false)}
+                    className="client-mobile-nav-item rounded-md px-2 py-2 text-sm text-muted-foreground transition hover:text-foreground"
+                  >
+                    {link.label}
+                  </a>
+                ) : (
+                  <NavLink
+                    key={link.path}
+                    to={link.path}
+                    end={link.end}
+                    onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'client-mobile-nav-item rounded-md px-2 py-2 text-sm transition',
+                        isActive
+                          ? 'font-medium text-primary'
+                          : 'text-muted-foreground hover:text-foreground',
+                      )
+                    }
+                  >
+                    {link.label}
+                  </NavLink>
+                ),
+              )}
+              <details className="client-mobile-resources">
+                <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-2 py-2 text-sm text-muted-foreground">
+                  Resources <ChevronDown className="h-4 w-4" />
+                </summary>
+                {RESOURCE_LINKS.map((link) => (
+                  <Link
+                    key={link.path}
+                    to={link.path}
+                    onClick={() => setMobileOpen(false)}
+                    className="block rounded-md px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </details>
               <div className="mt-3 flex flex-col gap-2">
                 <Button variant="outline" size="sm" asChild>
                   <Link to={ROUTES.auth.login}>Sign in</Link>
