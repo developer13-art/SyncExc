@@ -21,6 +21,7 @@ export default function TradingPreferences() {
     defaultMarketType: 'spot',
     defaultOrderType: 'limit',
     defaultChartTimeframe: '1h',
+    signalExecutionPercentage: '',
   });
 
   useEffect(() => {
@@ -37,6 +38,9 @@ export default function TradingPreferences() {
         defaultMarketType: query.data.trading.defaultMarketType ?? 'spot',
         defaultOrderType: query.data.trading.defaultOrderType ?? 'limit',
         defaultChartTimeframe: query.data.trading.defaultChartTimeframe ?? '1h',
+        signalExecutionPercentage: query.data.trading.signalExecutionPercentage == null
+          ? ''
+          : String(query.data.trading.signalExecutionPercentage),
       });
     }
   }, [query.data?.trading]);
@@ -56,19 +60,39 @@ export default function TradingPreferences() {
     defaultMarketType: query.data?.trading?.defaultMarketType ?? 'spot',
     defaultOrderType: query.data?.trading?.defaultOrderType ?? 'limit',
     defaultChartTimeframe: query.data?.trading?.defaultChartTimeframe ?? '1h',
+    signalExecutionPercentage: query.data?.trading?.signalExecutionPercentage == null
+      ? ''
+      : String(query.data.trading.signalExecutionPercentage),
   };
 
   const handleSave = async (event) => {
     event.preventDefault();
-    await save({ trading: form });
+    const percentage = Number(form.signalExecutionPercentage);
+    if (
+      form.signalExecutionPercentage !== '' &&
+      (!Number.isFinite(percentage) || percentage < 0.01 || percentage > 100)
+    ) return;
+    await save({
+      trading: {
+        ...form,
+        signalExecutionPercentage: form.signalExecutionPercentage === ''
+          ? null
+          : Number(form.signalExecutionPercentage),
+      },
+    });
   };
+  const percentageValue = form.signalExecutionPercentage === ''
+    ? null
+    : Number(form.signalExecutionPercentage);
+  const percentageInvalid = percentageValue !== null &&
+    (!Number.isFinite(percentageValue) || percentageValue < 0.01 || percentageValue > 100);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trading preferences</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          These are starting defaults only. They never submit orders or override account permissions, exchange capabilities, entitlements, or risk limits.
+          Terminal defaults never submit orders. Signal execution uses the balance percentage below and remains subject to workspace permissions, exchange capabilities, and risk checks.
         </p>
       </header>
       <SettingsSectionNav activePath={ROUTES.app.settings.trading} />
@@ -91,6 +115,31 @@ export default function TradingPreferences() {
                   <SelectItem value="futures">Futures</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label htmlFor="settings-signal-execution-percentage" className="text-sm font-medium text-foreground">
+                Trader signal execution (% of balance)
+              </label>
+              <input
+                id="settings-signal-execution-percentage"
+                type="number"
+                min="0.01"
+                max="100"
+                step="0.01"
+                inputMode="decimal"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                placeholder="Disabled"
+                value={form.signalExecutionPercentage}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    signalExecutionPercentage: event.target.value,
+                  }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                When set, new signals are considered for every active matching account in this workspace. Automatic execution requires an exchange that supports an attached stop-loss and take-profit and a signal with both values. Leave blank to disable it. Risk checks can still block an order or require approval.
+              </p>
             </div>
             <div className="flex flex-col gap-2">
               <label htmlFor="settings-order-type" className="text-sm font-medium text-foreground">Default order type</label>
@@ -120,14 +169,15 @@ export default function TradingPreferences() {
               </Select>
             </div>
             <p className="text-xs text-muted-foreground">
-              Order review remains required by the platform. For connection and account controls, visit{' '}
+              For connection and account controls, visit{' '}
               <Link className="text-primary underline-offset-4 hover:underline" to={ROUTES.app.connections.overview}>Exchange connections</Link>.
             </p>
             <div className="flex justify-end">
-              <Button type="submit" disabled={isSaving ||
+              <Button type="submit" disabled={isSaving || percentageInvalid ||
                 (form.defaultMarketType === initialValues.defaultMarketType &&
                  form.defaultOrderType === initialValues.defaultOrderType &&
-                 form.defaultChartTimeframe === initialValues.defaultChartTimeframe)}>
+                 form.defaultChartTimeframe === initialValues.defaultChartTimeframe &&
+                 form.signalExecutionPercentage === initialValues.signalExecutionPercentage)}>
                 {isSaving ? 'Saving…' : 'Save preferences'}
               </Button>
             </div>

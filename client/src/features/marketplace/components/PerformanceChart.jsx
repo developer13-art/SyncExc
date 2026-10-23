@@ -14,31 +14,48 @@ const RANGE_OPTIONS = [
 
 export function PerformanceChart({ performance, currency = 'USD', isLoading, error, onRetry }) {
   const [range, setRange] = useState('90d');
+  const [selectedAsset, setSelectedAsset] = useState('');
 
-  const series = performance?.series?.[range] ?? performance?.series?.all ?? [];
+  const assets = Object.keys(performance?.seriesByAsset ?? {});
+  const asset = assets.includes(selectedAsset) ? selectedAsset : assets[0];
+  const series = asset ? performance.seriesByAsset[asset]?.[range] ?? [] : [];
 
   return (
     <ChartContainer
-      title="Historical performance"
-      subtitle="Observations calculated under documented methodology. Past outcomes do not guarantee future results."
-      actions={<SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} />}
+      title="Realized performance"
+      subtitle="Cumulative realized PnL from exactly linked closed trades. Past outcomes do not guarantee future results."
+      actions={(
+        <div className="flex flex-wrap items-center gap-2">
+          {assets.length > 1 ? (
+            <select
+              aria-label="PnL settlement asset"
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+              value={asset}
+              onChange={(event) => setSelectedAsset(event.target.value)}
+            >
+              {assets.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          ) : null}
+          <SegmentedControl options={RANGE_OPTIONS} value={range} onChange={setRange} />
+        </div>
+      )}
       isLoading={isLoading}
       error={error}
       onRetry={onRetry}
       isEmpty={series.length === 0}
-      emptyTitle="No performance data"
-      emptyDescription="Performance history will appear once sufficient observed signals exist."
+      emptyTitle="No exact performance data"
+      emptyDescription="Realized performance appears after a closed trade is matched to its exact exchange entry order."
       height={320}
     >
       <AreaChart
         title={null}
         subtitle={null}
         data={series}
-        dataKeys={[{ key: 'value', label: 'Equity', color: 'hsl(var(--primary))' }]}
+        dataKeys={[{ key: 'value', label: 'Cumulative PnL', color: 'hsl(var(--primary))' }]}
         xKey="timestamp"
         height={300}
         showLegend={false}
-        valueFormatter={(v) => formatCurrency(v, currency)}
+        valueFormatter={(v) => formatCurrency(v, asset || currency)}
         className="border-0 shadow-none"
       />
     </ChartContainer>

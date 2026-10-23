@@ -703,6 +703,9 @@ describe('Trader Studio API', () => {
 
     assert.match(sql, /AS subscriber_count/);
     assert.match(sql, /AS signal_count/);
+    assert.match(sql, /AS realized_pnl_by_asset/);
+    assert.match(sql, /marketplace_signal_closed_trades/);
+    assert.match(sql, /execution_pnl\.pnl_asset/);
     assert.match(sql, /subscription\.status IN \('active', 'trialing'\)/);
   });
 
@@ -716,6 +719,12 @@ describe('Trader Studio API', () => {
         },
       },
       copyOrchestration: { async processPublishedSignal() {} },
+      traderSignalExecution: {
+        async executePublishedSignal() {},
+        async handleOrderFilled() {},
+        async handleOrderStatus() {},
+        async handleClosedTrade() {},
+      },
       publicationService: {
         async publishSignal(signal) {
           publishedSignal = signal;

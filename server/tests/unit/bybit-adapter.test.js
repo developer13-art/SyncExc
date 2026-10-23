@@ -182,6 +182,7 @@ test('fetches and normalizes Bybit closed P&L history', async () => {
       entryPrice: '60000',
       exitPrice: '61000',
       realizedPnl: '250',
+      pnlAsset: 'USDT',
       feeAmount: '1.5',
       feeAsset: 'USDT',
       closedAt: '1720000001000',
@@ -288,6 +289,42 @@ test('uses IOC for Bybit market orders and preserves limit time-in-force', async
     assert.equal(requestBodies[1].orderType, 'Limit');
     assert.equal(requestBodies[1].timeInForce, 'GTC');
     assert.equal(requestBodies[1].price, '50000');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('submits futures entry orders with attached stop-loss and take-profit protection', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ retCode: 0, result: { orderId: 'protected-order' } }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    await adapter.placeOrder({
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'testnet',
+      order: {
+        instrument: 'BTCUSDT',
+        marketType: 'futures',
+        side: 'buy',
+        type: 'market',
+        quantity: '0.01',
+        stopLoss: '59000',
+        takeProfit: '62000',
+      },
+    });
+
+    assert.equal(requestBody.tpslMode, 'Full');
+    assert.equal(requestBody.stopLoss, '59000');
+    assert.equal(requestBody.takeProfit, '62000');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -537,6 +574,7 @@ test('returns Bybit wallet equity with the account balances', async () => {
       result: {
         list: [{
           totalEquity: '50123.45',
+          totalAvailableBalance: '120.00',
           coin: [{
             coin: 'USDT',
             availableToWithdraw: '123.45',
@@ -556,6 +594,7 @@ test('returns Bybit wallet equity with the account balances', async () => {
       environment: 'demo',
     });
     assert.equal(state.equity, '50123.45');
+    assert.equal(state.availableEquity, '120.00');
     assert.deepEqual(state.balances, [{
       asset: 'USDT',
       free: '123.45',

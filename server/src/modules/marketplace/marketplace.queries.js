@@ -69,6 +69,11 @@ export function createMarketplaceQueries({ db }) {
           ON provider.workspace_id = orders.workspace_id
         WHERE orders.id = $1
           AND orders.status = 'filled'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM marketplace_trader_signal_executions signal_execution
+            WHERE signal_execution.order_id = orders.id
+          )
           AND provider.auto_publish_trades = true
           AND provider.visibility = 'public'
           AND provider.moderation_state = 'approved'
@@ -103,6 +108,123 @@ export function createMarketplaceQueries({ db }) {
       const result = await db.query(
         `SELECT * FROM marketplace_provider_profiles WHERE user_id = $1`,
         [userId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async getTraderSignalExecutionPercentage(userId) {
+      const result = await db.query(
+        `SELECT trading_preferences->>'signalExecutionPercentage' AS percentage
+         FROM user_preferences WHERE user_id = $1`,
+        [userId]
+      );
+      return result.rows[0]?.percentage ?? null;
+    },
+
+    async listTraderSignalExecutionAccounts(userId, workspaceId) {
+      const result = await db.query(
+        `
+        SELECT
+          connection.id AS connection_id,
+          connection.exchange_code,
+          connection.environment,
+          connection.status AS connection_status,
+          account.id AS account_id,
+          account.account_type,
+          account.status AS account_status
+        FROM exchange_connections connection
+        JOIN exchange_accounts account ON account.connection_id = connection.id
+        WHERE connection.owner_id = $1
+          AND connection.workspace_id = $2
+          AND connection.status = 'active'
+          AND account.status = 'active'
+        ORDER BY connection.created_at, account.created_at
+        `,
+        [userId, workspaceId]
+      );
+      return result.rows;
+    },
+
+    async recordTraderSignalExecution(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_trader_signal_executions (
+          signal_id, workspace_id, user_id, connection_id, account_id,
+          execution_request_id, order_id, status, requested_quantity, error_message
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (signal_id, account_id) DO UPDATE SET
+          execution_request_id = COALESCE(EXCLUDED.execution_request_id, marketplace_trader_signal_executions.execution_request_id),
+          order_id = COALESCE(EXCLUDED.order_id, marketplace_trader_signal_executions.order_id),
+          status = EXCLUDED.status,
+          requested_quantity = COALESCE(EXCLUDED.requested_quantity, marketplace_trader_signal_executions.requested_quantity),
+          error_message = EXCLUDED.error_message,
+          updated_at = now()
+        RETURNING *
+        `,
+        [
+          data.signalId,
+          data.workspaceId,
+          data.userId,
+          data.connectionId,
+          data.accountId,
+          data.executionRequestId || null,
+          data.orderId || null,
+          data.status,
+          data.requestedQuantity || null,
+          data.errorMessage || null,
+        ],
+      );
+      return result.rows[0];
+    },
+
+    async updateTraderSignalExecutionByOrder(orderId, status) {
+      const result = await db.query(
+        `UPDATE marketplace_trader_signal_executions
+         SET status = $2, updated_at = now()
+         WHERE order_id = $1
+         RETURNING *`,
+        [orderId, status],
+      );
+      return result.rows;
+    },
+
+    async findSignalExecutionForClosedTrade({ accountId, exchangeOrderId, instrument }) {
+      if (!exchangeOrderId) return null;
+      const result = await db.query(
+        `
+        SELECT execution.*, signal.provider_id
+        FROM marketplace_trader_signal_executions execution
+        JOIN trading_orders order_row ON order_row.id = execution.order_id
+        JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
+        WHERE execution.account_id = $1
+          AND order_row.exchange_order_id = $2
+          AND order_row.instrument = $3
+          AND execution.status IN ('filled', 'partially_filled', 'closed')
+        LIMIT 1
+        `,
+        [accountId, exchangeOrderId, instrument],
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertSignalExecutionClosedTrade(client, {
+      executionId,
+      closedTradeId,
+      realizedPnl,
+      pnlAsset,
+      closedAt,
+    }) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_signal_closed_trades (
+          signal_execution_id, closed_trade_id, realized_pnl, pnl_asset, closed_at
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (closed_trade_id) DO NOTHING
+        RETURNING *
+        `,
+        [executionId, closedTradeId, realizedPnl, pnlAsset || null, closedAt],
       );
       return result.rows[0] || null;
     },
@@ -215,7 +337,39 @@ export function createMarketplaceQueries({ db }) {
                (SELECT count(*)::int
                 FROM marketplace_published_signals signal
                 WHERE signal.provider_id = provider.id
-                  AND signal.status IN ('published', 'updated')) AS signal_count
+                  AND signal.status IN ('published', 'updated')) AS signal_count,
+               (SELECT COALESCE(
+                  jsonb_agg(
+                    jsonb_build_object(
+                      'asset', performance.pnl_asset,
+                      'netPnl', performance.net_pnl,
+                      'observedExecutions', performance.observed_executions,
+                      'wins', performance.wins
+                    ) ORDER BY performance.pnl_asset
+                  ),
+                  '[]'::jsonb
+                )
+                FROM (
+                  SELECT
+                    execution_pnl.pnl_asset,
+                    SUM(execution_pnl.realized_pnl)::text AS net_pnl,
+                    count(*)::int AS observed_executions,
+                    count(*) FILTER (WHERE execution_pnl.realized_pnl > 0)::int AS wins
+                  FROM (
+                    SELECT
+                      execution.id AS execution_id,
+                      COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+                      SUM(closed_trade.realized_pnl) AS realized_pnl
+                    FROM marketplace_signal_closed_trades closed_trade
+                    JOIN marketplace_trader_signal_executions execution
+                      ON execution.id = closed_trade.signal_execution_id
+                    JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
+                    WHERE signal.provider_id = provider.id
+                    GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+                  ) execution_pnl
+                  GROUP BY execution_pnl.pnl_asset
+                ) performance
+                ) AS realized_pnl_by_asset
         FROM marketplace_provider_profiles provider
         WHERE ${conditions.join(' AND ')}
         ORDER BY provider.created_at DESC
@@ -328,7 +482,18 @@ export function createMarketplaceQueries({ db }) {
 
     async findPublishedSignalById(signalId) {
       const result = await db.query(
-        `SELECT * FROM marketplace_published_signals WHERE id = $1`,
+        `SELECT signal.*, provider.user_id, provider.workspace_id,
+                COALESCE(latest_version.snapshot->'targets', '[]'::jsonb) AS targets
+         FROM marketplace_published_signals signal
+         JOIN marketplace_provider_profiles provider ON provider.id = signal.provider_id
+         LEFT JOIN LATERAL (
+           SELECT snapshot
+           FROM marketplace_published_signal_versions
+           WHERE signal_id = signal.id
+           ORDER BY version DESC
+           LIMIT 1
+         ) latest_version ON true
+         WHERE signal.id = $1`,
         [signalId]
       );
       return result.rows[0] || null;
@@ -1220,13 +1385,15 @@ export function createMarketplaceQueries({ db }) {
       return result.rows;
     },
 
-    async insertPerformanceObservation(client, data) {
+    async insertPerformanceObservation(client = db, data) {
       const result = await client.query(
         `
         INSERT INTO marketplace_performance_observations (
-          signal_id, observed_at, outcome, evidence
+          signal_id, observed_at, outcome, evidence, source_closed_trade_id
         )
-        VALUES ($1, $2, $3, $4)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (source_closed_trade_id)
+          WHERE source_closed_trade_id IS NOT NULL DO NOTHING
         RETURNING *
         `,
         [
@@ -1234,6 +1401,7 @@ export function createMarketplaceQueries({ db }) {
           data.observedAt,
           data.outcome || null,
           data.evidence ? JSON.stringify(data.evidence) : null,
+          data.sourceClosedTradeId || null,
         ]
       );
       return result.rows[0];

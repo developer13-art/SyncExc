@@ -559,6 +559,9 @@ export function serializeProvider(row) {
     supportedLanguages: row.supported_languages || [],
     subscriberCount: row.subscriber_count == null ? undefined : Number(row.subscriber_count),
     signalCount: row.signal_count == null ? undefined : Number(row.signal_count),
+    realizedPnlByAsset: Array.isArray(row.realized_pnl_by_asset)
+      ? row.realized_pnl_by_asset
+      : [],
     autoPublishTrades: Boolean(row.auto_publish_trades),
     currentVersion: row.current_version,
     createdAt: row.created_at,

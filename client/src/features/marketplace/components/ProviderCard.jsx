@@ -6,6 +6,7 @@ import { Avatar } from '../../../components/ui/Avatar.jsx';
 import { Badge } from '../../../components/ui/Badge.jsx';
 import { cn } from '../../../lib/utils/cn.util.js';
 import { ROUTES } from '../../../config/routes.config.js';
+import { formatCurrency } from '../../../lib/formatters/currency.formatter.js';
 
 export function ProviderCard({ provider, className }) {
   if (!provider) {
@@ -70,6 +71,21 @@ export function ProviderCard({ provider, className }) {
           {provider.signalCount !== undefined ? (
             <span className="text-muted-foreground">
               {provider.signalCount.toLocaleString()} signals
+            </span>
+          ) : null}
+          {provider.realizedPnlByAsset !== undefined ? (
+            <span className="text-muted-foreground">
+              Realized PnL:{' '}
+              {provider.realizedPnlByAsset.length > 0
+                ? provider.realizedPnlByAsset.slice(0, 2).map((item) => (
+                  <span key={item.asset} className="mr-2 font-medium text-foreground">
+                    {formatCurrency(item.netPnl, item.asset === 'UNKNOWN' ? '' : item.asset)}
+                  </span>
+                ))
+                : 'pending'}
+              {provider.realizedPnlByAsset.length > 2
+                ? `+${provider.realizedPnlByAsset.length - 2} assets`
+                : null}
             </span>
           ) : null}
         </div>

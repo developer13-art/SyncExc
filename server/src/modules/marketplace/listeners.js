@@ -7,6 +7,7 @@
 export function createMarketplaceListeners({
   events,
   copyOrchestration,
+  traderSignalExecution,
   publicationService,
   queries,
   logger,
@@ -17,9 +18,12 @@ export function createMarketplaceListeners({
       const { signalId } = envelope.payload || {};
       if (!signalId) return;
       try {
-        await copyOrchestration.processPublishedSignal({ publishedSignalId: signalId });
+        await Promise.all([
+          copyOrchestration.processPublishedSignal({ publishedSignalId: signalId }),
+          traderSignalExecution.executePublishedSignal({ publishedSignalId: signalId }),
+        ]);
       } catch (err) {
-        logger.error({ err, signalId }, 'Copy orchestration failed after publish');
+        logger.error({ err, signalId }, 'Signal execution orchestration failed after publish');
       }
     },
     { name: 'marketplace:orchestrate-copy' }
@@ -32,6 +36,7 @@ export function createMarketplaceListeners({
       if (!orderId) return;
 
       try {
+        await traderSignalExecution.handleOrderFilled({ orderId });
         const existingSignal = await queries.findPublishedSignalBySourceOrderId(orderId);
         if (existingSignal) return;
 
@@ -55,6 +60,41 @@ export function createMarketplaceListeners({
       }
     },
     { name: 'marketplace:auto-publish-terminal-fills' }
+  );
+
+  for (const [eventType, status] of [
+    ['execution.order_rejected', 'rejected'],
+    ['execution.order_canceled', 'canceled'],
+    ['execution.order_partially_filled', 'partially_filled'],
+  ]) {
+    events.subscribe(
+      eventType,
+      async (envelope) => {
+        const { orderId } = envelope.payload || {};
+        if (!orderId) return;
+        try {
+          await traderSignalExecution.handleOrderStatus({ orderId, status });
+        } catch (err) {
+          logger.error({ err, orderId, status }, 'Could not update trader signal execution status');
+        }
+      },
+      { name: `marketplace:trader-signal-${status}` },
+    );
+  }
+
+  events.subscribe(
+    'execution.closed_trade_recorded',
+    async (envelope) => {
+      try {
+        await traderSignalExecution.handleClosedTrade(envelope.payload || {});
+      } catch (err) {
+        logger.error(
+          { err, closedTradeId: envelope.payload?.closedTradeId },
+          'Could not attribute closed-trade performance to a trader signal',
+        );
+      }
+    },
+    { name: 'marketplace:exact-signal-performance' },
   );
 
   logger.debug('Marketplace event listeners registered');

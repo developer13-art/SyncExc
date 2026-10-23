@@ -29,6 +29,7 @@ import { createSignalDiscussionService } from './signal-discussion.service.js';
 import { createStripeMarketplaceService } from './stripe-marketplace.service.js';
 import { createMarketplaceRoutes } from './marketplace.routes.js';
 import { createMarketplaceListeners } from './listeners.js';
+import { createTraderSignalExecutionService } from './trader-signal-execution.service.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createMarketplaceModule({ services }) {
@@ -107,6 +108,15 @@ export function createMarketplaceModule({ services }) {
     logger,
   });
 
+  const traderSignalExecutionService = createTraderSignalExecutionService({
+    db: services.db,
+    queries,
+    connections: services.connections,
+    terminal: services.terminal,
+    performance: performanceService,
+    logger,
+  });
+
   const moderationService = createModerationService({
     db: services.db,
     queries,
@@ -134,6 +144,7 @@ export function createMarketplaceModule({ services }) {
   const listeners = createMarketplaceListeners({
     events: services.events,
     copyOrchestration: copyOrchestrationService,
+    traderSignalExecution: traderSignalExecutionService,
     publicationService,
     queries,
     logger,
@@ -153,6 +164,10 @@ export function createMarketplaceModule({ services }) {
       processPublishedSignal: (params) =>
         copyOrchestrationService.processPublishedSignal(params),
     },
+    traderSignalExecution: {
+      executePublishedSignal: (params) =>
+        traderSignalExecutionService.executePublishedSignal(params),
+    },
   };
 
   return {
@@ -165,6 +180,7 @@ export function createMarketplaceModule({ services }) {
     subscription: subscriptionService,
     copyConfiguration: copyConfigurationService,
     copyOrchestration: copyOrchestrationService,
+    traderSignalExecution: traderSignalExecutionService,
     performance: performanceService,
     disclosure: disclosureService,
     moderation: moderationService,

@@ -36,7 +36,7 @@ export function ProviderPerformance({ providerId }) {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Reported metrics</CardTitle>
+              <CardTitle>Performance summary</CardTitle>
               {methodology?.source ? (
                 <Badge variant="info">
                   {methodology.source === 'independent' ? 'Independently calculated' : 'Provider-reported'}
@@ -47,6 +47,9 @@ export function ProviderPerformance({ providerId }) {
           <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {performance.metrics.totalSignals !== undefined ? (
               <Metric label="Signals" value={performance.metrics.totalSignals} />
+            ) : null}
+            {performance.metrics.observedExecutions !== undefined ? (
+              <Metric label="Exact closed executions" value={performance.metrics.observedExecutions} />
             ) : null}
             {performance.metrics.winRate !== undefined ? (
               <Metric
@@ -70,6 +73,24 @@ export function ProviderPerformance({ providerId }) {
                 tone="destructive"
               />
             ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {performance?.metrics?.realizedPnlByAsset?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Realized PnL by settlement asset</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {performance.metrics.realizedPnlByAsset.map((item) => (
+              <Metric
+                key={item.asset}
+                label={`${item.asset} · ${item.observedExecutions} closed executions`}
+                value={formatCurrency(item.netPnl, item.asset === 'UNKNOWN' ? '' : item.asset)}
+                tone={Number(item.netPnl) < 0 ? 'destructive' : undefined}
+              />
+            ))}
           </CardContent>
         </Card>
       ) : null}

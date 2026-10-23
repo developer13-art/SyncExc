@@ -7,6 +7,7 @@ export const TERMINAL_EMITS = [
   'execution.order_acknowledged',
   'execution.order_partially_filled',
   'execution.order_filled',
+  'execution.closed_trade_recorded',
   'execution.order_rejected',
   'execution.order_canceled',
   'execution.outcome_uncertain',

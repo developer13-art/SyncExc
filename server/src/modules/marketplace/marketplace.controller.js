@@ -483,11 +483,10 @@ export function createMarketplaceController(services) {
       if (!provider || provider.visibility !== 'public' || provider.moderation_state !== 'approved') {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Provider not found' } });
       }
-      const reports = await performanceService.listReports({
+      const performance = await performanceService.getProviderPerformance({
         providerId: req.params.providerId,
-        limit: Number(req.query.limit) || 20,
       });
-      return success(res, reports);
+      return success(res, performance);
     },
 
     /* Disclosures */

@@ -17,7 +17,7 @@
 
 import { AppError, ValidationError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { normalizeOrderQuantity } from '../../lib/order-quantity.js';
-import { ORDER_STATUS } from '@syncexc/shared';
+import { compareDecimals, ORDER_STATUS } from '@syncexc/shared';
 
 export function createOrderSubmissionService({
   db,
@@ -61,6 +61,8 @@ export function createOrderSubmissionService({
       type,
       quantity: requestedQuantity,
       price,
+      stopLoss,
+      takeProfit,
       triggerPrice,
       timeInForce,
       reduceOnly,
@@ -120,6 +122,17 @@ export function createOrderSubmissionService({
 
     const adapter = await connections.getAdapter(connection.exchange_code);
     if (!adapter) throw new NotFoundError('Exchange adapter');
+    if (
+      (stopLoss || takeProfit) &&
+      (!stopLoss ||
+        !takeProfit ||
+        !adapter.capabilities?.hasAttachedBracketProtectionMarkets?.includes(marketType))
+    ) {
+      throw new ConflictError(
+        'The selected exchange does not support this attached stop-loss and take-profit combination',
+        'ATTACHED_PROTECTION_UNSUPPORTED',
+      );
+    }
     const marketSupported = marketType === 'spot'
       ? adapter.capabilities?.hasSpot
       : adapter.capabilities?.hasFutures;
@@ -150,6 +163,22 @@ export function createOrderSubmissionService({
       instrument.quantity_step,
       instrument.minimum_quantity,
     );
+    for (const [label, value] of [
+      ['Price', price],
+      ['Stop-loss price', stopLoss],
+      ['Take-profit price', takeProfit],
+      ['Trigger price', triggerPrice],
+    ]) {
+      if (
+        value != null &&
+        compareDecimals(
+          normalizeOrderQuantity(value, instrument.tick_size),
+          value,
+        ) !== 0
+      ) {
+        throw new ValidationError(`${label} must align with the exchange price tick ${instrument.tick_size}`);
+      }
+    }
 
     // 4. Pre-trade risk evaluation
     const riskDecision = await risk.evaluation.evaluate({
@@ -165,6 +194,8 @@ export function createOrderSubmissionService({
         type,
         quantity,
         price,
+        stopLoss,
+        takeProfit,
       },
     });
 
@@ -205,6 +236,8 @@ export function createOrderSubmissionService({
             type,
             quantity,
             price,
+            stopLoss,
+            takeProfit,
             triggerPrice,
             timeInForce,
             reduceOnly,
@@ -244,6 +277,8 @@ export function createOrderSubmissionService({
               type,
               quantity,
               price,
+              stopLoss,
+              takeProfit,
               triggerPrice,
               timeInForce,
               reduceOnly,
@@ -272,12 +307,15 @@ export function createOrderSubmissionService({
         type,
         quantity,
         price,
+        stopLoss,
+        takeProfit,
         triggerPrice,
         timeInForce,
         reduceOnly,
         status: ORDER_STATUS.PENDING_SUBMISSION,
         source: 'terminal',
         relatedExecutionId: executionRequest.id,
+        metadata: { ...(stopLoss ? { stopLoss } : {}), ...(takeProfit ? { takeProfit } : {}) },
       });
 
       await queries.insertOrderEvent(tx, {
@@ -306,6 +344,8 @@ export function createOrderSubmissionService({
           type,
           quantity,
           price,
+          stopLoss,
+          takeProfit,
           triggerPrice,
           timeInForce,
           reduceOnly,
@@ -333,6 +373,8 @@ export function createOrderSubmissionService({
           type,
           quantity,
           price,
+          stopLoss,
+          takeProfit,
         },
         responseStatus: adapterResponse ? 'success' : 'error',
         responsePayload: adapterResponse || adapterError?.exchangeResponse || null,

@@ -305,6 +305,8 @@ export const SubmitOrderRequestSchema = Joi.object({
     then: Joi.required(),
     otherwise: Joi.optional(),
   }),
+  stopLoss: PositiveDecimalSchema.optional(),
+  takeProfit: PositiveDecimalSchema.optional(),
   triggerPrice: PositiveDecimalSchema.when('type', {
     is: Joi.string().valid('stop_market', 'stop_limit', 'take_profit_market', 'take_profit_limit'),
     then: Joi.required(),

@@ -1461,6 +1461,7 @@ export const EVENT_TYPE = Object.freeze({
   ORDER_ACKNOWLEDGED: 'execution.order_acknowledged',
   ORDER_PARTIALLY_FILLED: 'execution.order_partially_filled',
   ORDER_FILLED: 'execution.order_filled',
+  CLOSED_TRADE_RECORDED: 'execution.closed_trade_recorded',
   ORDER_REJECTED: 'execution.order_rejected',
   ORDER_CANCELED: 'execution.order_canceled',
   EXECUTION_OUTCOME_UNCERTAIN: 'execution.outcome_uncertain',

@@ -16,6 +16,7 @@ test('backfills and persists exchange closed P&L during account sync', async () 
     entryPrice: '60000',
     exitPrice: '61000',
     realizedPnl: '250',
+    pnlAsset: 'USDT',
     feeAmount: '1.5',
     feeAsset: 'USDT',
     closedAt: '1720000001000',
@@ -27,6 +28,7 @@ test('backfills and persists exchange closed P&L during account sync', async () 
     },
     async upsertClosedTrade(_tx, trade) {
       persistedTrades.push(trade);
+      return { id: 'closed-trade-id' };
     },
     async updateClosedPnlSyncState(_tx, _accountId, state) {
       syncStates.push(state);
@@ -83,7 +85,12 @@ test('backfills and persists exchange closed P&L during account sync', async () 
     },
     executionService: {},
     marketData: {},
-    events: {},
+    events: {
+      async publish(_tx, eventName, payload) {
+        assert.equal(eventName, 'execution.closed_trade_recorded');
+        assert.equal(payload.pnlAsset, 'USDT');
+      },
+    },
     audit: {},
     logger: {},
   });
@@ -99,6 +106,7 @@ test('backfills and persists exchange closed P&L during account sync', async () 
   assert.equal(persistedTrades[0].accountId, 'account-id');
   assert.equal(persistedTrades[0].workspaceId, 'workspace-id');
   assert.equal(persistedTrades[0].realizedPnl, '250');
+  assert.equal(persistedTrades[0].pnlAsset, 'USDT');
   assert.equal(persistedTrades[0].closedAt.toISOString(), '2024-07-03T09:46:41.000Z');
   assert.equal(syncStates.length, 1);
   assert.equal(syncStates[0].cursor, null);

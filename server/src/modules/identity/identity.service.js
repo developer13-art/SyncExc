@@ -914,6 +914,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       defaultMarketType: 'spot',
       defaultOrderType: 'limit',
       defaultChartTimeframe: '1h',
+      signalExecutionPercentage: null,
     },
   });
 

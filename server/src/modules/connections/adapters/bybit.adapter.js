@@ -55,6 +55,7 @@ export function createBybitAdapter({ config, logger }) {
       hasMargin: false,
       hasSubaccounts: true,
       hasWebsocket: true,
+      hasAttachedBracketProtectionMarkets: ['futures'],
       supportedOrderTypes: [
         'market',
         'limit',
@@ -115,6 +116,7 @@ export function createBybitAdapter({ config, logger }) {
           total: c.walletBalance,
         })),
         equity: account?.totalEquity ?? null,
+        availableEquity: account?.totalAvailableBalance ?? null,
       };
     },
 
@@ -192,6 +194,14 @@ export function createBybitAdapter({ config, logger }) {
         qty: order.quantity,
       };
       if (order.price) body.price = order.price;
+      if (order.stopLoss || order.takeProfit) {
+        if (order.marketType !== 'futures' || !order.stopLoss || !order.takeProfit) {
+          throw new Error('Bybit attached bracket protection requires futures with both stop-loss and take-profit prices');
+        }
+        body.tpslMode = 'Full';
+        body.stopLoss = order.stopLoss;
+        body.takeProfit = order.takeProfit;
+      }
       if (conditionalOrder) {
         body.triggerPrice = order.triggerPrice;
         body.triggerDirection = triggerDirection;
@@ -404,6 +414,7 @@ export function createBybitAdapter({ config, logger }) {
           entryPrice: item.avgEntryPrice || null,
           exitPrice: item.avgExitPrice,
           realizedPnl: item.closedPnl,
+          pnlAsset: item.settleCoin || null,
           feeAmount: item.closeFee || null,
           feeAsset: item.settleCoin || null,
           closedAt: item.updatedTime || item.createdTime,

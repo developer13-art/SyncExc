@@ -1,0 +1,323 @@
+import { fnv1aHash } from '@syncexc/shared';
+
+function resolveSignalPrice(signal) {
+  if (signal.entry != null) return Number(signal.entry);
+  const range = typeof signal.entry_range === 'string'
+    ? JSON.parse(signal.entry_range)
+    : signal.entry_range;
+  if (range?.min != null && range?.max != null) {
+    const minText = String(range.min);
+    const maxText = String(range.max);
+    const minParts = minText.split('.');
+    const maxParts = maxText.split('.');
+    const scale = Math.max(minParts[1]?.length || 0, maxParts[1]?.length || 0);
+    if (scale > 12 || !/^\d+(?:\.\d+)?$/.test(minText) || !/^\d+(?:\.\d+)?$/.test(maxText)) {
+      return null;
+    }
+    const outputScale = scale + 1;
+    const scaleValue = (parts) =>
+      BigInt(`${parts[0]}${(parts[1] || '').padEnd(scale, '0')}`) * (10n ** BigInt(outputScale - scale));
+    const midpoint = (scaleValue(minParts) + scaleValue(maxParts)) / 2n;
+    const digits = midpoint.toString().padStart(outputScale + 1, '0');
+    const whole = digits.slice(0, -outputScale);
+    const fraction = digits.slice(-outputScale).replace(/0+$/, '');
+    return Number(fraction ? `${whole}.${fraction}` : whole);
+  }
+  return null;
+}
+
+function formatQuantity(quantity) {
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  return quantity.toFixed(12).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+}
+
+function resolveTakeProfit(targets) {
+  const parsedTargets = typeof targets === 'string' ? JSON.parse(targets) : targets;
+  const firstTarget = Array.isArray(parsedTargets) ? parsedTargets[0] : null;
+  const price = firstTarget && typeof firstTarget === 'object'
+    ? firstTarget.price
+    : firstTarget;
+  return price == null ? null : String(price);
+}
+
+export function createTraderSignalExecutionService({ db, queries, connections, terminal, performance, logger }) {
+  async function recordExecution(data) {
+    await db.tx((tx) => queries.recordTraderSignalExecution(tx, data));
+  }
+
+  async function executePublishedSignal({ publishedSignalId }) {
+    const signal = await queries.findPublishedSignalById(publishedSignalId);
+    if (!signal || !['published', 'updated'].includes(signal.status)) return;
+    if (signal.source_order_id) return;
+
+    const percentageValue = await queries.getTraderSignalExecutionPercentage(signal.user_id);
+    const percentage = Number(percentageValue);
+    if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
+      logger.info({ signalId: signal.id }, 'Trader signal auto-execution is not configured');
+      return;
+    }
+
+    const accounts = await queries.listTraderSignalExecutionAccounts(
+      signal.user_id,
+      signal.workspace_id,
+    );
+    const price = resolveSignalPrice(signal);
+    if (!Number.isFinite(price) || price <= 0) {
+      logger.warn({ signalId: signal.id }, 'Trader signal execution skipped: entry price unavailable');
+      return;
+    }
+
+    const marketType = signal.market_type === 'spot' ? 'spot' : 'futures';
+    for (const account of accounts) {
+      try {
+        await executeForAccount({ signal, account, marketType, price, percentage });
+      } catch (err) {
+        await recordExecution({
+          signalId: signal.id,
+          workspaceId: signal.workspace_id,
+          userId: signal.user_id,
+          connectionId: account.connection_id,
+          accountId: account.account_id,
+          status: 'failed',
+          errorMessage: err.message,
+        });
+        logger.error(
+          { err, signalId: signal.id, accountId: account.account_id },
+          'Trader signal execution failed for account',
+        );
+      }
+    }
+  }
+
+  async function executeForAccount({ signal, account, marketType, price, percentage }) {
+    const adapter = await connections.getAdapter(account.exchange_code);
+    const supported = marketType === 'spot'
+      ? adapter?.capabilities?.hasSpot
+      : adapter?.capabilities?.hasFutures;
+    if (!supported) {
+      await recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_market_unsupported',
+      });
+      logger.warn(
+        { signalId: signal.id, accountId: account.account_id, exchange: account.exchange_code, marketType },
+        'Trader signal execution skipped: exchange does not support this market',
+      );
+      return;
+    }
+
+    const instrument = await connections.getInstrument({
+      exchangeCode: account.exchange_code,
+      symbol: signal.instrument,
+      marketType,
+    });
+    if (!instrument || instrument.trading_status !== 'active') {
+      await recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_instrument_unavailable',
+      });
+      logger.warn(
+        { signalId: signal.id, accountId: account.account_id, instrument: signal.instrument },
+        'Trader signal execution skipped: instrument is unavailable',
+      );
+      return;
+    }
+    const stopLoss = signal.stop_loss == null ? null : String(signal.stop_loss);
+    const takeProfit = resolveTakeProfit(signal.targets);
+    if (
+      !adapter.capabilities?.hasAttachedBracketProtectionMarkets?.includes(marketType) ||
+      !stopLoss ||
+      !takeProfit
+    ) {
+      await recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_protection_unsupported',
+      });
+      logger.warn(
+        {
+          signalId: signal.id,
+          accountId: account.account_id,
+          exchange: account.exchange_code,
+          marketType,
+        },
+        'Trader signal execution skipped: exchange or signal lacks attached stop-loss and take-profit support',
+      );
+      return;
+    }
+
+    const credentials = await connections.loadCredentials(account.connection_id);
+    const balanceParams = {
+      ...credentials,
+      accountType: account.account_type,
+      environment: account.environment,
+    };
+    const accountState = adapter.fetchAccountState
+      ? await adapter.fetchAccountState(balanceParams)
+      : { balances: await adapter.fetchBalances(balanceParams) };
+    const quoteAsset = instrument.quote_asset;
+    const baseAsset = instrument.base_asset;
+    const balanceAsset = marketType === 'spot' && signal.direction === 'short'
+      ? baseAsset
+      : quoteAsset;
+    const balance = accountState.balances?.find(
+      (item) => item.asset === balanceAsset,
+    );
+    const availableEquity = Number(accountState.availableEquity);
+    const available = marketType === 'futures' &&
+      Number.isFinite(availableEquity) &&
+      availableEquity > 0
+      ? availableEquity
+      : Number(balance?.free ?? balance?.available ?? 0);
+    if (!Number.isFinite(available) || available <= 0) {
+      await recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_insufficient_balance',
+      });
+      logger.warn(
+        { signalId: signal.id, accountId: account.account_id, balanceAsset },
+        'Trader signal execution skipped: no available balance',
+      );
+      return;
+    }
+
+    const allocatedBalance = available * (percentage / 100);
+    const quantity = marketType === 'spot' && signal.direction === 'short'
+      ? allocatedBalance
+      : allocatedBalance / price;
+    const formattedQuantity = formatQuantity(quantity);
+    if (!formattedQuantity) {
+      await recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_invalid_quantity',
+      });
+      logger.warn(
+        { signalId: signal.id, accountId: account.account_id },
+        'Trader signal execution skipped: calculated quantity is invalid',
+      );
+      return;
+    }
+
+    const orderType = signal.order_type === 'limit' ? 'limit' : 'market';
+    const result = await terminal.submitOrder({
+      userId: signal.user_id,
+      workspaceId: signal.workspace_id,
+      connectionId: account.connection_id,
+      accountId: account.account_id,
+      marketType,
+      instrumentId: signal.instrument,
+      side: signal.direction === 'long' ? 'buy' : 'sell',
+      type: orderType,
+      quantity: formattedQuantity,
+      stopLoss,
+      takeProfit,
+      ...(orderType === 'limit' ? { price: String(price) } : {}),
+      idempotencyKey: fnv1aHash(`trader-signal:${signal.id}:${account.account_id}`),
+    });
+
+    await recordExecution({
+      signalId: signal.id,
+      workspaceId: signal.workspace_id,
+      userId: signal.user_id,
+      connectionId: account.connection_id,
+      accountId: account.account_id,
+      executionRequestId: result.executionRequest?.id,
+      orderId: result.order?.id,
+      status: result.requiresConfirmation ? 'awaiting_confirmation' : result.order?.status || 'submitted',
+      requestedQuantity: formattedQuantity,
+    });
+
+    logger.info(
+      {
+        signalId: signal.id,
+        accountId: account.account_id,
+        orderId: result.order?.id || null,
+        requiresConfirmation: Boolean(result.requiresConfirmation),
+        quantity: formattedQuantity,
+      },
+      'Trader signal execution submitted',
+    );
+  }
+
+  async function handleOrderFilled({ orderId }) {
+    if (!orderId) return;
+    await queries.updateTraderSignalExecutionByOrder(orderId, 'filled');
+  }
+
+  async function handleOrderStatus({ orderId, status }) {
+    if (!orderId || !status) return;
+    await queries.updateTraderSignalExecutionByOrder(orderId, status);
+  }
+
+  async function handleClosedTrade(trade) {
+    if (!trade?.closedTradeId || !trade.accountId || !trade.instrument || !trade.exchangeOrderId) return;
+    const execution = await queries.findSignalExecutionForClosedTrade({
+      accountId: trade.accountId,
+      exchangeOrderId: trade.exchangeOrderId,
+      instrument: trade.instrument,
+    });
+    if (!execution) return;
+
+    const realizedPnl = Number(trade.realizedPnl);
+    if (!Number.isFinite(realizedPnl)) {
+      logger.warn(
+        { signalId: execution.signal_id, closedTradeId: trade.closedTradeId },
+        'Signal performance not recorded: closed-trade PnL is invalid',
+      );
+      return;
+    }
+    const closedAt = trade.closedAt ? new Date(trade.closedAt) : new Date();
+    const outcome = realizedPnl > 0 ? 'win' : realizedPnl < 0 ? 'loss' : 'breakeven';
+    await db.tx(async (tx) => {
+      const attributed = await queries.insertSignalExecutionClosedTrade(tx, {
+        executionId: execution.id,
+        closedTradeId: trade.closedTradeId,
+        realizedPnl: String(trade.realizedPnl),
+        pnlAsset: trade.pnlAsset || null,
+        closedAt,
+      });
+      if (!attributed) return;
+      await performance.recordObservation({
+        signalId: execution.signal_id,
+        observedAt: closedAt,
+        outcome,
+        sourceClosedTradeId: trade.closedTradeId,
+        client: tx,
+        evidence: {
+          attribution: 'exact_exchange_order_id',
+          accountId: trade.accountId,
+          exchangeOrderId: trade.exchangeOrderId,
+          instrument: trade.instrument,
+          quantity: trade.quantity,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.exitPrice,
+          realizedPnl: String(trade.realizedPnl),
+          pnlAsset: trade.pnlAsset || null,
+          feeAmount: trade.feeAmount,
+          feeAsset: trade.feeAsset,
+        },
+      });
+    });
+  }
+
+  return { executePublishedSignal, handleOrderFilled, handleOrderStatus, handleClosedTrade };
+}

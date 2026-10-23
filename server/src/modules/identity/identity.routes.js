@@ -31,6 +31,7 @@ const UserPreferencesSchema = Joi.object({
     defaultMarketType: Joi.string().valid('spot', 'futures'),
     defaultOrderType: Joi.string().valid('limit', 'market'),
     defaultChartTimeframe: Joi.string().valid('1m', '5m', '15m', '1h', '4h', '1d'),
+    signalExecutionPercentage: Joi.number().min(0.01).max(100).allow(null),
   }).min(1),
 }).min(1);
 

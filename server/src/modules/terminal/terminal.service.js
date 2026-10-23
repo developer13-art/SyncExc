@@ -240,7 +240,7 @@ export function createTerminalService({
               latestClosedAt = closedAt;
             }
 
-            await queries.upsertClosedTrade(tx, {
+            const closedTrade = await queries.upsertClosedTrade(tx, {
               ...trade,
               workspaceId,
               connectionId: connection.id,
@@ -248,6 +248,29 @@ export function createTerminalService({
               exchangeCode: connection.exchange_code,
               closedAt,
             });
+            await events.publish(
+              tx,
+              'execution.closed_trade_recorded',
+              {
+                closedTradeId: closedTrade.id,
+                accountId,
+                exchangeOrderId: trade.exchangeOrderId || null,
+                instrument: trade.instrument,
+                quantity: trade.quantity,
+                entryPrice: trade.entryPrice || null,
+                exitPrice: trade.exitPrice,
+                realizedPnl: trade.realizedPnl,
+                pnlAsset: trade.pnlAsset || null,
+                feeAmount: trade.feeAmount || null,
+                feeAsset: trade.feeAsset || null,
+                closedAt,
+              },
+              {
+                workspaceId,
+                resourceType: 'closed_trade',
+                resourceId: closedTrade.id,
+              },
+            );
           }
           await queries.updateClosedPnlSyncState(tx, accountId, {
             cursor,
