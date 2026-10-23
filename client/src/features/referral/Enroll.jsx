@@ -39,7 +39,7 @@ export default function Enroll() {
     setSubmitting(true);
     try {
       await profileQuery.enroll({
-        agreementAcceptedAt: new Date().toISOString(),
+        acceptedAgreement: true,
       });
       toast.success('Enrolled', {
         description: 'You can now create referral links.',

@@ -59,6 +59,7 @@ const CommunityDiscussions = lazy(() => import('../features/community/Discussion
 const CommunityMessages = lazy(() => import('../features/community/Messages.jsx'));
 const CommunityModerationCenter = lazy(() => import('../features/community/ModerationCenter.jsx'));
 const Referral = lazy(() => import('../features/referral/ReferralDashboard.jsx'));
+const ReferralEnroll = lazy(() => import('../features/referral/Enroll.jsx'));
 const BillingPlans = lazy(() => import('../features/billing/Plans.jsx'));
 const BillingSubscription = lazy(() => import('../features/billing/Subscription.jsx'));
 const BillingUsage = lazy(() => import('../features/billing/Usage.jsx'));
@@ -160,6 +161,7 @@ export function AppRoutes() {
           <Route path="community/moderation" element={<Fallback><CommunityModerationCenter /></Fallback>} />
           <Route path="community/*" element={<Fallback><CommunityFeed /></Fallback>} />
         </Route>
+        <Route path="referral/enroll" element={<Fallback><ReferralEnroll /></Fallback>} />
         <Route path="referral/*" element={<Fallback><Referral /></Fallback>} />
         <Route path="billing" element={<Outlet />}>
           <Route index element={<Navigate to="subscription" replace />} />
