@@ -16,6 +16,7 @@
  */
 
 import { AppError, ValidationError, ConflictError, NotFoundError } from '../../lib/errors.js';
+import { normalizeOrderQuantity } from '../../lib/order-quantity.js';
 import { ORDER_STATUS } from '@syncexc/shared';
 
 export function createOrderSubmissionService({
@@ -58,7 +59,7 @@ export function createOrderSubmissionService({
       instrumentId,
       side,
       type,
-      quantity,
+      quantity: requestedQuantity,
       price,
       triggerPrice,
       timeInForce,
@@ -144,6 +145,11 @@ export function createOrderSubmissionService({
     if (instrument.market_type !== marketType) {
       throw new ConflictError('Instrument does not belong to the selected market type', 'INSTRUMENT_MARKET_MISMATCH');
     }
+    const quantity = normalizeOrderQuantity(
+      requestedQuantity,
+      instrument.quantity_step,
+      instrument.minimum_quantity,
+    );
 
     // 4. Pre-trade risk evaluation
     const riskDecision = await risk.evaluation.evaluate({
