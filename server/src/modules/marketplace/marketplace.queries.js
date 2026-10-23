@@ -875,7 +875,13 @@ export function createMarketplaceQueries({ db }) {
 
     async findCopyConfigurationById(configId) {
       const result = await db.query(
-        `SELECT * FROM copy_configurations WHERE id = $1`,
+        `
+        SELECT config.*, provider.handle AS provider_handle,
+               provider.display_name AS provider_name
+        FROM copy_configurations config
+        JOIN marketplace_provider_profiles provider ON provider.id = config.provider_id
+        WHERE config.id = $1
+        `,
         [configId]
       );
       return result.rows[0] || null;
@@ -1069,6 +1075,24 @@ export function createMarketplaceQueries({ db }) {
         [recordId, workspaceId]
       );
       return result.rows[0] || null;
+    },
+
+    async listCopyRecordsForSignalConfiguration(signalId, configId, workspaceId) {
+      const result = await db.query(
+        `
+        SELECT record.*, config.workspace_id, intent.id AS copy_intent_id,
+               intent.intent_payload, intent.status AS intent_status
+        FROM copy_signal_processing_records record
+        JOIN copy_configurations config ON config.id = record.config_id
+        LEFT JOIN copy_execution_intents intent ON intent.id = record.execution_intent_id
+        WHERE record.published_signal_id = $1
+          AND record.config_id = $2
+          AND config.workspace_id = $3
+        ORDER BY record.processing_timestamp ASC
+        `,
+        [signalId, configId, workspaceId]
+      );
+      return result.rows;
     },
 
     async claimCopyExecutionIntent(intentId, expectedStatus) {

@@ -120,6 +120,7 @@ export function useCopyConfigurations(params = {}) {
     configurations: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
+    error: listQuery.error,
     createConfiguration: create.mutateAsync,
     activateConfiguration: activate.mutateAsync,
     pauseConfiguration: pause.mutateAsync,
@@ -149,10 +150,46 @@ export function useCopyConfiguration(configId) {
     mutationFn: () => marketplaceApi.validateCopyConfiguration(configId),
   });
 
+  const activate = useMutation({
+    mutationFn: () => marketplaceApi.activateCopyConfiguration(configId),
+    onSuccess: async () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['marketplace', 'copy-configs'] }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.marketplace.copyConfiguration(configId),
+      }),
+    ]),
+  });
+
+  const pause = useMutation({
+    mutationFn: () => marketplaceApi.pauseCopyConfiguration(configId),
+    onSuccess: async () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['marketplace', 'copy-configs'] }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.marketplace.copyConfiguration(configId),
+      }),
+    ]),
+  });
+
+  const revoke = useMutation({
+    mutationFn: () => marketplaceApi.revokeCopyConfiguration(configId),
+    onSuccess: async () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['marketplace', 'copy-configs'] }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.marketplace.copyConfiguration(configId),
+      }),
+    ]),
+  });
+
   return {
-    configuration: detailQuery.data ?? null,
+    configuration: detailQuery.data?.config ?? null,
+    destinations: detailQuery.data?.destinations ?? [],
     isLoading: detailQuery.isLoading,
+    error: detailQuery.error,
+    refetch: detailQuery.refetch,
     updateConfiguration: update.mutateAsync,
     validateConfiguration: validate.mutateAsync,
+    activateConfiguration: activate.mutateAsync,
+    pauseConfiguration: pause.mutateAsync,
+    revokeConfiguration: revoke.mutateAsync,
   };
 }

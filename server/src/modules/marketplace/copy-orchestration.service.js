@@ -51,6 +51,77 @@ export function createCopyOrchestrationService({
     }
   }
 
+  async function copySignalNow({
+    userId,
+    workspaceId,
+    signalId,
+    configId,
+    canApproveExecution = false,
+  }) {
+    const signal = await queries.findPublishedSignalById(signalId);
+    if (!signal || !['published', 'updated'].includes(signal.status)) {
+      throw new NotFoundError('Published signal');
+    }
+
+    const config = await queries.findCopyConfigurationById(configId);
+    if (
+      !config ||
+      config.workspace_id !== workspaceId ||
+      config.created_by !== userId ||
+      config.provider_id !== signal.provider_id ||
+      config.status !== 'active'
+    ) {
+      throw new NotFoundError('Active copy configuration');
+    }
+
+    const subscription = await subscriptionService.getSubscription({
+      userId,
+      providerId: signal.provider_id,
+    });
+    if (!subscription) {
+      throw new ConflictError('An active subscription is required to copy this signal', 'SUBSCRIPTION_REQUIRED');
+    }
+
+    let records = await queries.listCopyRecordsForSignalConfiguration(
+      signalId,
+      configId,
+      workspaceId
+    );
+    if (records.length === 0) {
+      await processConfigForSignal({ config: { ...config, subscriber_user_id: userId }, signal });
+      records = await queries.listCopyRecordsForSignalConfiguration(
+        signalId,
+        configId,
+        workspaceId
+      );
+    }
+
+    if (records.length === 0) {
+      throw new ConflictError('No destination is eligible to copy this signal', 'COPY_NOT_ELIGIBLE');
+    }
+
+    const results = [];
+    for (const record of records) {
+      if (record.subscriber_user_id !== userId) {
+        throw new NotFoundError('Copy record');
+      }
+      if (record.outcome === COPY_PROCESSING_OUTCOME.HELD) {
+        results.push(await confirmRecord({
+          userId,
+          workspaceId,
+          recordId: record.id,
+          canApproveExecution,
+        }));
+      } else {
+        results.push({
+          status: record.outcome,
+          skipReason: record.skip_reason || null,
+        });
+      }
+    }
+    return { results };
+  }
+
   async function processConfigForSignal({ config, signal }) {
     const destinations = await queries.listCopyDestinations(config.id);
 
@@ -478,6 +549,7 @@ export function createCopyOrchestrationService({
 
   return {
     processPublishedSignal,
+    copySignalNow,
     confirmRecord,
     listRecordsForWorkspace,
   };

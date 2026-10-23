@@ -18,6 +18,10 @@ const SubscribeSchema = Joi.object({
   planId: UuidSchema.optional(),
 });
 
+const CopySignalSchema = Joi.object({
+  configurationId: UuidSchema.required(),
+});
+
 const CancelSignalSchema = Joi.object({
   reason: Joi.string().min(10).max(500).required(),
 });
@@ -101,6 +105,16 @@ export function createMarketplaceRoutes(services) {
     middleware.requireAuth(),
     middleware.validateParams(Joi.object({ signalId: UuidSchema.required() })),
     middleware.asyncHandler(controller.listSignalComments)
+  );
+
+  router.post(
+    '/signals/:signalId/copy',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requireAnyPermission('trading.request_execution', 'trading.approve_execution'),
+    middleware.validateParams(Joi.object({ signalId: UuidSchema.required() })),
+    middleware.validateBody(CopySignalSchema),
+    middleware.asyncHandler(controller.copySignal)
   );
 
   router.post(

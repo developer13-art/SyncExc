@@ -22,10 +22,11 @@ export default function CopyConfigurationDetails() {
   const toast = useToast();
 
   const configQuery = useCopyConfiguration(configId);
-  const { configuration, isLoading, error } = configQuery;
+  const { configuration, destinations, isLoading, error } = configQuery;
 
   const [pauseOpen, setPauseOpen] = useState(false);
   const [revokeOpen, setRevokeOpen] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
@@ -63,7 +64,20 @@ export default function CopyConfigurationDetails() {
 
   const isActive = configuration.status === 'active';
   const isPaused = configuration.status === 'paused';
+  const isDraft = configuration.status === 'draft';
 
+  const handleActivate = async () => {
+    setProcessing(true);
+    try {
+      await configQuery.activateConfiguration();
+      toast.success('Copy configuration activated');
+      setActivateOpen(false);
+    } catch (err) {
+      toast.error('Activation failed', { description: getErrorMessage(err) });
+    } finally {
+      setProcessing(false);
+    }
+  };
   const handlePause = async () => {
     setProcessing(true);
     try {
@@ -145,7 +159,11 @@ export default function CopyConfigurationDetails() {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          {isActive ? (
+          {isDraft ? (
+            <Button onClick={() => setActivateOpen(true)} disabled={processing}>
+              <PlayCircle className="h-4 w-4" /> Activate copying
+            </Button>
+          ) : isActive ? (
             <Button
               variant="outline"
               onClick={() => setPauseOpen(true)}
@@ -175,11 +193,15 @@ export default function CopyConfigurationDetails() {
         <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-3">
           <Field
             label="Sizing"
-            value={configuration.sizingPolicy?.type?.replace(/_/g, ' ') ?? '—'}
+            value={configuration.sizingRule?.type?.replace(/_/g, ' ') ?? '—'}
           />
           <Field
             label="Sizing value"
-            value={configuration.sizingPolicy?.value ?? '—'}
+            value={
+              configuration.sizingRule?.type === 'fixed_percentage'
+                ? `${configuration.sizingRule.config?.percentage ?? '—'}%`
+                : configuration.sizingRule?.config?.amount ?? '—'
+            }
           />
           <Field
             label="Execution mode"
@@ -191,7 +213,7 @@ export default function CopyConfigurationDetails() {
           />
           <Field
             label="Destinations"
-            value={configuration.destinationAccountIds?.length ?? 0}
+            value={destinations.length}
           />
           <Field
             label="Created"
@@ -212,6 +234,16 @@ export default function CopyConfigurationDetails() {
           </CardContent>
         </Card>
       ) : null}
+
+      <ConfirmDialog
+        open={activateOpen}
+        onOpenChange={setActivateOpen}
+        title="Activate this copy configuration?"
+        description="New eligible signals can create copy intents for its selected exchange accounts. A copy order you submit from a signal will still pass SyncExc permissions and risk checks."
+        confirmLabel="Activate copying"
+        onConfirm={handleActivate}
+        isLoading={processing}
+      />
 
       <ConfirmDialog
         open={pauseOpen}

@@ -127,6 +127,120 @@ describe('Trader Studio API', () => {
     assert.equal(record.intent_status, 'submitted');
   });
 
+  it('submits a user-confirmed signal to the active selected copy configuration', async () => {
+    const record = {
+      id: 'record-1',
+      subscriber_user_id: 'subscriber-1',
+      outcome: 'held',
+      copy_intent_id: 'intent-1',
+      intent_status: 'awaiting_confirmation',
+      intent_payload: {
+        connectionId: 'connection-1',
+        accountId: 'account-1',
+        instrumentId: 'BTCUSDT',
+        marketType: 'spot',
+        side: 'buy',
+        type: 'market',
+        quantity: '0.01',
+        idempotencyKey: 'copy-submit-key',
+      },
+    };
+    let submittedOrder;
+    const queries = {
+      async findPublishedSignalById() {
+        return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
+      },
+      async findCopyConfigurationById() {
+        return {
+          id: 'config-1',
+          workspace_id: 'workspace-1',
+          created_by: 'subscriber-1',
+          provider_id: 'provider-1',
+          status: 'active',
+        };
+      },
+      async listCopyRecordsForSignalConfiguration() { return [record]; },
+      async findCopyRecordForConfirmation() { return record; },
+      async claimCopyExecutionIntent(_intentId, expectedStatus) {
+        if (record.intent_status !== expectedStatus) return null;
+        record.intent_status = 'confirming';
+        return { intent_payload: record.intent_payload, status: 'confirming' };
+      },
+      async updateCopyExecutionIntent(_intentId, { status }) {
+        record.intent_status = status;
+      },
+      async updateCopyProcessingRecord(_id, changes) {
+        Object.assign(record, changes);
+      },
+      async updateCopyDestinationResult() {},
+    };
+    const service = createCopyOrchestrationService({
+      db: { async tx(callback) { return callback({}); } },
+      queries,
+      subscriptionService: {
+        async getSubscription({ userId, providerId }) {
+          assert.equal(userId, 'subscriber-1');
+          assert.equal(providerId, 'provider-1');
+          return { status: 'active' };
+        },
+      },
+      terminal: {
+        async submitOrder(order) {
+          submittedOrder = order;
+          return { order: { id: 'exchange-order-1', status: 'submitted' } };
+        },
+      },
+      events: {},
+    });
+
+    const result = await service.copySignalNow({
+      userId: 'subscriber-1',
+      workspaceId: 'workspace-1',
+      signalId: 'signal-1',
+      configId: 'config-1',
+    });
+
+    assert.deepEqual(result, { results: [{ status: 'submitted', orderId: 'exchange-order-1' }] });
+    assert.equal(submittedOrder.connectionId, 'connection-1');
+    assert.equal(submittedOrder.accountId, 'account-1');
+    assert.equal(submittedOrder.idempotencyKey, 'copy-submit-key');
+  });
+
+  it('does not submit through another user’s copy configuration', async () => {
+    let subscriptionLookup = false;
+    const service = createCopyOrchestrationService({
+      db: {},
+      queries: {
+        async findPublishedSignalById() {
+          return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
+        },
+        async findCopyConfigurationById() {
+          return {
+            id: 'config-1',
+            workspace_id: 'workspace-1',
+            created_by: 'another-user',
+            provider_id: 'provider-1',
+            status: 'active',
+          };
+        },
+      },
+      subscriptionService: {
+        async getSubscription() { subscriptionLookup = true; return { status: 'active' }; },
+      },
+    });
+
+    await assert.rejects(
+      service.copySignalNow({
+        userId: 'subscriber-1',
+        workspaceId: 'workspace-1',
+        signalId: 'signal-1',
+        configId: 'config-1',
+      }),
+      { code: 'NOT_FOUND' },
+    );
+    assert.equal(subscriptionLookup, false);
+  });
+
   it('activates paid marketplace subscriptions only after a successful Stripe invoice webhook', async () => {
     const transaction = {};
     const updates = [];

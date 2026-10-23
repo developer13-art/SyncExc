@@ -290,6 +290,7 @@ export const apiConfig = Object.freeze({
       subscription: (id) => `/marketplace/subscriptions/${id}`,
       cancelSubscription: (id) => `/marketplace/subscriptions/${id}/cancel`,
       signals: '/marketplace/signals',
+      copySignal: (id) => `/marketplace/signals/${id}/copy`,
       mySignals: '/marketplace/me/signals',
       signal: (id) => `/marketplace/signals/${id}`,
       cancelSignal: (id) => `/marketplace/signals/${id}/cancel`,

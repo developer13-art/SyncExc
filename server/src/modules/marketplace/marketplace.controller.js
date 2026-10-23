@@ -279,6 +279,17 @@ export function createMarketplaceController(services) {
       return success(res, serializePublishedSignal(signal));
     },
 
+    async copySignal(req, res) {
+      const result = await copyOrchestrationService.copySignalNow({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        signalId: req.params.signalId,
+        configId: req.body.configurationId,
+        canApproveExecution: req.workspace.permissions.includes('trading.approve_execution'),
+      });
+      return success(res, result);
+    },
+
     async listSignalComments(req, res) {
       const comments = await signalDiscussionService.list({
         signalId: req.params.signalId,

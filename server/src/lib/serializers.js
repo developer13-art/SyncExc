@@ -639,6 +639,7 @@ export function serializeCopyConfiguration(row) {
   if (!row) return null;
   return {
     id: row.id,
+    name: row.name || null,
     providerId: row.provider_id,
     workspaceId: row.workspace_id,
     sizingRule: row.sizing_rule || {},

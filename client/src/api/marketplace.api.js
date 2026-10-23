@@ -36,6 +36,9 @@ export const marketplaceApi = {
     return api.upload(`/marketplace/signals/${signalId}/comments`, formData);
   },
 
+  copyPublishedSignal: (signalId, configurationId) =>
+    api.post(endpoints.marketplace.copySignal(signalId), { configurationId }),
+
   listProviderPlans: (providerId) =>
     api.get(endpoints.marketplace.providerPlans(providerId)),
 
