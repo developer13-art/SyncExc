@@ -90,7 +90,7 @@ export default function ProviderProfile() {
     }
   };
 
-  const handleSubscribe = async ({ planId }) => {
+  const handleSubscribe = async ({ planId }, { rethrow = true } = {}) => {
     setSubscribing(true);
     try {
       const result = await providerQuery.subscribe({ planId });
@@ -102,7 +102,7 @@ export default function ProviderProfile() {
       setSubscribePlan(null);
     } catch (err) {
       toast.error('Subscription failed', { description: getErrorMessage(err) });
-      throw err;
+      if (rethrow) throw err;
     } finally {
       setSubscribing(false);
     }
@@ -211,7 +211,7 @@ export default function ProviderProfile() {
               ) : (
                 <Button
                   disabled={subscribing}
-                  onClick={() => handleSubscribe({})}
+                  onClick={() => handleSubscribe({}, { rethrow: false })}
                 >
                   {subscribing ? 'Subscribing…' : 'Subscribe for free'}
                 </Button>
@@ -253,7 +253,7 @@ export default function ProviderProfile() {
             onSubscribe={
               plans.length > 0
                 ? () => setSubscribePlan(plans[0])
-                : () => handleSubscribe({})
+                : () => handleSubscribe({}, { rethrow: false })
             }
           />
         </TabsContent>

@@ -82,7 +82,8 @@ export const marketplaceApi = {
   listSubscriptions: (params) =>
     api.getPaged(endpoints.marketplace.subscriptions, { params }),
 
-  createSubscription: (payload) => api.post(endpoints.marketplace.subscriptions, payload),
+  createSubscription: ({ providerId, ...payload }) =>
+    api.post(endpoints.marketplace.subscribeProvider(providerId), payload),
 
   getSubscription: (subscriptionId) =>
     api.get(endpoints.marketplace.subscription(subscriptionId)),

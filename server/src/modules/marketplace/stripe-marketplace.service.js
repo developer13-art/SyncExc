@@ -84,6 +84,12 @@ export function createStripeMarketplaceService({
           country,
         }, 'Stripe Connect account creation failed');
         if (error instanceof ConflictError) throw error;
+        if (error?.param === 'requested_capabilities') {
+          throw new ConflictError(
+            'Stripe could not enable the payout capability for this country or platform configuration. Contact SyncExc support; only enter your actual business country.',
+            'STRIPE_CAPABILITY_UNAVAILABLE'
+          );
+        }
         throw new ExternalProviderError('Stripe could not create the payout account. Please try again later.', {
           provider: 'stripe',
           status: 502,
@@ -518,11 +524,11 @@ function stripeId(value) {
 function getStripeErrorMetadata(error) {
   return {
     errorName: typeof error?.name === 'string' ? error.name : 'Error',
-    stripeErrorType: typeof error?.type === 'string' ? error.type : undefined,
-    stripeErrorCode: typeof error?.code === 'string' ? error.code : undefined,
-    stripeStatusCode: Number.isInteger(error?.statusCode) ? error.statusCode : undefined,
-    stripeRequestId: typeof error?.requestId === 'string' ? error.requestId : undefined,
-    stripeParameter: typeof error?.param === 'string' ? error.param : undefined,
+    ...(typeof error?.type === 'string' ? { stripeErrorType: error.type } : {}),
+    ...(typeof error?.code === 'string' ? { stripeErrorCode: error.code } : {}),
+    ...(Number.isInteger(error?.statusCode) ? { stripeStatusCode: error.statusCode } : {}),
+    ...(typeof error?.requestId === 'string' ? { stripeRequestId: error.requestId } : {}),
+    ...(typeof error?.param === 'string' ? { stripeParameter: error.param } : {}),
   };
 }
 

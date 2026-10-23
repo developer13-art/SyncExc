@@ -274,6 +274,7 @@ export const apiConfig = Object.freeze({
       myProvider: '/marketplace/me/provider',
       provider: (id) => `/marketplace/providers/${id}`,
       providerCover: (id) => `/marketplace/providers/${id}/cover`,
+      subscribeProvider: (id) => `/marketplace/providers/${id}/subscribe`,
       providerSignals: (id) => `/marketplace/providers/${id}/signals`,
       providerPlans: (id) => `/marketplace/providers/${id}/plans`,
       providerPerformance: (id) => `/marketplace/providers/${id}/performance`,

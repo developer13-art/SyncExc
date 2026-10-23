@@ -289,11 +289,10 @@ describe('Trader Studio API', () => {
     let logged;
     const stripeFailure = Object.assign(new Error('Sensitive provider response'), {
       name: 'StripeInvalidRequestError',
-      type: 'invalid_request_error',
-      code: 'account_country_invalid',
+      type: 'StripeInvalidRequestError',
       statusCode: 400,
       requestId: 'req_stripe_123',
-      param: 'country',
+      param: 'requested_capabilities',
     });
     const service = createStripeMarketplaceService({
       db: {},
@@ -327,16 +326,15 @@ describe('Trader Studio API', () => {
         country: 'US',
         requestId: 'request-123',
       }),
-      { code: 'EXTERNAL_PROVIDER_ERROR', status: 502 },
+      { code: 'STRIPE_CAPABILITY_UNAVAILABLE', status: 409 },
     );
     assert.equal(logged.message, 'Stripe Connect account creation failed');
     assert.deepEqual(logged.metadata, {
       errorName: 'StripeInvalidRequestError',
-      stripeErrorType: 'invalid_request_error',
-      stripeErrorCode: 'account_country_invalid',
+      stripeErrorType: 'StripeInvalidRequestError',
       stripeStatusCode: 400,
       stripeRequestId: 'req_stripe_123',
-      stripeParameter: 'country',
+      stripeParameter: 'requested_capabilities',
       providerId: 'provider-1',
       requestId: 'request-123',
       country: 'US',
