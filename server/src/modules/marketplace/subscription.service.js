@@ -28,7 +28,15 @@ export function createSubscriptionService({ db, queries, stripeMarketplace, even
     }
 
     const existing = await queries.findExistingSubscriptionForCheckout(providerId, userId);
-    if (existing) throw new ConflictError('Subscription already active', 'SUBSCRIPTION_EXISTS');
+    if (existing && ['active', 'trialing'].includes(existing.status)) {
+      return existing;
+    }
+    if (existing?.status === 'past_due') {
+      throw new ConflictError(
+        'Your subscription payment is past due. Update your payment method before accessing this provider.',
+        'SUBSCRIPTION_PAYMENT_PAST_DUE'
+      );
+    }
 
     if (plan && Number(plan.pricing?.amountMinor) > 0) {
       return stripeMarketplace.createSubscriptionCheckout({

@@ -1033,6 +1033,43 @@ describe('Trader Studio API', () => {
     assert.deepEqual(result, activeSubscription);
   });
 
+  it('returns an existing active subscription when the subscriber retries subscribe', async () => {
+    const existing = { id: 'subscription-existing', status: 'active' };
+    const service = createSubscriptionService({
+      db: {},
+      queries: {
+        async findProviderById() {
+          return { id: 'provider-1', moderation_state: 'approved', visibility: 'public' };
+        },
+        async findExistingSubscriptionForCheckout() { return existing; },
+      },
+    });
+
+    assert.equal(await service.subscribe({
+      userId: 'subscriber-1',
+      providerId: 'provider-1',
+    }), existing);
+  });
+
+  it('explains when an existing past-due subscription blocks access', async () => {
+    const service = createSubscriptionService({
+      db: {},
+      queries: {
+        async findProviderById() {
+          return { id: 'provider-1', moderation_state: 'approved', visibility: 'public' };
+        },
+        async findExistingSubscriptionForCheckout() {
+          return { id: 'subscription-past-due', status: 'past_due' };
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.subscribe({ userId: 'subscriber-1', providerId: 'provider-1' }),
+      { code: 'SUBSCRIPTION_PAYMENT_PAST_DUE', status: 409 },
+    );
+  });
+
   it('starts Stripe checkout without activating a paid subscription before its webhook', async () => {
     let checkoutParameters;
     let databaseTransactionStarted = false;
