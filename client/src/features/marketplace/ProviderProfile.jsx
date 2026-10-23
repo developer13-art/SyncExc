@@ -208,7 +208,14 @@ export default function ProviderProfile() {
               </Button>
               {plans.length > 0 ? (
                 <Button onClick={() => setSubscribePlan(plans[0])}>Subscribe</Button>
-              ) : null}
+              ) : (
+                <Button
+                  disabled={subscribing}
+                  onClick={() => handleSubscribe({})}
+                >
+                  {subscribing ? 'Subscribing…' : 'Subscribe for free'}
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>
@@ -243,7 +250,11 @@ export default function ProviderProfile() {
         <TabsContent value="signals">
           <ProviderSignals
             providerId={provider.id}
-            onSubscribe={plans.length > 0 ? () => setSubscribePlan(plans[0]) : undefined}
+            onSubscribe={
+              plans.length > 0
+                ? () => setSubscribePlan(plans[0])
+                : () => handleSubscribe({})
+            }
           />
         </TabsContent>
         <TabsContent value="performance">

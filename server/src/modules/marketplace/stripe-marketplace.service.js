@@ -57,7 +57,7 @@ export function createStripeMarketplaceService({
     };
   }
 
-  async function startPayoutOnboarding({ userId, workspaceId, country }) {
+  async function startPayoutOnboarding({ userId, workspaceId, country, requestId }) {
     const provider = await providerService.getManagedProvider({ userId, workspaceId });
     const stripe = await getStripe();
     let accountId = provider.stripe_connect_account_id;
@@ -77,7 +77,12 @@ export function createStripeMarketplaceService({
           { idempotencyKey: `marketplace-connect:${provider.id}` }
         );
       } catch (error) {
-        logger?.error?.({ errorName: error.name || 'Error', providerId: provider.id }, 'Stripe Connect account creation failed');
+        logger?.error?.({
+          ...getStripeErrorMetadata(error),
+          providerId: provider.id,
+          requestId,
+          country,
+        }, 'Stripe Connect account creation failed');
         if (error instanceof ConflictError) throw error;
         throw new ExternalProviderError('Stripe could not create the payout account. Please try again later.', {
           provider: 'stripe',
@@ -100,7 +105,11 @@ export function createStripeMarketplaceService({
     try {
       account = await stripe.accounts.retrieve(accountId);
     } catch (error) {
-      logger?.error?.({ errorName: error.name || 'Error', providerId: provider.id }, 'Stripe Connect account lookup failed');
+      logger?.error?.({
+        ...getStripeErrorMetadata(error),
+        providerId: provider.id,
+        requestId,
+      }, 'Stripe Connect account lookup failed');
       throw new ExternalProviderError('Stripe could not verify the payout account.', {
         provider: 'stripe',
         status: 502,
@@ -124,7 +133,11 @@ export function createStripeMarketplaceService({
       });
       return { url: link.url, ...serializePayoutStatus(updatedProvider) };
     } catch (error) {
-      logger?.error?.({ errorName: error.name || 'Error', providerId: provider.id }, 'Stripe Connect onboarding link creation failed');
+      logger?.error?.({
+        ...getStripeErrorMetadata(error),
+        providerId: provider.id,
+        requestId,
+      }, 'Stripe Connect onboarding link creation failed');
       throw new ExternalProviderError('Stripe could not start payout onboarding. Please try again later.', {
         provider: 'stripe',
         status: 502,
@@ -500,6 +513,17 @@ export function createStripeMarketplaceService({
 function stripeId(value) {
   if (!value) return null;
   return typeof value === 'string' ? value : value.id || null;
+}
+
+function getStripeErrorMetadata(error) {
+  return {
+    errorName: typeof error?.name === 'string' ? error.name : 'Error',
+    stripeErrorType: typeof error?.type === 'string' ? error.type : undefined,
+    stripeErrorCode: typeof error?.code === 'string' ? error.code : undefined,
+    stripeStatusCode: Number.isInteger(error?.statusCode) ? error.statusCode : undefined,
+    stripeRequestId: typeof error?.requestId === 'string' ? error.requestId : undefined,
+    stripeParameter: typeof error?.param === 'string' ? error.param : undefined,
+  };
 }
 
 function unixDate(value) {

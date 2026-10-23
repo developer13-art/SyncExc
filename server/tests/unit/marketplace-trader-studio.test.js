@@ -285,6 +285,65 @@ describe('Trader Studio API', () => {
     assert.equal(persisted[0].fields.checkoutSessionId, 'cs_marketplace');
   });
 
+  it('logs safe Stripe diagnostics and request correlation when Connect account creation fails', async () => {
+    let logged;
+    const stripeFailure = Object.assign(new Error('Sensitive provider response'), {
+      name: 'StripeInvalidRequestError',
+      type: 'invalid_request_error',
+      code: 'account_country_invalid',
+      statusCode: 400,
+      requestId: 'req_stripe_123',
+      param: 'country',
+    });
+    const service = createStripeMarketplaceService({
+      db: {},
+      queries: {},
+      providerService: {
+        async getManagedProvider() {
+          return { id: 'provider-1', stripe_connect_account_id: null };
+        },
+      },
+      config: {
+        payments: { stripe: { enabled: true, secretKey: 'test_secret' } },
+      },
+      logger: {
+        error(metadata, message) {
+          logged = { metadata, message };
+        },
+      },
+      stripeClient: {
+        accounts: {
+          async create() {
+            throw stripeFailure;
+          },
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.startPayoutOnboarding({
+        userId: 'trader-1',
+        workspaceId: 'workspace-1',
+        country: 'US',
+        requestId: 'request-123',
+      }),
+      { code: 'EXTERNAL_PROVIDER_ERROR', status: 502 },
+    );
+    assert.equal(logged.message, 'Stripe Connect account creation failed');
+    assert.deepEqual(logged.metadata, {
+      errorName: 'StripeInvalidRequestError',
+      stripeErrorType: 'invalid_request_error',
+      stripeErrorCode: 'account_country_invalid',
+      stripeStatusCode: 400,
+      stripeRequestId: 'req_stripe_123',
+      stripeParameter: 'country',
+      providerId: 'provider-1',
+      requestId: 'request-123',
+      country: 'US',
+    });
+    assert.equal(JSON.stringify(logged).includes('Sensitive provider response'), false);
+  });
+
   it('accepts explicit order type and entry time for published signals', () => {
     const { value, error } = PublishSignalRequestSchema.validate({
       instrument: 'BTCUSDT',
@@ -926,6 +985,54 @@ describe('Trader Studio API', () => {
       service.subscribe({ userId: 'subscriber-1', providerId: 'provider-1', planId: 'plan-1' }),
       { code: 'PROVIDER_NOT_PUBLISHED' },
     );
+  });
+
+  it('creates an active free subscription when a public provider has no selected plan', async () => {
+    const transaction = {};
+    let insertedSubscription;
+    let activeSubscription;
+    const service = createSubscriptionService({
+      db: {
+        async tx(callback) { return callback(transaction); },
+      },
+      queries: {
+        async findProviderById() {
+          return { id: 'provider-1', moderation_state: 'approved', visibility: 'public' };
+        },
+        async findExistingSubscriptionForCheckout() { return null; },
+        async insertSubscription(client, data) {
+          assert.equal(client, transaction);
+          insertedSubscription = data;
+          return { id: 'subscription-1' };
+        },
+        async insertSubscriptionEvent(client, event) {
+          assert.equal(client, transaction);
+          assert.equal(event.eventType, 'created');
+        },
+        async updateSubscriptionStatus(id, status, client) {
+          assert.equal(client, transaction);
+          activeSubscription = { id, status };
+          return activeSubscription;
+        },
+      },
+      events: {
+        async publish(client, type, payload) {
+          assert.equal(client, transaction);
+          assert.equal(type, 'marketplace.subscription_started');
+          assert.equal(payload.subscriptionId, 'subscription-1');
+        },
+      },
+    });
+
+    const result = await service.subscribe({
+      userId: 'subscriber-1',
+      providerId: 'provider-1',
+      workspaceId: 'workspace-1',
+    });
+
+    assert.equal(insertedSubscription.planId ?? null, null);
+    assert.deepEqual(activeSubscription, { id: 'subscription-1', status: 'active' });
+    assert.deepEqual(result, activeSubscription);
   });
 
   it('starts Stripe checkout without activating a paid subscription before its webhook', async () => {

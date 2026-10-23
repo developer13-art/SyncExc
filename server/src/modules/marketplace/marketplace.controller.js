@@ -147,6 +147,7 @@ export function createMarketplaceController(services) {
         userId: req.auth.userId,
         workspaceId: req.workspace.id,
         country: req.body.country,
+        requestId: req.id,
       });
       return success(res, result);
     },
