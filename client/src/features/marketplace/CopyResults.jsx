@@ -110,7 +110,7 @@ export default function CopyResults() {
       label: 'Reason',
       render: (row) => (
         <span className="text-xs text-muted-foreground">
-          {row.skipReason?.replace(/_/g, ' ') ?? '—'}
+          {row.errorMessage || row.skipReason?.replace(/_/g, ' ') || '—'}
         </span>
       ),
     },

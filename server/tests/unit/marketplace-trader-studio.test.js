@@ -206,6 +206,87 @@ describe('Trader Studio API', () => {
     assert.equal(submittedOrder.idempotencyKey, 'copy-submit-key');
   });
 
+  it('returns and persists the exchange rejection reason for copied signals', async () => {
+    const record = {
+      id: 'record-rejected',
+      subscriber_user_id: 'subscriber-1',
+      outcome: 'held',
+      copy_intent_id: 'intent-rejected',
+      intent_status: 'awaiting_confirmation',
+      intent_payload: {
+        connectionId: 'connection-1',
+        accountId: 'account-1',
+        instrumentId: 'BTCUSDT',
+        marketType: 'spot',
+        side: 'buy',
+        type: 'market',
+        quantity: '0.01',
+        idempotencyKey: 'copy-submit-key',
+      },
+    };
+    let destinationResult;
+    const queries = {
+      async findPublishedSignalById() {
+        return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
+      },
+      async findCopyConfigurationById() {
+        return {
+          id: 'config-1',
+          workspace_id: 'workspace-1',
+          created_by: 'subscriber-1',
+          provider_id: 'provider-1',
+          status: 'active',
+        };
+      },
+      async listCopyRecordsForSignalConfiguration() { return [record]; },
+      async findCopyRecordForConfirmation() { return record; },
+      async claimCopyExecutionIntent() {
+        return { intent_payload: record.intent_payload, status: 'confirming' };
+      },
+      async updateCopyExecutionIntent() {},
+      async updateCopyProcessingRecord() {},
+      async updateCopyDestinationResult(_id, result) {
+        destinationResult = result;
+      },
+    };
+    const service = createCopyOrchestrationService({
+      db: { async tx(callback) { return callback({}); } },
+      queries,
+      subscriptionService: {
+        async getSubscription() { return { status: 'active' }; },
+      },
+      terminal: {
+        async submitOrder() {
+          return {
+            order: {
+              id: 'order-rejected',
+              status: 'rejected',
+              rejection_reason: 'Order quantity has too many decimals.',
+            },
+          };
+        },
+      },
+    });
+
+    const result = await service.copySignalNow({
+      userId: 'subscriber-1',
+      workspaceId: 'workspace-1',
+      signalId: 'signal-1',
+      configId: 'config-1',
+    });
+
+    assert.deepEqual(result, {
+      results: [{
+        status: 'rejected',
+        orderId: 'order-rejected',
+        errorMessage: 'Order quantity has too many decimals.',
+      }],
+    });
+    assert.equal(destinationResult.skipReason, 'execution_rejected');
+    assert.equal(destinationResult.errorMessage, 'Order quantity has too many decimals.');
+    assert.equal(destinationResult.destinationOrderId, 'order-rejected');
+  });
+
   it('does not submit through another user’s copy configuration', async () => {
     let subscriptionLookup = false;
     const service = createCopyOrchestrationService({
@@ -689,24 +770,62 @@ describe('Trader Studio API', () => {
   });
 
   it('includes subscriber and active signal counts in marketplace provider listings', async () => {
-    let sql;
+    const statements = [];
     const queries = createMarketplaceQueries({
       db: {
         async query(query) {
-          sql = query;
-          return { rows: [] };
+          statements.push(query);
+          if (query.includes('FROM schema_migrations')) {
+            return { rows: [{ applied: false }] };
+          }
+          return { rows: [{ id: 'provider-1', created_at: new Date() }] };
         },
       },
     });
 
     await queries.listProviders();
 
-    assert.match(sql, /AS subscriber_count/);
-    assert.match(sql, /AS signal_count/);
-    assert.match(sql, /AS realized_pnl_by_asset/);
-    assert.match(sql, /marketplace_signal_closed_trades/);
-    assert.match(sql, /execution_pnl\.pnl_asset/);
-    assert.match(sql, /subscription\.status IN \('active', 'trialing'\)/);
+    assert.match(statements[0], /AS subscriber_count/);
+    assert.match(statements[0], /AS signal_count/);
+    assert.doesNotMatch(statements[0], /marketplace_signal_closed_trades/);
+    assert.match(statements[0], /subscription\.status IN \('active', 'trialing'\)/);
+    assert.match(statements[1], /schema_migrations/);
+    assert.equal(statements.length, 2);
+  });
+
+  it('loads marketplace PnL after the signal-execution migration is applied', async () => {
+    const provider = { id: 'provider-1', created_at: new Date() };
+    const queries = createMarketplaceQueries({
+      db: {
+        async query(query) {
+          if (query.includes('FROM marketplace_provider_profiles provider')) {
+            return { rows: [provider] };
+          }
+          if (query.includes('FROM schema_migrations')) {
+            return { rows: [{ applied: true }] };
+          }
+          assert.match(query, /marketplace_signal_closed_trades/);
+          return {
+            rows: [{
+              provider_id: 'provider-1',
+              pnl_asset: 'USDT',
+              net_pnl: '12.5',
+              observed_executions: 2,
+              wins: 1,
+            }],
+          };
+        },
+      },
+    });
+
+    const result = await queries.listProviders();
+
+    assert.deepEqual(result.rows[0].realized_pnl_by_asset, [{
+      asset: 'USDT',
+      netPnl: '12.5',
+      observedExecutions: 2,
+      wins: 1,
+    }]);
   });
 
   it('publishes an opted-in terminal fill once as a limit signal', async () => {

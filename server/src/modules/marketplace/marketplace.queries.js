@@ -338,38 +338,6 @@ export function createMarketplaceQueries({ db }) {
                 FROM marketplace_published_signals signal
                 WHERE signal.provider_id = provider.id
                   AND signal.status IN ('published', 'updated')) AS signal_count,
-               (SELECT COALESCE(
-                  jsonb_agg(
-                    jsonb_build_object(
-                      'asset', performance.pnl_asset,
-                      'netPnl', performance.net_pnl,
-                      'observedExecutions', performance.observed_executions,
-                      'wins', performance.wins
-                    ) ORDER BY performance.pnl_asset
-                  ),
-                  '[]'::jsonb
-                )
-                FROM (
-                  SELECT
-                    execution_pnl.pnl_asset,
-                    SUM(execution_pnl.realized_pnl)::text AS net_pnl,
-                    count(*)::int AS observed_executions,
-                    count(*) FILTER (WHERE execution_pnl.realized_pnl > 0)::int AS wins
-                  FROM (
-                    SELECT
-                      execution.id AS execution_id,
-                      COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-                      SUM(closed_trade.realized_pnl) AS realized_pnl
-                    FROM marketplace_signal_closed_trades closed_trade
-                    JOIN marketplace_trader_signal_executions execution
-                      ON execution.id = closed_trade.signal_execution_id
-                    JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
-                    WHERE signal.provider_id = provider.id
-                    GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
-                  ) execution_pnl
-                  GROUP BY execution_pnl.pnl_asset
-                ) performance
-                ) AS realized_pnl_by_asset
         FROM marketplace_provider_profiles provider
         WHERE ${conditions.join(' AND ')}
         ORDER BY provider.created_at DESC
@@ -379,6 +347,62 @@ export function createMarketplaceQueries({ db }) {
       );
       const hasMore = result.rows.length > limit;
       const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+
+      if (rows.length > 0) {
+        const migrationResult = await db.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM schema_migrations WHERE name = $1
+           ) AS applied`,
+          ['040_marketplace_trader_signal_execution.sql'],
+        );
+        if (migrationResult.rows[0]?.applied) {
+          const pnlResult = await db.query(
+            `
+            WITH execution_pnl AS (
+              SELECT
+                signal.provider_id,
+                execution.id AS execution_id,
+                COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+                SUM(closed_trade.realized_pnl) AS realized_pnl
+              FROM marketplace_signal_closed_trades closed_trade
+              JOIN marketplace_trader_signal_executions execution
+                ON execution.id = closed_trade.signal_execution_id
+              JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
+              WHERE signal.provider_id = ANY($1::uuid[])
+              GROUP BY
+                signal.provider_id,
+                execution.id,
+                COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+            )
+            SELECT
+              provider_id,
+              pnl_asset,
+              SUM(realized_pnl)::text AS net_pnl,
+              count(*)::int AS observed_executions,
+              count(*) FILTER (WHERE realized_pnl > 0)::int AS wins
+            FROM execution_pnl
+            GROUP BY provider_id, pnl_asset
+            ORDER BY provider_id, pnl_asset
+            `,
+            [rows.map((provider) => provider.id)],
+          );
+          const pnlByProvider = new Map();
+          for (const pnl of pnlResult.rows) {
+            const providerPnl = pnlByProvider.get(pnl.provider_id) || [];
+            providerPnl.push({
+              asset: pnl.pnl_asset,
+              netPnl: pnl.net_pnl,
+              observedExecutions: pnl.observed_executions,
+              wins: pnl.wins,
+            });
+            pnlByProvider.set(pnl.provider_id, providerPnl);
+          }
+          for (const provider of rows) {
+            provider.realized_pnl_by_asset = pnlByProvider.get(provider.id) || [];
+          }
+        }
+      }
+
       const last = rows[rows.length - 1];
       return {
         rows,
@@ -1246,10 +1270,13 @@ export function createMarketplaceQueries({ db }) {
       const result = await db.query(
         `
         SELECT record.*, config.workspace_id, intent.id AS copy_intent_id,
-               intent.intent_payload, intent.status AS intent_status
+               intent.intent_payload, intent.status AS intent_status,
+               destination.error_message, order_row.rejection_reason
         FROM copy_signal_processing_records record
         JOIN copy_configurations config ON config.id = record.config_id
         LEFT JOIN copy_execution_intents intent ON intent.id = record.execution_intent_id
+        LEFT JOIN copy_signal_destination_results destination ON destination.processing_record_id = record.id
+        LEFT JOIN trading_orders order_row ON order_row.id = destination.destination_order_id
         WHERE record.published_signal_id = $1
           AND record.config_id = $2
           AND config.workspace_id = $3
@@ -1287,17 +1314,28 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async updateCopyDestinationResult(processingRecordId, { outcome, skipReason, destinationOrderId }, client = db) {
+    async updateCopyDestinationResult(
+      processingRecordId,
+      { outcome, skipReason, destinationOrderId, errorMessage },
+      client = db,
+    ) {
       const result = await client.query(
         `
         UPDATE copy_signal_destination_results
         SET outcome = $2,
             skip_reason = $3,
-            destination_order_id = $4
+            destination_order_id = $4,
+            error_message = COALESCE($5, error_message)
         WHERE processing_record_id = $1
         RETURNING *
         `,
-        [processingRecordId, outcome, skipReason ?? null, destinationOrderId ?? null]
+        [
+          processingRecordId,
+          outcome,
+          skipReason ?? null,
+          destinationOrderId ?? null,
+          errorMessage ?? null,
+        ]
       );
       return result.rows[0] || null;
     },
@@ -1308,13 +1346,15 @@ export function createMarketplaceQueries({ db }) {
         SELECT r.*, c.workspace_id, p.handle AS provider_handle,
                p.display_name AS provider_name, signal.instrument, signal.direction,
                intent.status AS intent_status, intent.intent_payload,
-               destination.destination_order_id, destination.outcome AS destination_outcome
+               destination.destination_order_id, destination.outcome AS destination_outcome,
+               destination.error_message, order_row.rejection_reason
         FROM copy_signal_processing_records r
         JOIN copy_configurations c ON c.id = r.config_id
         JOIN marketplace_provider_profiles p ON p.id = c.provider_id
         JOIN marketplace_published_signals signal ON signal.id = r.published_signal_id
         LEFT JOIN copy_execution_intents intent ON intent.id = r.execution_intent_id
         LEFT JOIN copy_signal_destination_results destination ON destination.processing_record_id = r.id
+        LEFT JOIN trading_orders order_row ON order_row.id = destination.destination_order_id
         WHERE c.workspace_id = $1
         ORDER BY r.processing_timestamp DESC
         LIMIT $2

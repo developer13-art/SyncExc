@@ -664,6 +664,7 @@ export function serializeCopyProcessingRecord(row) {
     direction: row.direction,
     outcome: row.outcome,
     skipReason: row.skip_reason || null,
+    errorMessage: row.error_message || row.rejection_reason || null,
     destinationOrderId: row.destination_order_id || null,
     intentStatus: row.intent_status || null,
     executionRequestId: payload.executionRequestId || null,

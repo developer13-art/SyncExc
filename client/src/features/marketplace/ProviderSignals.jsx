@@ -67,8 +67,10 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       } else if (statuses.every((status) => status === 'executed')) {
         toast.info('This signal was already copied');
       } else {
+        const failure = result.results?.find((item) => item.status === 'rejected');
         toast.warning('The signal was not submitted', {
-          description: 'Review the reason in Copy Results.',
+          description: failure?.errorMessage || failure?.skipReason?.replace(/_/g, ' ') ||
+            'Review the reason in Copy Results.',
         });
       }
       setCopyTarget(null);

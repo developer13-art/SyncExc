@@ -116,6 +116,7 @@ export function createCopyOrchestrationService({
         results.push({
           status: record.outcome,
           skipReason: record.skip_reason || null,
+          errorMessage: record.error_message || record.rejection_reason || null,
         });
       }
     }
@@ -508,8 +509,19 @@ export function createCopyOrchestrationService({
       }
 
       if (result.order?.status === 'rejected') {
-        await markCopyRecordFailed(record, 'rejected', 'execution_rejected');
-        return { status: 'rejected', orderId: result.order.id };
+        await markCopyRecordFailed(
+          record,
+          'rejected',
+          'execution_rejected',
+          result.order.rejection_reason || 'The exchange rejected this order without a reason.',
+          result.order.id,
+        );
+        return {
+          status: 'rejected',
+          orderId: result.order.id,
+          errorMessage: result.order.rejection_reason ||
+            'The exchange rejected this order without a reason.',
+        };
       }
 
       await db.tx(async (tx) => {
@@ -529,7 +541,7 @@ export function createCopyOrchestrationService({
     }
   }
 
-  async function markCopyRecordFailed(record, intentStatus, reason) {
+  async function markCopyRecordFailed(record, intentStatus, reason, errorMessage, destinationOrderId) {
     await db.tx(async (tx) => {
       await queries.updateCopyExecutionIntent(record.copy_intent_id, { status: intentStatus }, tx);
       await queries.updateCopyProcessingRecord(record.id, {
@@ -539,6 +551,8 @@ export function createCopyOrchestrationService({
       await queries.updateCopyDestinationResult(record.id, {
         outcome: COPY_PROCESSING_OUTCOME.FAILED,
         skipReason: reason,
+        errorMessage,
+        destinationOrderId,
       }, tx);
     });
   }
