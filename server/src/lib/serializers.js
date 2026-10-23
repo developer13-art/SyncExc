@@ -616,6 +616,25 @@ export function serializeProviderSubscriber(row) {
   };
 }
 
+export function serializeMarketplaceSubscription(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+    providerName: row.display_name || row.handle,
+    planName: row.plan_name || 'No plan',
+    status: row.status,
+    price: row.pricing?.amountMinor == null ? undefined : Number(row.pricing.amountMinor) / 100,
+    currency: row.pricing?.currency || 'USD',
+    billingInterval: row.pricing?.billingInterval || null,
+    currentPeriodStart: row.current_period_start || null,
+    currentPeriodEnd: row.current_period_end || null,
+    cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+    checkoutUrl: row.status === 'subscription_pending' ? row.stripe_checkout_url || null : null,
+    createdAt: row.created_at,
+  };
+}
+
 export function serializeCopyConfiguration(row) {
   if (!row) return null;
   return {

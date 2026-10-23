@@ -5,6 +5,7 @@ import { createMarketplaceController } from '../../src/modules/marketplace/marke
 import {
   serializeProvider,
   serializeProviderSubscriber,
+  serializeMarketplaceSubscription,
   serializePublishedSignal,
 } from '../../src/lib/serializers.js';
 import { createPublicationService } from '../../src/modules/marketplace/publication.service.js';
@@ -13,6 +14,7 @@ import { createSubscriptionService } from '../../src/modules/marketplace/subscri
 import { createMarketplaceQueries } from '../../src/modules/marketplace/marketplace.queries.js';
 import { createCopyConfigurationService } from '../../src/modules/marketplace/copy-configuration.service.js';
 import { createCopyOrchestrationService } from '../../src/modules/marketplace/copy-orchestration.service.js';
+import { createStripeMarketplaceService } from '../../src/modules/marketplace/stripe-marketplace.service.js';
 import { PublishSignalRequestSchema } from '@syncexc/shared';
 import { createMarketplaceListeners } from '../../src/modules/marketplace/listeners.js';
 import { createSignalDiscussionService } from '../../src/modules/marketplace/signal-discussion.service.js';
@@ -102,16 +104,185 @@ describe('Trader Studio API', () => {
     assert.equal(record.outcome, 'held');
     assert.equal(record.intent_status, 'terminal_confirmation_required');
 
+    await assert.rejects(
+      service.confirmRecord({
+        userId: 'subscriber-1',
+        workspaceId: 'workspace-1',
+        recordId: 'record-1',
+      }),
+      { code: 'PERMISSION_DENIED' },
+    );
+    assert.equal(terminalConfirmationCalls, 0);
+
     const finalResult = await service.confirmRecord({
       userId: 'subscriber-1',
       workspaceId: 'workspace-1',
       recordId: 'record-1',
+      canApproveExecution: true,
     });
     assert.deepEqual(finalResult, { status: 'submitted', orderId: 'order-1' });
     assert.equal(submitCalls, 1);
     assert.equal(terminalConfirmationCalls, 1);
     assert.equal(record.outcome, 'executed');
     assert.equal(record.intent_status, 'submitted');
+  });
+
+  it('activates paid marketplace subscriptions only after a successful Stripe invoice webhook', async () => {
+    const transaction = {};
+    const updates = [];
+    let seenEvent = false;
+    const queries = {
+      async insertMarketplaceStripeWebhookEvent(client, { eventId, eventType }) {
+        assert.equal(client, transaction);
+        assert.equal(eventId, 'evt_paid');
+        assert.equal(eventType, 'invoice.paid');
+        if (seenEvent) return null;
+        seenEvent = true;
+        return { event_id: eventId };
+      },
+      async findSubscriptionByStripeId(id, client) {
+        assert.equal(client, transaction);
+        assert.equal(id, 'sub_marketplace');
+        return { id: 'subscription-1' };
+      },
+      async findSubscriptionById(id, client) {
+        assert.equal(client, transaction);
+        return { id, status: 'subscription_pending' };
+      },
+      async updateMarketplaceSubscription(id, fields, client) {
+        assert.equal(client, transaction);
+        updates.push({ id, fields });
+        return { id, ...fields };
+      },
+      async insertSubscriptionEvent(client, event) {
+        assert.equal(client, transaction);
+        assert.equal(event.subscriptionId, 'subscription-1');
+      },
+    };
+    const service = createStripeMarketplaceService({
+      db: { async tx(callback) { return callback(transaction); } },
+      queries,
+      config: {},
+      providerService: {},
+    });
+
+    const event = {
+      id: 'evt_paid',
+      type: 'invoice.paid',
+      data: {
+        object: {
+          subscription: 'sub_marketplace',
+          lines: { data: [{ period: { start: 1770000000, end: 1772600000 } }] },
+        },
+      },
+    };
+    assert.deepEqual(await service.handleWebhook({ event }), { handled: true });
+    assert.equal(updates[0].id, 'subscription-1');
+    assert.equal(updates[0].fields.status, 'active');
+    assert.equal(updates[0].fields.currentPeriodStart.getTime(), 1770000000 * 1000);
+    assert.deepEqual(await service.handleWebhook({ event }), { handled: true, duplicate: true });
+    assert.equal(updates.length, 1);
+  });
+
+  it('creates recurring Stripe checkout with the configured Connect transfer and platform fee', async () => {
+    const transaction = {};
+    let checkoutPayload;
+    const persisted = [];
+    const stripeClient = {
+      accounts: {
+        async retrieve(accountId) {
+          assert.equal(accountId, 'acct_trader');
+          return {
+            id: accountId,
+            details_submitted: true,
+            capabilities: { transfers: { status: 'active' } },
+            payouts_enabled: true,
+          };
+        },
+      },
+      checkout: {
+        sessions: {
+          async create(payload, options) {
+            checkoutPayload = payload;
+            assert.equal(options.idempotencyKey, 'marketplace-checkout:subscription-1');
+            return { id: 'cs_marketplace', url: 'https://stripe.test/checkout' };
+          },
+        },
+      },
+    };
+    const queries = {
+      async findProviderById() {
+        return {
+          id: 'provider-1',
+          stripe_connect_account_id: 'acct_trader',
+          stripe_country: 'US',
+          stripe_details_submitted: true,
+          stripe_transfers_enabled: true,
+          stripe_payouts_enabled: true,
+        };
+      },
+      async updateProviderStripeAccount(providerId, fields) {
+        assert.equal(providerId, 'provider-1');
+        return {
+          id: providerId,
+          stripe_connect_account_id: 'acct_trader',
+          stripe_details_submitted: fields.detailsSubmitted,
+          stripe_transfers_enabled: fields.transfersEnabled,
+          stripe_payouts_enabled: fields.payoutsEnabled,
+        };
+      },
+      async findPendingSubscription() { return null; },
+      async insertSubscription(client, data) {
+        assert.equal(client, transaction);
+        assert.equal(data.subscriberUserId, 'subscriber-1');
+        return { id: 'subscription-1' };
+      },
+      async insertSubscriptionEvent(client, event) {
+        assert.equal(client, transaction);
+        assert.equal(event.eventType, 'checkout_started');
+      },
+      async updateMarketplaceSubscription(subscriptionId, fields) {
+        persisted.push({ subscriptionId, fields });
+      },
+    };
+    const service = createStripeMarketplaceService({
+      db: {
+        async tx(callback) { return callback(transaction); },
+        async query() { return { rows: [{ email: 'subscriber@example.test' }] }; },
+      },
+      queries,
+      providerService: {},
+      config: {
+        app: { url: 'https://syncexc.test' },
+        marketplace: { platformFeePercent: 2 },
+        payments: {
+          stripe: { enabled: true, secretKey: 'test_secret', webhookSecret: 'test_webhook' },
+        },
+      },
+      stripeClient,
+    });
+
+    const result = await service.createSubscriptionCheckout({
+      userId: 'subscriber-1',
+      provider: { id: 'provider-1', display_name: 'Trader One' },
+      plan: {
+        id: 'plan-1',
+        name: 'Monthly',
+        pricing: { amountMinor: 1500, currency: 'USD', billingInterval: 'monthly' },
+      },
+      workspaceId: 'workspace-1',
+    });
+
+    assert.deepEqual(result, {
+      subscriptionId: 'subscription-1',
+      redirectUrl: 'https://stripe.test/checkout',
+    });
+    assert.equal(checkoutPayload.mode, 'subscription');
+    assert.equal(checkoutPayload.line_items[0].price_data.recurring.interval, 'month');
+    assert.equal(checkoutPayload.subscription_data.transfer_data.destination, 'acct_trader');
+    assert.equal(checkoutPayload.subscription_data.application_fee_percent, 2);
+    assert.equal(checkoutPayload.customer_email, 'subscriber@example.test');
+    assert.equal(persisted[0].fields.checkoutSessionId, 'cs_marketplace');
   });
 
   it('accepts explicit order type and entry time for published signals', () => {
@@ -141,7 +312,7 @@ describe('Trader Studio API', () => {
     assert.equal(value.orderType, 'market');
   });
 
-  it('serializes full execution details and distinct copy configurations', () => {
+  it('serializes full execution details and copy count', () => {
     const signal = serializePublishedSignal({
       id: 'signal-1',
       provider_id: 'provider-1',
@@ -329,6 +500,7 @@ describe('Trader Studio API', () => {
     await queries.listPublishedSignals({ providerId: 'provider-1', publicOnly: true });
 
     assert.match(sql, /signal\.status IN \('published', 'updated'\)/);
+    assert.match(sql, /count\(DISTINCT processing\.subscriber_user_id\)/);
     assert.doesNotMatch(sql, /draft|cancelled|rejected/);
   });
 
@@ -694,7 +866,7 @@ describe('Trader Studio API', () => {
     assert.equal(planVersionClient, transaction);
   });
 
-  it('does not activate paid plans without marketplace billing', async () => {
+  it('does not activate paid plans when Stripe billing is not configured', async () => {
     let transactionStarted = false;
     const service = createProviderService({
       db: {
@@ -732,7 +904,7 @@ describe('Trader Studio API', () => {
         planId: 'plan-1',
         status: 'active',
       }),
-      { code: 'PAID_PLANS_UNAVAILABLE' },
+      { code: 'STRIPE_NOT_CONFIGURED' },
     );
     assert.equal(transactionStarted, false);
   });
@@ -756,6 +928,57 @@ describe('Trader Studio API', () => {
     );
   });
 
+  it('starts Stripe checkout without activating a paid subscription before its webhook', async () => {
+    let checkoutParameters;
+    let databaseTransactionStarted = false;
+    const service = createSubscriptionService({
+      db: {
+        async tx(callback) {
+          databaseTransactionStarted = true;
+          return callback({});
+        },
+      },
+      queries: {
+        async findProviderById() {
+          return {
+            id: 'provider-1',
+            moderation_state: 'approved',
+            visibility: 'public',
+          };
+        },
+        async findProviderPlanById() {
+          return {
+            id: 'plan-1',
+            provider_id: 'provider-1',
+            status: 'active',
+            pricing: { amountMinor: 1000, currency: 'USD', billingInterval: 'monthly' },
+          };
+        },
+        async findExistingSubscriptionForCheckout() { return null; },
+      },
+      stripeMarketplace: {
+        async createSubscriptionCheckout(params) {
+          checkoutParameters = params;
+          return { subscriptionId: 'subscription-1', redirectUrl: 'https://stripe.test/checkout' };
+        },
+      },
+    });
+
+    const result = await service.subscribe({
+      userId: 'subscriber-1',
+      providerId: 'provider-1',
+      planId: 'plan-1',
+      workspaceId: 'workspace-1',
+    });
+    assert.deepEqual(result, {
+      subscriptionId: 'subscription-1',
+      redirectUrl: 'https://stripe.test/checkout',
+    });
+    assert.equal(checkoutParameters.userId, 'subscriber-1');
+    assert.equal(checkoutParameters.plan.id, 'plan-1');
+    assert.equal(databaseTransactionStarted, false);
+  });
+
   it('serializes subscriber profiles without exposing their contact data', () => {
     const subscriber = serializeProviderSubscriber({
       id: 'subscription-1',
@@ -775,5 +998,24 @@ describe('Trader Studio API', () => {
       'createdAt',
     ]);
     assert.equal(subscriber.username, 'subscriber');
+  });
+
+  it('serializes only the subscriber-facing fields for Stripe subscriptions', () => {
+    const subscription = serializeMarketplaceSubscription({
+      id: 'subscription-1',
+      provider_id: 'provider-1',
+      display_name: 'Trader',
+      plan_name: 'Premium',
+      status: 'subscription_pending',
+      pricing: { amountMinor: 1250, currency: 'USD', billingInterval: 'monthly' },
+      stripe_checkout_url: 'https://stripe.test/checkout',
+      stripe_customer_id: 'private-stripe-customer',
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    assert.equal(subscription.providerName, 'Trader');
+    assert.equal(subscription.price, 12.5);
+    assert.equal(subscription.checkoutUrl, 'https://stripe.test/checkout');
+    assert.equal('stripe_customer_id' in subscription, false);
   });
 });

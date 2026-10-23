@@ -57,10 +57,12 @@ export function verifySyncExcSignature({ secret }) {
  * STRIPE
  * ========================================================================== */
 
-export function verifyStripeSignature() {
+export function verifyStripeSignature({ connectAccount = false } = {}) {
   return async function verifyStripeSignatureMiddleware(req, _res, next) {
     try {
-      const secret = config.payments.stripe.webhookSecret;
+      const secret = connectAccount
+        ? config.payouts.stripeConnect.webhookSecret
+        : config.payments.stripe.webhookSecret;
       if (!secret) {
         return next(
           new AuthorizationError(

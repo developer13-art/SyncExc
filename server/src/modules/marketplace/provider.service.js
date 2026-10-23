@@ -8,7 +8,7 @@ import {
   AuthorizationError,
 } from '../../lib/errors.js';
 
-export function createProviderService({ db, queries, events, profileImages, logger }) {
+export function createProviderService({ db, queries, events, profileImages, config, logger }) {
   async function createProvider({
     userId,
     workspaceId,
@@ -166,10 +166,27 @@ export function createProviderService({ db, queries, events, profileImages, logg
         throw new ConflictError('An approved, public profile is required to activate a plan', 'PROFILE_NOT_PUBLISHED');
       }
       if (Number(plan.pricing?.amountMinor) !== 0) {
-        throw new ConflictError(
-          'Paid subscription plans cannot be activated until marketplace billing is available',
-          'PAID_PLANS_UNAVAILABLE',
-        );
+        if (
+          !config?.payments?.stripe?.enabled ||
+          !config.payments.stripe.secretKey ||
+          !config.payments.stripe.webhookSecret
+        ) {
+          throw new ConflictError(
+            'Stripe marketplace billing and webhook signing are not configured',
+            'STRIPE_NOT_CONFIGURED',
+          );
+        }
+        if (
+          !provider.stripe_connect_account_id ||
+          !provider.stripe_details_submitted ||
+          !provider.stripe_transfers_enabled ||
+          !provider.stripe_payouts_enabled
+        ) {
+          throw new ConflictError(
+            'Complete Stripe payout onboarding before activating a paid plan',
+            'PROVIDER_PAYOUTS_NOT_READY',
+          );
+        }
       }
     }
 
@@ -200,6 +217,10 @@ export function createProviderService({ db, queries, events, profileImages, logg
     const provider = await queries.findProviderByWorkspaceId(workspaceId);
     if (!provider) throw new NotFoundError('Trader profile');
     return provider;
+  }
+
+  async function getManagedProvider({ userId, workspaceId }) {
+    return requireProviderManager(userId, workspaceId);
   }
 
   async function updateProvider({ userId, workspaceId, providerId, updates }) {
@@ -271,6 +292,7 @@ export function createProviderService({ db, queries, events, profileImages, logg
     listProviderPlans,
     createProviderPlan,
     updateProviderPlan,
+    getManagedProvider,
     updateProvider,
     updateCoverImage,
   };

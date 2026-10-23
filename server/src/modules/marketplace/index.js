@@ -26,6 +26,7 @@ import { createPerformanceService } from './performance.service.js';
 import { createDisclosureService } from './disclosure.service.js';
 import { createModerationService } from './moderation.service.js';
 import { createSignalDiscussionService } from './signal-discussion.service.js';
+import { createStripeMarketplaceService } from './stripe-marketplace.service.js';
 import { createMarketplaceRoutes } from './marketplace.routes.js';
 import { createMarketplaceListeners } from './listeners.js';
 import { createLogger } from '../../lib/logger.js';
@@ -40,6 +41,15 @@ export function createMarketplaceModule({ services }) {
     queries,
     events: services.events,
     profileImages: services.profileImages,
+    config: services.config,
+    logger,
+  });
+
+  const stripeMarketplaceService = createStripeMarketplaceService({
+    db: services.db,
+    queries,
+    providerService,
+    config: services.config,
     logger,
   });
 
@@ -67,7 +77,7 @@ export function createMarketplaceModule({ services }) {
   const subscriptionService = createSubscriptionService({
     db: services.db,
     queries,
-    billing: services.billing,
+    stripeMarketplace: stripeMarketplaceService,
     events: services.events,
     logger,
   });
@@ -117,6 +127,7 @@ export function createMarketplaceModule({ services }) {
     disclosureService,
     moderationService,
     signalDiscussionService,
+    stripeMarketplaceService,
     middleware: services.middleware,
   });
 
@@ -158,6 +169,7 @@ export function createMarketplaceModule({ services }) {
     disclosure: disclosureService,
     moderation: moderationService,
     signalDiscussion: signalDiscussionService,
+    stripeMarketplace: stripeMarketplaceService,
     publicApi,
 
     async shutdown() {

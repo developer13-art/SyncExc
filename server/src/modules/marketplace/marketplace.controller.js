@@ -9,6 +9,7 @@ import {
   serializePublishedSignal,
   serializeProviderPlan,
   serializeProviderSubscriber,
+  serializeMarketplaceSubscription,
   serializeCopyConfiguration,
   serializeCopyProcessingRecord,
 } from '../../lib/serializers.js';
@@ -25,6 +26,7 @@ export function createMarketplaceController(services) {
     disclosureService,
     moderationService,
     signalDiscussionService,
+    stripeMarketplaceService,
   } = services;
 
   return {
@@ -138,6 +140,30 @@ export function createMarketplaceController(services) {
         status: req.body.status,
       });
       return success(res, serializeProviderPlan(plan));
+    },
+
+    async startPayoutOnboarding(req, res) {
+      const result = await stripeMarketplaceService.startPayoutOnboarding({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        country: req.body.country,
+      });
+      return success(res, result);
+    },
+
+    async getPayoutStatus(req, res) {
+      const result = await stripeMarketplaceService.getPayoutStatus({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, result);
+    },
+
+    async handleStripeWebhook(req, res) {
+      const result = await stripeMarketplaceService.handleWebhook({
+        event: req.webhookEvent,
+      });
+      return success(res, result);
     },
 
     async updateProvider(req, res) {
@@ -345,12 +371,17 @@ export function createMarketplaceController(services) {
         userId: req.auth.userId,
         subscriptionId: req.params.subscriptionId,
       });
-      return success(res, result);
+      return success(res, {
+        id: result.id,
+        status: result.status,
+        currentPeriodEnd: result.current_period_end || null,
+        cancelAtPeriodEnd: Boolean(result.cancel_at_period_end),
+      });
     },
 
     async listSubscriptions(req, res) {
       const subscriptions = await subscriptionService.listSubscriptions({ userId: req.auth.userId });
-      return success(res, subscriptions);
+      return success(res, subscriptions.map(serializeMarketplaceSubscription));
     },
 
     /* Copy configurations */
@@ -429,6 +460,7 @@ export function createMarketplaceController(services) {
         userId: req.auth.userId,
         workspaceId: req.workspace.id,
         recordId: req.params.recordId,
+        canApproveExecution: req.workspace.permissions.includes('trading.approve_execution'),
       });
       return success(res, result);
     },

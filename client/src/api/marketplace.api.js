@@ -57,6 +57,12 @@ export const marketplaceApi = {
   getMyProviderPlans: () =>
     api.get(endpoints.marketplace.myPlans),
 
+  getPayoutAccountStatus: () =>
+    api.get('/marketplace/me/payout-account'),
+
+  startPayoutAccountOnboarding: (country) =>
+    api.post('/marketplace/me/payout-account/onboarding', { country }),
+
   createMyProviderPlan: (payload) =>
     api.post(endpoints.marketplace.myPlans, payload),
 

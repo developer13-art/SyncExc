@@ -122,6 +122,17 @@ memory and are not shared between multiple server instances. To start one
 application, use `npm run dev:server`, `npm run dev:client`, or
 `npm run dev:admin`.
 
+### Marketplace payments
+
+Paid Trader plans require `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Configure the
+Stripe platform webhook to send `checkout.session.completed`, `checkout.session.expired`,
+`invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, and
+`customer.subscription.deleted` events to
+`/api/v1/marketplace/webhooks/stripe`. Configure a connected-account webhook for
+`account.updated` at `/api/v1/marketplace/webhooks/stripe-connect`, and set its signing secret
+as `STRIPE_CONNECT_WEBHOOK_SECRET`. Apply the database migrations before enabling marketplace
+payments. `MARKETPLACE_PLATFORM_FEE_PERCENT` defaults to `2`.
+
 Development
 Workspace Commands
 bash

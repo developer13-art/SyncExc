@@ -115,6 +115,39 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findProviderByStripeAccountId(accountId, client = db) {
+      const result = await client.query(
+        `SELECT * FROM marketplace_provider_profiles WHERE stripe_connect_account_id = $1`,
+        [accountId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateProviderStripeAccount(providerId, fields, client = db) {
+      const result = await client.query(
+        `
+        UPDATE marketplace_provider_profiles
+        SET stripe_connect_account_id = COALESCE($2, stripe_connect_account_id),
+            stripe_country = COALESCE($3, stripe_country),
+            stripe_details_submitted = COALESCE($4, stripe_details_submitted),
+            stripe_transfers_enabled = COALESCE($5, stripe_transfers_enabled),
+            stripe_payouts_enabled = COALESCE($6, stripe_payouts_enabled),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [
+          providerId,
+          fields.accountId ?? null,
+          fields.country ?? null,
+          fields.detailsSubmitted ?? null,
+          fields.transfersEnabled ?? null,
+          fields.payoutsEnabled ?? null,
+        ]
+      );
+      return result.rows[0] || null;
+    },
+
     async getProviderDashboard(providerId) {
       const result = await db.query(
         `
@@ -392,7 +425,7 @@ export function createMarketplaceQueries({ db }) {
         SELECT signal.*,
                latest_version.snapshot->'targets' AS targets,
                latest_version.snapshot->'disclosures' AS disclosures,
-               (SELECT count(DISTINCT processing.config_id)::int
+               (SELECT count(DISTINCT processing.subscriber_user_id)::int
                 FROM copy_signal_processing_records processing
                 WHERE processing.published_signal_id = signal.id) AS copy_count
         FROM marketplace_published_signals signal
@@ -686,12 +719,101 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findExistingSubscriptionForCheckout(providerId, subscriberUserId) {
+      const result = await db.query(
+        `
+        SELECT * FROM marketplace_subscriptions
+        WHERE provider_id = $1 AND subscriber_user_id = $2
+          AND status IN ('active', 'trialing', 'past_due')
+        LIMIT 1
+        `,
+        [providerId, subscriberUserId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findPendingSubscription(providerId, subscriberUserId) {
+      const result = await db.query(
+        `
+        SELECT * FROM marketplace_subscriptions
+        WHERE provider_id = $1 AND subscriber_user_id = $2
+          AND status = 'subscription_pending'
+        LIMIT 1
+        `,
+        [providerId, subscriberUserId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findSubscriptionByStripeId(stripeSubscriptionId, client = db) {
+      const result = await client.query(
+        `SELECT * FROM marketplace_subscriptions WHERE stripe_subscription_id = $1`,
+        [stripeSubscriptionId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findSubscriptionById(subscriptionId, client = db) {
+      const result = await client.query(
+        `SELECT * FROM marketplace_subscriptions WHERE id = $1`,
+        [subscriptionId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateMarketplaceSubscription(subscriptionId, fields, client = db) {
+      const result = await client.query(
+        `
+        UPDATE marketplace_subscriptions
+        SET status = COALESCE($2, status),
+            stripe_checkout_session_id = COALESCE($3, stripe_checkout_session_id),
+            stripe_checkout_url = COALESCE($4, stripe_checkout_url),
+            stripe_customer_id = COALESCE($5, stripe_customer_id),
+            stripe_subscription_id = COALESCE($6, stripe_subscription_id),
+            current_period_start = COALESCE($7, current_period_start),
+            current_period_end = COALESCE($8, current_period_end),
+            cancel_at_period_end = COALESCE($9, cancel_at_period_end),
+            canceled_at = COALESCE($10, canceled_at),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [
+          subscriptionId,
+          fields.status ?? null,
+          fields.checkoutSessionId ?? null,
+          fields.checkoutUrl ?? null,
+          fields.customerId ?? null,
+          fields.stripeSubscriptionId ?? null,
+          fields.currentPeriodStart ?? null,
+          fields.currentPeriodEnd ?? null,
+          fields.cancelAtPeriodEnd ?? null,
+          fields.canceledAt ?? null,
+        ]
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertMarketplaceStripeWebhookEvent(client, { eventId, eventType }) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_stripe_webhook_events (event_id, event_type)
+        VALUES ($1, $2)
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING event_id
+        `,
+        [eventId, eventType]
+      );
+      return result.rows[0] || null;
+    },
+
     async listSubscriptionsForUser(userId) {
       const result = await db.query(
         `
-        SELECT s.*, p.handle, p.display_name
+        SELECT s.*, p.handle, p.display_name, plan.name AS plan_name, plan.pricing
         FROM marketplace_subscriptions s
         JOIN marketplace_provider_profiles p ON p.id = s.provider_id
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = s.plan_id
         WHERE s.subscriber_user_id = $1
         ORDER BY s.created_at DESC
         `,
@@ -700,8 +822,8 @@ export function createMarketplaceQueries({ db }) {
       return result.rows;
     },
 
-    async updateSubscriptionStatus(subscriptionId, status) {
-      const result = await db.query(
+    async updateSubscriptionStatus(subscriptionId, status, client = db) {
+      const result = await client.query(
         `
         UPDATE marketplace_subscriptions
         SET status = $2, updated_at = now()

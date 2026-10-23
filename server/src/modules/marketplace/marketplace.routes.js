@@ -65,6 +65,10 @@ const UpdateProviderSchema = Joi.object({
   autoPublishTrades: Joi.boolean().optional(),
 }).min(1);
 
+const StripeCountrySchema = Joi.object({
+  country: Joi.string().uppercase().pattern(/^[A-Z]{2}$/).required(),
+});
+
 const coverUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
@@ -79,6 +83,18 @@ export function createMarketplaceRoutes(services) {
   const controller = createMarketplaceController(services);
   const { middleware } = services;
   const router = Router();
+
+  router.post(
+    '/webhooks/stripe',
+    middleware.verifyStripeSignature(),
+    middleware.asyncHandler(controller.handleStripeWebhook)
+  );
+
+  router.post(
+    '/webhooks/stripe-connect',
+    middleware.verifyStripeSignature({ connectAccount: true }),
+    middleware.asyncHandler(controller.handleStripeWebhook)
+  );
 
   router.get(
     '/signals/:signalId/comments',
@@ -175,6 +191,21 @@ export function createMarketplaceRoutes(services) {
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.asyncHandler(controller.listMyPlans)
+  );
+
+  router.get(
+    '/me/payout-account',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.getPayoutStatus)
+  );
+
+  router.post(
+    '/me/payout-account/onboarding',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(StripeCountrySchema),
+    middleware.asyncHandler(controller.startPayoutOnboarding)
   );
 
   router.post(
@@ -343,7 +374,7 @@ export function createMarketplaceRoutes(services) {
     '/copy-results/:recordId/confirm',
     middleware.requireAuth(),
     middleware.requireWorkspace(),
-    middleware.requirePermission('trading.request_execution'),
+    middleware.requireAnyPermission('trading.request_execution', 'trading.approve_execution'),
     middleware.validateParams(Joi.object({ recordId: UuidSchema.required() })),
     middleware.asyncHandler(controller.confirmCopyResult)
   );

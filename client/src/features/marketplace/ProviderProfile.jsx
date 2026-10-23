@@ -93,7 +93,11 @@ export default function ProviderProfile() {
   const handleSubscribe = async ({ planId }) => {
     setSubscribing(true);
     try {
-      await providerQuery.subscribe({ planId });
+      const result = await providerQuery.subscribe({ planId });
+      if (result?.redirectUrl) {
+        window.location.assign(result.redirectUrl);
+        return;
+      }
       toast.success('Subscribed');
       setSubscribePlan(null);
     } catch (err) {

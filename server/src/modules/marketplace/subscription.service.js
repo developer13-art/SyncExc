@@ -4,7 +4,7 @@
 
 import { NotFoundError, ConflictError } from '../../lib/errors.js';
 
-export function createSubscriptionService({ db, queries, billing, events, logger }) {
+export function createSubscriptionService({ db, queries, stripeMarketplace, events }) {
   async function subscribe({ userId, providerId, planId, workspaceId }) {
     const provider = await queries.findProviderById(providerId);
     if (!provider) throw new NotFoundError('Provider');
@@ -14,21 +14,30 @@ export function createSubscriptionService({ db, queries, billing, events, logger
     if (provider.visibility !== 'public') {
       throw new ConflictError('Provider is not accepting subscribers', 'PROVIDER_NOT_PUBLISHED');
     }
+    let plan = null;
     if (planId) {
-      const plan = await queries.findProviderPlanById(planId);
+      plan = await queries.findProviderPlanById(planId);
       if (!plan || plan.provider_id !== providerId || plan.status !== 'active') {
         throw new NotFoundError('Subscription plan');
       }
       if (Number(plan.pricing?.amountMinor) !== 0) {
-        throw new ConflictError(
-          'Paid subscription checkout is not available',
-          'PAID_SUBSCRIPTIONS_UNAVAILABLE',
-        );
+        if (!stripeMarketplace) {
+          throw new ConflictError('Stripe marketplace billing is unavailable', 'STRIPE_NOT_CONFIGURED');
+        }
       }
     }
 
-    const existing = await queries.findActiveSubscription(providerId, userId);
+    const existing = await queries.findExistingSubscriptionForCheckout(providerId, userId);
     if (existing) throw new ConflictError('Subscription already active', 'SUBSCRIPTION_EXISTS');
+
+    if (plan && Number(plan.pricing?.amountMinor) > 0) {
+      return stripeMarketplace.createSubscriptionCheckout({
+        userId,
+        provider,
+        plan,
+        workspaceId,
+      });
+    }
 
     return db.tx(async (tx) => {
       const subscription = await queries.insertSubscription(tx, {
@@ -43,9 +52,7 @@ export function createSubscriptionService({ db, queries, billing, events, logger
         eventType: 'created',
       });
 
-      // In production, this would trigger a billing flow through the billing
-      // module. For now, activate immediately.
-      const updated = await queries.updateSubscriptionStatus(subscription.id, 'active');
+      const updated = await queries.updateSubscriptionStatus(subscription.id, 'active', tx);
 
       await events.publish(
         tx,
@@ -68,9 +75,28 @@ export function createSubscriptionService({ db, queries, billing, events, logger
       [subscriptionId, userId]
     );
     if (result.rows.length === 0) throw new NotFoundError('Subscription');
+    const subscription = result.rows[0];
+
+    if (
+      subscription.stripe_subscription_id &&
+      ['active', 'past_due'].includes(subscription.status)
+    ) {
+      if (subscription.cancel_at_period_end) return subscription;
+      if (!stripeMarketplace) {
+        throw new ConflictError('Stripe marketplace billing is unavailable', 'STRIPE_NOT_CONFIGURED');
+      }
+      const updated = await stripeMarketplace.cancelPaidSubscription(subscription);
+      await db.tx(async (tx) => {
+        await queries.insertSubscriptionEvent(tx, {
+          subscriptionId,
+          eventType: 'cancellation_scheduled',
+        });
+      });
+      return updated;
+    }
 
     return db.tx(async (tx) => {
-      const updated = await queries.updateSubscriptionStatus(subscriptionId, 'canceled');
+      const updated = await queries.updateSubscriptionStatus(subscriptionId, 'canceled', tx);
 
       await queries.insertSubscriptionEvent(tx, {
         subscriptionId,

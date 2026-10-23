@@ -14,7 +14,7 @@
 
 import { fnv1aHash } from '@syncexc/shared';
 import { COPY_PROCESSING_OUTCOME, COPY_SKIP_REASON } from '@syncexc/shared';
-import { ConflictError, NotFoundError } from '../../lib/errors.js';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors.js';
 
 export function createCopyOrchestrationService({
   db,
@@ -356,7 +356,7 @@ export function createCopyOrchestrationService({
     });
   }
 
-  async function confirmRecord({ userId, workspaceId, recordId }) {
+  async function confirmRecord({ userId, workspaceId, recordId, canApproveExecution = false }) {
     const record = await queries.findCopyRecordForConfirmation(recordId, workspaceId);
     if (!record || record.subscriber_user_id !== userId) throw new NotFoundError('Copy confirmation');
     if (record.outcome !== COPY_PROCESSING_OUTCOME.HELD || !record.copy_intent_id) {
@@ -369,6 +369,9 @@ export function createCopyOrchestrationService({
     const intentStatus = record.intent_status;
     if (!['awaiting_confirmation', 'terminal_confirmation_required'].includes(intentStatus)) {
       throw new ConflictError('This copy confirmation has already been processed', 'INVALID_STATE');
+    }
+    if (intentStatus === 'terminal_confirmation_required' && !canApproveExecution) {
+      throw new AuthorizationError('Approval permission is required for this terminal risk check', 'PERMISSION_DENIED');
     }
     const intent = await queries.claimCopyExecutionIntent(
       record.copy_intent_id,

@@ -126,6 +126,7 @@ const envSchema = Joi.object({
   // Payout providers
   STRIPE_CONNECT_CLIENT_ID: Joi.string().allow('').optional(),
   STRIPE_CONNECT_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  MARKETPLACE_PLATFORM_FEE_PERCENT: Joi.number().min(0).max(100).default(2),
 
   // Storage
   STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
@@ -389,6 +390,9 @@ const config = {
       webhookSecret: env.STRIPE_CONNECT_WEBHOOK_SECRET || undefined,
       enabled: Boolean(env.STRIPE_CONNECT_CLIENT_ID),
     },
+  },
+  marketplace: {
+    platformFeePercent: env.MARKETPLACE_PLATFORM_FEE_PERCENT,
   },
 
   storage: {
