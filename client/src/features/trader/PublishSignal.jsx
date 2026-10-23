@@ -59,7 +59,27 @@ export default function PublishSignal() {
   });
 
   const updateField = (field) => (event) => {
-    setForm((current) => ({ ...current, [field]: event.target.value }));
+    const value = event.target.value;
+    setForm((current) => {
+      if (field === 'entry') {
+        return { ...current, entry: value, entryMin: '', entryMax: '' };
+      }
+      if (field === 'entryMin' || field === 'entryMax') {
+        return { ...current, [field]: value, entry: '' };
+      }
+      return { ...current, [field]: value };
+    });
+  };
+
+  const getEntryBounds = () => {
+    if (form.entry.trim()) {
+      const entry = Number(form.entry);
+      return { min: entry, max: entry };
+    }
+    if (form.entryMin.trim() && form.entryMax.trim()) {
+      return { min: Number(form.entryMin), max: Number(form.entryMax) };
+    }
+    return null;
   };
 
   const handleSubmit = (event) => {
@@ -79,6 +99,11 @@ export default function PublishSignal() {
       setValidationError('Enter a complete range with the minimum no greater than the maximum.');
       return;
     }
+    if ((hasEntry && Number(form.entry) <= 0) ||
+        (hasRange && (Number(form.entryMin) <= 0 || Number(form.entryMax) <= 0))) {
+      setValidationError('Entry prices must be greater than zero.');
+      return;
+    }
 
     const targets = form.targets
       .split(',')
@@ -86,6 +111,49 @@ export default function PublishSignal() {
       .filter(Boolean);
     if (targets.some((target) => !Number.isFinite(Number(target)) || Number(target) <= 0)) {
       setValidationError('Take-profit targets must be positive numbers.');
+      return;
+    }
+    if (form.stopLoss.trim() && Number(form.stopLoss) <= 0) {
+      setValidationError('Stop loss must be greater than zero.');
+      return;
+    }
+    if (form.leverage.trim() && Number(form.leverage) <= 0) {
+      setValidationError('Leverage must be greater than zero.');
+      return;
+    }
+
+    const bounds = getEntryBounds();
+    if (bounds && form.stopLoss.trim()) {
+      const stopLoss = Number(form.stopLoss);
+      if ((form.direction === 'long' && stopLoss >= bounds.min) ||
+          (form.direction === 'short' && stopLoss <= bounds.max)) {
+        setValidationError(
+          form.direction === 'long'
+            ? 'For a long signal, the stop loss must be below the entry price or range.'
+            : 'For a short signal, the stop loss must be above the entry price or range.'
+        );
+        return;
+      }
+    }
+    if (bounds && targets.some((target) =>
+      form.direction === 'long' ? Number(target) <= bounds.max : Number(target) >= bounds.min
+    )) {
+      setValidationError(
+        form.direction === 'long'
+          ? 'For a long signal, every take-profit target must be above the entry price or range.'
+          : 'For a short signal, every take-profit target must be below the entry price or range.'
+      );
+      return;
+    }
+
+    const expiry = form.validUntil ? new Date(form.validUntil) : null;
+    const entryTime = form.entryTime ? new Date(form.entryTime) : null;
+    if (expiry && expiry <= new Date()) {
+      setValidationError('Valid until must be a future date and time.');
+      return;
+    }
+    if (expiry && entryTime && expiry <= entryTime) {
+      setValidationError('Valid until must be later than the signal entry time.');
       return;
     }
 
@@ -162,7 +230,9 @@ export default function PublishSignal() {
       <Card>
         <CardHeader>
           <CardTitle>Signal details</CardTitle>
-          <CardDescription>Optional trading parameters are not inferred if you leave them blank.</CardDescription>
+          <CardDescription>
+            An entry price or range is required. Stop loss, targets, and leverage are optional.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-5" onSubmit={handleSubmit}>
@@ -205,6 +275,9 @@ export default function PublishSignal() {
               <Field label="Entry range maximum" id="signal-entry-max">
                 <Input id="signal-entry-max" type="number" min="0" step="any" value={form.entryMax} onChange={updateField('entryMax')} placeholder="Optional" />
               </Field>
+              <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
+                Enter one exact price, or both the minimum and maximum of a range. Editing one entry option clears the other. Limit orders need one exact price.
+              </p>
               <Field label="Stop loss" id="signal-stop">
                 <Input id="signal-stop" type="number" min="0" step="any" value={form.stopLoss} onChange={updateField('stopLoss')} placeholder="Optional" />
               </Field>
@@ -224,9 +297,6 @@ export default function PublishSignal() {
             <Field label="Notes and risk disclosures" id="signal-disclosures">
               <Textarea id="signal-disclosures" rows={4} maxLength={5000} value={form.disclosures} onChange={updateField('disclosures')} />
             </Field>
-            <p className="text-xs text-muted-foreground">
-              Enter either a single entry price or a complete entry range, not both.
-            </p>
             <div className="flex justify-end">
               <Button type="submit" disabled={publishMutation.isPending}>
                 <Send className="h-4 w-4" />

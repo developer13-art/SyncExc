@@ -367,6 +367,19 @@ describe('Trader Studio API', () => {
 
     assert.equal(error, undefined);
     assert.equal(value.orderType, 'market');
+    assert.equal(value.entryRange, undefined);
+  });
+
+  it('rejects a signal that provides both an exact entry and a price range', () => {
+    const { error } = PublishSignalRequestSchema.validate({
+      instrument: 'BTCUSDT',
+      marketType: 'spot',
+      direction: 'long',
+      entry: '60000',
+      entryRange: { min: '59900', max: '60100' },
+    });
+
+    assert.equal(error?.details[0]?.type, 'object.xor');
   });
 
   it('serializes full execution details and copy count', () => {

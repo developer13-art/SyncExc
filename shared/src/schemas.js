@@ -577,7 +577,7 @@ export const PublishSignalRequestSchema = Joi.object({
   validUntil: Joi.date().iso().greater('now').optional(),
   disclosures: Joi.string().trim().max(5000).optional(),
   sourceEvidence: UrlSchema.optional(),
-});
+}).xor('entry', 'entryRange');
 
 export const CreateCopyConfigurationRequestSchema = Joi.object({
   providerId: UuidSchema.required(),

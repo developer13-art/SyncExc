@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Plus } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { marketplaceApi } from '../../api/index.js';
 import { getErrorMessage } from '../../api/errors.js';
@@ -14,6 +15,7 @@ import { Label } from '../../components/ui/Label.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { useToast } from '../../hooks/useToast.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
+import { ROUTES } from '../../config/routes.config.js';
 
 const plansKey = (workspaceId) => ['marketplace', 'my-provider-plans', workspaceId];
 
@@ -26,6 +28,11 @@ export default function SubscriptionPlans() {
   const plansQuery = useQuery({
     queryKey: plansKey(activeWorkspaceId),
     queryFn: () => marketplaceApi.getMyProviderPlans(),
+  });
+  const payoutQuery = useQuery({
+    queryKey: ['marketplace', 'payout-account', activeWorkspaceId],
+    queryFn: () => marketplaceApi.getPayoutAccountStatus(),
+    enabled: Boolean(activeWorkspaceId),
   });
   const refreshPlans = () => queryClient.invalidateQueries({ queryKey: plansKey(activeWorkspaceId) });
   const createPlan = useMutation({
@@ -92,7 +99,18 @@ export default function SubscriptionPlans() {
 
       <Card className="border-warning/30 bg-warning/5">
         <CardContent className="p-4 text-sm text-muted-foreground">
-          Plan drafts are saved in your Trader workspace. Paid plan checkout and payouts are not yet connected; paid plans cannot be activated or sold. Free plans can be activated after your profile is approved and public.
+          {payoutQuery.isLoading
+            ? 'Checking your Stripe payout setup. Free plans can be activated after your profile is approved and public.'
+            : payoutQuery.isError
+              ? 'Could not verify your Stripe payout setup. Free plans can still be activated; retry payout setup or check Revenue & payouts before activating a paid plan.'
+              : payoutQuery.data?.status === 'ready'
+                ? 'Stripe payouts are connected. Paid plan activation also requires marketplace billing and webhooks to be enabled by SyncExc.'
+                : 'Paid plans need a connected Stripe payout account and SyncExc marketplace billing. Free plans can be activated after your profile is approved and public.'}
+          {payoutQuery.data?.status !== 'ready' ? (
+            <Button variant="link" className="ml-1 h-auto p-0" asChild>
+              <Link to={ROUTES.app.trader.revenue}>Open Revenue & payouts</Link>
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -141,7 +159,8 @@ export default function SubscriptionPlans() {
           {plans.map((plan) => {
             const amountMinor = Number(plan.pricing?.amountMinor ?? 0);
             const isFree = amountMinor === 0;
-            const canActivate = isFree && plan.status === 'draft';
+            const payoutsReady = payoutQuery.data?.status === 'ready';
+            const canActivate = plan.status === 'draft' && (isFree || payoutsReady);
             return (
               <Card key={plan.id}>
                 <CardHeader>
@@ -183,7 +202,19 @@ export default function SubscriptionPlans() {
                     </Button>
                   ) : null}
                   {!isFree && plan.status === 'draft' ? (
-                    <p className="text-xs text-muted-foreground">Paid checkout is unavailable; this plan stays in draft.</p>
+                    payoutsReady ? (
+                      <Button
+                        variant="outline"
+                        disabled={updatePlan.isPending}
+                        onClick={() => updatePlan.mutate({ planId: plan.id, status: 'active' })}
+                      >
+                        Activate paid plan
+                      </Button>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Connect Stripe payouts before activating this paid plan.
+                      </p>
+                    )
                   ) : null}
                 </CardContent>
               </Card>
