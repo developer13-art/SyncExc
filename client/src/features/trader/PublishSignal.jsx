@@ -26,6 +26,8 @@ export default function PublishSignal() {
     instrument: '',
     marketType: 'spot',
     direction: 'long',
+    orderType: 'market',
+    entryTime: '',
     entry: '',
     entryMin: '',
     entryMax: '',
@@ -50,6 +52,11 @@ export default function PublishSignal() {
       navigate(ROUTES.app.trader.signalHistory);
     },
   });
+  const autoPublishMutation = useMutation({
+    mutationFn: (autoPublishTrades) =>
+      marketplaceApi.updateProvider(provider.id, { autoPublishTrades }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: profileKey(activeWorkspaceId) }),
+  });
 
   const updateField = (field) => (event) => {
     setForm((current) => ({ ...current, [field]: event.target.value }));
@@ -61,6 +68,10 @@ export default function PublishSignal() {
     const hasRange = Boolean(form.entryMin.trim() || form.entryMax.trim());
     if (hasEntry === hasRange) {
       setValidationError('Enter one entry price or both ends of an entry range.');
+      return;
+    }
+    if (form.orderType === 'limit' && !hasEntry) {
+      setValidationError('Limit orders require one exact entry price, not a range.');
       return;
     }
     if (hasRange && (!form.entryMin.trim() || !form.entryMax.trim() ||
@@ -83,6 +94,8 @@ export default function PublishSignal() {
       instrument: form.instrument.trim().toUpperCase(),
       marketType: form.marketType,
       direction: form.direction,
+      orderType: form.orderType,
+      ...(form.entryTime ? { entryTime: new Date(form.entryTime).toISOString() } : {}),
       ...(hasEntry
         ? { entry: form.entry.trim() }
         : { entryRange: { min: form.entryMin.trim(), max: form.entryMax.trim() } }),
@@ -124,6 +137,29 @@ export default function PublishSignal() {
       </header>
 
       <Card>
+        <CardContent className="flex flex-col gap-2 p-4 pt-4">
+          <label className="flex items-start gap-3 text-sm font-medium text-foreground">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={Boolean(provider.autoPublishTrades)}
+              disabled={autoPublishMutation.isPending}
+              onChange={(event) => autoPublishMutation.mutate(event.target.checked)}
+            />
+            Automatically publish SyncExc terminal fills
+          </label>
+          <p className="pl-6 text-xs text-muted-foreground">
+            Only filled orders placed through this Trader workspace are captured. External exchange-app activity is not connected yet; take-profit and stop-loss orders are not inferred.
+          </p>
+          {autoPublishMutation.isError ? (
+            <p className="pl-6 text-xs text-destructive" role="alert">
+              {getErrorMessage(autoPublishMutation.error)}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader>
           <CardTitle>Signal details</CardTitle>
           <CardDescription>Optional trading parameters are not inferred if you leave them blank.</CardDescription>
@@ -151,6 +187,14 @@ export default function PublishSignal() {
                 <select id="signal-direction" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={form.direction} onChange={updateField('direction')}>
                   <option value="long">Long</option><option value="short">Short</option>
                 </select>
+              </Field>
+              <Field label="Order type" id="signal-order-type">
+                <select id="signal-order-type" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={form.orderType} onChange={updateField('orderType')}>
+                  <option value="market">Market</option><option value="limit">Limit</option>
+                </select>
+              </Field>
+              <Field label="Entry time" id="signal-entry-time">
+                <Input id="signal-entry-time" type="datetime-local" value={form.entryTime} onChange={updateField('entryTime')} />
               </Field>
               <Field label="Entry price (or provide a range)" id="signal-entry">
                 <Input id="signal-entry" type="number" min="0" step="any" value={form.entry} onChange={updateField('entry')} placeholder="Optional" />

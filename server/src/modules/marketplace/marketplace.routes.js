@@ -62,9 +62,15 @@ const UpdateProviderSchema = Joi.object({
   supportedLanguages: Joi.array().items(Joi.string().trim().max(8)).max(20).optional(),
   avatarUrl: Joi.string().uri({ scheme: ['https'] }).optional().allow(null),
   visibility: Joi.string().valid('private', 'public').optional(),
+  autoPublishTrades: Joi.boolean().optional(),
 }).min(1);
 
 const coverUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
+
+const winningsUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
@@ -73,6 +79,31 @@ export function createMarketplaceRoutes(services) {
   const controller = createMarketplaceController(services);
   const { middleware } = services;
   const router = Router();
+
+  router.get(
+    '/signals/:signalId/comments',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ signalId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.listSignalComments)
+  );
+
+  router.post(
+    '/signals/:signalId/comments',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ signalId: UuidSchema.required() })),
+    winningsUpload.single('proof'),
+    middleware.validateBody(Joi.object({
+      content: Joi.string().trim().max(5000).allow('').default(''),
+    })),
+    middleware.asyncHandler(controller.createSignalComment)
+  );
+
+  router.get(
+    '/signal-comments/:commentId/proof',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ commentId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.getSignalCommentProof)
+  );
 
   /* ---------------------------------------------------------------------------
    * Provider discovery (public)
@@ -306,6 +337,15 @@ export function createMarketplaceRoutes(services) {
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.asyncHandler(controller.listCopyResults)
+  );
+
+  router.post(
+    '/copy-results/:recordId/confirm',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('trading.request_execution'),
+    middleware.validateParams(Joi.object({ recordId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.confirmCopyResult)
   );
 
   /* ---------------------------------------------------------------------------

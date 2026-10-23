@@ -14,6 +14,7 @@
 
 import { fnv1aHash } from '@syncexc/shared';
 import { COPY_PROCESSING_OUTCOME, COPY_SKIP_REASON } from '@syncexc/shared';
+import { ConflictError, NotFoundError } from '../../lib/errors.js';
 
 export function createCopyOrchestrationService({
   db,
@@ -21,6 +22,7 @@ export function createCopyOrchestrationService({
   subscriptionService,
   copyConfigurationService,
   risk,
+  terminal,
   events,
   logger,
 }) {
@@ -76,6 +78,17 @@ export function createCopyOrchestrationService({
         destination: null,
         reason: COPY_SKIP_REASON.INSTRUMENT_UNSUPPORTED,
         message: 'Market type not in filter list',
+      });
+      return;
+    }
+
+    if ((signal.order_type || 'market') === 'limit' && !signal.entry) {
+      await recordSkip({
+        config,
+        signal,
+        destination: null,
+        reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
+        message: 'Limit-order signals need an exact entry price before they can be copied',
       });
       return;
     }
@@ -155,7 +168,7 @@ export function createCopyOrchestrationService({
           instrument: signal.instrument,
           marketType: signal.market_type,
           side: signal.direction === 'long' ? 'buy' : 'sell',
-          type: 'market',
+          type: signal.order_type || 'market',
           quantity: allocation.quantity,
           price: signal.entry,
         },
@@ -186,10 +199,8 @@ export function createCopyOrchestrationService({
     let outcome;
     if (config.execution_mode === 'monitor_only') {
       outcome = COPY_PROCESSING_OUTCOME.SKIPPED;
-    } else if (config.execution_mode === 'confirm_before_execution') {
-      outcome = COPY_PROCESSING_OUTCOME.HELD;
     } else {
-      outcome = COPY_PROCESSING_OUTCOME.ELIGIBLE;
+      outcome = COPY_PROCESSING_OUTCOME.HELD;
     }
 
     // Record the processing
@@ -201,7 +212,7 @@ export function createCopyOrchestrationService({
       const r = await queries.insertCopyProcessingRecord(tx, {
         publishedSignalId: signal.id,
         configId: config.id,
-        subscriberUserId: config.workspace_id, // Could be user-scoped
+        subscriberUserId: config.subscriber_user_id,
         configVersion: config.current_version,
         outcome,
         skipReason:
@@ -221,6 +232,27 @@ export function createCopyOrchestrationService({
         outcome,
         skipReason: config.execution_mode === 'monitor_only' ? 'monitor_only' : null,
       });
+
+      if (outcome === COPY_PROCESSING_OUTCOME.HELD) {
+        const intent = await queries.insertCopyExecutionIntent(tx, {
+          processingRecordId: r.id,
+          payload: {
+            userId: config.subscriber_user_id,
+            workspaceId: config.workspace_id,
+            connectionId: destination.connection_id,
+            accountId: destination.account_id,
+            instrumentId: signal.instrument,
+            marketType: signal.market_type,
+            side: signal.direction === 'long' ? 'buy' : 'sell',
+            type: signal.order_type || 'market',
+            quantity: allocation.quantity,
+            ...(signal.order_type === 'limit' ? { price: signal.entry } : {}),
+            idempotencyKey: fnv1aHash(`copy-submit:${signal.id}:${config.id}:${destination.id}:${config.current_version}`),
+          },
+          idempotencyKey: fnv1aHash(`copy-intent:${signal.id}:${config.id}:${destination.id}:${config.current_version}`),
+        });
+        await queries.updateCopyProcessingRecord(r.id, { executionIntentId: intent.id }, tx);
+      }
 
       await events.publish(
         tx,
@@ -291,7 +323,7 @@ export function createCopyOrchestrationService({
       const record = await queries.insertCopyProcessingRecord(tx, {
         publishedSignalId: signal.id,
         configId: config.id,
-        subscriberUserId: config.workspace_id,
+        subscriberUserId: config.subscriber_user_id,
         configVersion: config.current_version,
         outcome: COPY_PROCESSING_OUTCOME.SKIPPED,
         skipReason: reason,
@@ -324,12 +356,126 @@ export function createCopyOrchestrationService({
     });
   }
 
+  async function confirmRecord({ userId, workspaceId, recordId }) {
+    const record = await queries.findCopyRecordForConfirmation(recordId, workspaceId);
+    if (!record || record.subscriber_user_id !== userId) throw new NotFoundError('Copy confirmation');
+    if (record.outcome !== COPY_PROCESSING_OUTCOME.HELD || !record.copy_intent_id) {
+      throw new ConflictError('This copy signal is not awaiting confirmation', 'INVALID_STATE');
+    }
+
+    const initialIntent = typeof record.intent_payload === 'string'
+      ? JSON.parse(record.intent_payload)
+      : record.intent_payload;
+    const intentStatus = record.intent_status;
+    if (!['awaiting_confirmation', 'terminal_confirmation_required'].includes(intentStatus)) {
+      throw new ConflictError('This copy confirmation has already been processed', 'INVALID_STATE');
+    }
+    const intent = await queries.claimCopyExecutionIntent(
+      record.copy_intent_id,
+      intentStatus
+    );
+    if (!intent) {
+      throw new ConflictError('This copy confirmation is already being processed', 'INVALID_STATE');
+    }
+    const payload = typeof intent.intent_payload === 'string'
+      ? JSON.parse(intent.intent_payload)
+      : intent.intent_payload || initialIntent;
+    const isTerminalApproval = intentStatus === 'terminal_confirmation_required';
+
+    if (isTerminalApproval && !terminal?.confirmExecution) {
+      await queries.updateCopyExecutionIntent(record.copy_intent_id, {
+        status: 'terminal_confirmation_required',
+      });
+      throw new ConflictError('Terminal approval is unavailable', 'COPY_EXECUTION_UNAVAILABLE');
+    }
+    if (!isTerminalApproval && !terminal?.submitOrder) {
+      await queries.updateCopyExecutionIntent(record.copy_intent_id, {
+        status: 'awaiting_confirmation',
+      });
+      throw new ConflictError('Order submission is not available', 'COPY_EXECUTION_UNAVAILABLE');
+    }
+
+    try {
+      const result = isTerminalApproval
+        ? await terminal.confirmExecution({
+            userId,
+            workspaceId,
+            executionRequestId: payload.executionRequestId,
+          })
+        : await terminal.submitOrder({
+            userId,
+            workspaceId,
+            connectionId: payload.connectionId,
+            accountId: payload.accountId,
+            instrumentId: payload.instrumentId,
+            marketType: payload.marketType,
+            side: payload.side,
+            type: payload.type,
+            quantity: payload.quantity,
+            price: payload.price,
+            idempotencyKey: payload.idempotencyKey,
+          });
+
+      if (result.requiresConfirmation) {
+        const updatedIntent = { ...payload, executionRequestId: result.executionRequest.id };
+        await queries.updateCopyExecutionIntent(record.copy_intent_id, {
+          status: 'terminal_confirmation_required',
+          payload: updatedIntent,
+        });
+        return {
+          status: 'terminal_confirmation_required',
+          executionRequestId: result.executionRequest.id,
+        };
+      }
+
+      if (result.ambiguous) {
+        await markCopyRecordFailed(record, 'reconciliation_required', 'reconciliation_required');
+        return { status: 'reconciliation_required' };
+      }
+
+      if (result.order?.status === 'rejected') {
+        await markCopyRecordFailed(record, 'rejected', 'execution_rejected');
+        return { status: 'rejected', orderId: result.order.id };
+      }
+
+      await db.tx(async (tx) => {
+        await queries.updateCopyExecutionIntent(record.copy_intent_id, { status: 'submitted' }, tx);
+        await queries.updateCopyProcessingRecord(recordId, {
+          outcome: COPY_PROCESSING_OUTCOME.EXECUTED,
+        }, tx);
+        await queries.updateCopyDestinationResult(recordId, {
+          outcome: COPY_PROCESSING_OUTCOME.EXECUTED,
+          destinationOrderId: result.order?.id || null,
+        }, tx);
+      });
+      return { status: 'submitted', orderId: result.order?.id || null };
+    } catch (err) {
+      await markCopyRecordFailed(record, 'reconciliation_required', 'reconciliation_required');
+      throw err;
+    }
+  }
+
+  async function markCopyRecordFailed(record, intentStatus, reason) {
+    await db.tx(async (tx) => {
+      await queries.updateCopyExecutionIntent(record.copy_intent_id, { status: intentStatus }, tx);
+      await queries.updateCopyProcessingRecord(record.id, {
+        outcome: COPY_PROCESSING_OUTCOME.FAILED,
+        skipReason: reason,
+      }, tx);
+      await queries.updateCopyDestinationResult(record.id, {
+        outcome: COPY_PROCESSING_OUTCOME.FAILED,
+        skipReason: reason,
+      }, tx);
+    });
+  }
+
   async function listRecordsForWorkspace(workspaceId, { limit }) {
     return queries.listCopyProcessingRecordsForWorkspace(workspaceId, { limit });
   }
 
   return {
     processPublishedSignal,
+    confirmRecord,
     listRecordsForWorkspace,
   };
 }

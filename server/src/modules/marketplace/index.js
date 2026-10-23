@@ -25,6 +25,7 @@ import { createCopyOrchestrationService } from './copy-orchestration.service.js'
 import { createPerformanceService } from './performance.service.js';
 import { createDisclosureService } from './disclosure.service.js';
 import { createModerationService } from './moderation.service.js';
+import { createSignalDiscussionService } from './signal-discussion.service.js';
 import { createMarketplaceRoutes } from './marketplace.routes.js';
 import { createMarketplaceListeners } from './listeners.js';
 import { createLogger } from '../../lib/logger.js';
@@ -91,6 +92,7 @@ export function createMarketplaceModule({ services }) {
     subscriptionService,
     copyConfigurationService,
     risk: services.risk,
+    terminal: services.terminal,
     events: services.events,
     logger,
   });
@@ -102,6 +104,8 @@ export function createMarketplaceModule({ services }) {
     logger,
   });
 
+  const signalDiscussionService = createSignalDiscussionService({ queries });
+
   const routes = createMarketplaceRoutes({
     providerService,
     publicationService,
@@ -112,12 +116,15 @@ export function createMarketplaceModule({ services }) {
     performanceService,
     disclosureService,
     moderationService,
+    signalDiscussionService,
     middleware: services.middleware,
   });
 
   const listeners = createMarketplaceListeners({
     events: services.events,
     copyOrchestration: copyOrchestrationService,
+    publicationService,
+    queries,
     logger,
   });
 
@@ -150,6 +157,7 @@ export function createMarketplaceModule({ services }) {
     performance: performanceService,
     disclosure: disclosureService,
     moderation: moderationService,
+    signalDiscussion: signalDiscussionService,
     publicApi,
 
     async shutdown() {

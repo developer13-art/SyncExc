@@ -41,6 +41,43 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findPublishedSignalBySourceOrderId(sourceOrderId) {
+      const result = await db.query(
+        `SELECT id FROM marketplace_published_signals WHERE source_order_id = $1`,
+        [sourceOrderId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findOrderForAutoPublication(orderId) {
+      const result = await db.query(
+        `
+        SELECT
+          orders.id,
+          orders.workspace_id,
+          orders.instrument,
+          orders.market_type,
+          orders.side,
+          orders.type,
+          orders.average_fill_price,
+          orders.created_at,
+          provider.id AS provider_id,
+          provider.user_id,
+          provider.auto_publish_trades
+        FROM trading_orders orders
+        JOIN marketplace_provider_profiles provider
+          ON provider.workspace_id = orders.workspace_id
+        WHERE orders.id = $1
+          AND orders.status = 'filled'
+          AND provider.auto_publish_trades = true
+          AND provider.visibility = 'public'
+          AND provider.moderation_state = 'approved'
+        `,
+        [orderId]
+      );
+      return result.rows[0] || null;
+    },
+
     async isFollowing(providerId, followerUserId) {
       const result = await db.query(
         `
@@ -116,30 +153,39 @@ export function createMarketplaceQueries({ db }) {
 
     async listProviders({ moderationState, limit = 50, cursor = null, search = null, markets = null } = {}) {
       const params = [limit + 1];
-      const conditions = ["moderation_state = 'approved'", "visibility = 'public'"];
+      const conditions = ["provider.moderation_state = 'approved'", "provider.visibility = 'public'"];
       if (moderationState) {
-        conditions[0] = `moderation_state = $${params.length + 1}`;
+        conditions[0] = `provider.moderation_state = $${params.length + 1}`;
         params.push(moderationState);
       }
       if (search) {
         params.push(`%${search}%`);
         conditions.push(
-          `(display_name ILIKE $${params.length} OR handle ILIKE $${params.length} OR biography ILIKE $${params.length})`
+          `(provider.display_name ILIKE $${params.length} OR provider.handle ILIKE $${params.length} OR provider.biography ILIKE $${params.length})`
         );
       }
       if (markets?.length) {
         params.push(markets);
-        conditions.push(`supported_markets && $${params.length}::text[]`);
+        conditions.push(`provider.supported_markets && $${params.length}::text[]`);
       }
       if (cursor) {
         params.push(cursor);
-        conditions.push(`created_at < $${params.length}`);
+        conditions.push(`provider.created_at < $${params.length}`);
       }
       const result = await db.query(
         `
-        SELECT * FROM marketplace_provider_profiles
+        SELECT provider.*,
+               (SELECT count(*)::int
+                FROM marketplace_subscriptions subscription
+                WHERE subscription.provider_id = provider.id
+                  AND subscription.status IN ('active', 'trialing')) AS subscriber_count,
+               (SELECT count(*)::int
+                FROM marketplace_published_signals signal
+                WHERE signal.provider_id = provider.id
+                  AND signal.status IN ('published', 'updated')) AS signal_count
+        FROM marketplace_provider_profiles provider
         WHERE ${conditions.join(' AND ')}
-        ORDER BY created_at DESC
+        ORDER BY provider.created_at DESC
         LIMIT $1
         `,
         params
@@ -165,6 +211,7 @@ export function createMarketplaceQueries({ db }) {
             avatar_url = COALESCE($7, avatar_url),
             visibility = COALESCE($8, visibility),
             cover_image_url = COALESCE($9, cover_image_url),
+            auto_publish_trades = COALESCE($10, auto_publish_trades),
             current_version = current_version + 1,
             updated_at = now()
         WHERE id = $1
@@ -180,6 +227,7 @@ export function createMarketplaceQueries({ db }) {
           fields.avatarUrl ?? null,
           fields.visibility ?? null,
           fields.coverImageUrl ?? null,
+          fields.autoPublishTrades ?? null,
         ]
       );
       return result.rows[0] || null;
@@ -218,10 +266,11 @@ export function createMarketplaceQueries({ db }) {
       const result = await client.query(
         `
         INSERT INTO marketplace_published_signals (
-          provider_id, source_signal_id, instrument, market_type, direction,
-          entry, entry_range, stop_loss, leverage, status, valid_until, metadata
+          provider_id, source_signal_id, instrument, market_type, direction, order_type,
+          entry_time, entry, entry_range, stop_loss, leverage, status, valid_until, metadata,
+          source_order_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8, $9, $10, $11, 'draft', $12, $13, $14)
         RETURNING *
         `,
         [
@@ -230,12 +279,15 @@ export function createMarketplaceQueries({ db }) {
           data.instrument,
           data.marketType,
           data.direction,
+          data.orderType || 'market',
+          data.entryTime || null,
           data.entry || null,
           data.entryRange ? JSON.stringify(data.entryRange) : null,
           data.stopLoss || null,
           data.leverage || null,
           data.validUntil || null,
           data.metadata ? JSON.stringify(data.metadata) : null,
+          data.sourceOrderId || null,
         ]
       );
       return result.rows[0];
@@ -247,6 +299,73 @@ export function createMarketplaceQueries({ db }) {
         [signalId]
       );
       return result.rows[0] || null;
+    },
+
+    async canAccessSignalDiscussion(signalId, userId) {
+      const result = await db.query(
+        `
+        SELECT signal.id
+        FROM marketplace_published_signals signal
+        JOIN marketplace_provider_profiles provider ON provider.id = signal.provider_id
+        WHERE signal.id = $1
+          AND signal.status IN ('published', 'updated', 'closed')
+          AND (
+            provider.user_id = $2
+            OR EXISTS (
+              SELECT 1 FROM marketplace_subscriptions subscription
+              WHERE subscription.provider_id = provider.id
+                AND subscription.subscriber_user_id = $2
+                AND subscription.status IN ('active', 'trialing')
+            )
+          )
+        `,
+        [signalId, userId]
+      );
+      return result.rowCount > 0;
+    },
+
+    async listSignalComments(signalId) {
+      const result = await db.query(
+        `
+        SELECT comment.id, comment.signal_id, comment.user_id, comment.content,
+               comment.proof_name, comment.proof_mime_type, comment.created_at,
+               users.display_name, users.username
+        FROM marketplace_signal_comments comment
+        JOIN users ON users.id = comment.user_id
+        WHERE comment.signal_id = $1
+        ORDER BY comment.created_at ASC
+        `,
+        [signalId]
+      );
+      return result.rows;
+    },
+
+    async findSignalComment(commentId) {
+      const result = await db.query(
+        `SELECT * FROM marketplace_signal_comments WHERE id = $1`,
+        [commentId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertSignalComment(data) {
+      const result = await db.query(
+        `
+        INSERT INTO marketplace_signal_comments
+          (signal_id, user_id, content, proof_data, proof_name, proof_mime_type)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, signal_id, user_id, content, proof_name, proof_mime_type, created_at
+        `,
+        [
+          data.signalId,
+          data.userId,
+          data.content,
+          data.proofData,
+          data.proofName,
+          data.proofMimeType,
+        ]
+      );
+      return result.rows[0];
     },
 
     async listPublishedSignals({ providerId, status, publicOnly = false, limit = 50, cursor = null } = {}) {
@@ -272,7 +391,10 @@ export function createMarketplaceQueries({ db }) {
         `
         SELECT signal.*,
                latest_version.snapshot->'targets' AS targets,
-               latest_version.snapshot->'disclosures' AS disclosures
+               latest_version.snapshot->'disclosures' AS disclosures,
+               (SELECT count(DISTINCT processing.config_id)::int
+                FROM copy_signal_processing_records processing
+                WHERE processing.published_signal_id = signal.id) AS copy_count
         FROM marketplace_published_signals signal
         LEFT JOIN LATERAL (
           SELECT snapshot
@@ -609,16 +731,17 @@ export function createMarketplaceQueries({ db }) {
       const result = await client.query(
         `
         INSERT INTO copy_configurations (
-          workspace_id, provider_id, provider_plan_id, sizing_rule,
+          workspace_id, provider_id, provider_plan_id, created_by, sizing_rule,
           instrument_filters, market_types, execution_mode
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
         `,
         [
           data.workspaceId,
           data.providerId,
           data.providerPlanId || null,
+          data.createdBy,
           JSON.stringify(data.sizingRule),
           data.instrumentFilters || [],
           data.marketTypes,
@@ -659,7 +782,8 @@ export function createMarketplaceQueries({ db }) {
     async listActiveCopyConfigurationsForProvider(providerId) {
       const result = await db.query(
         `
-        SELECT c.*, w.id AS workspace_id FROM copy_configurations c
+        SELECT c.*, w.id AS workspace_id, c.created_by AS subscriber_user_id
+        FROM copy_configurations c
         JOIN workspaces w ON w.id = c.workspace_id
         WHERE c.provider_id = $1 AND c.status = 'active'
         `,
@@ -774,8 +898,8 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async updateCopyProcessingRecord(recordId, fields) {
-      const result = await db.query(
+    async updateCopyProcessingRecord(recordId, fields, client = db) {
+      const result = await client.query(
         `
         UPDATE copy_signal_processing_records
         SET outcome = COALESCE($2, outcome),
@@ -798,13 +922,88 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async insertCopyExecutionIntent(client, { processingRecordId, payload, idempotencyKey }) {
+      const result = await client.query(
+        `
+        INSERT INTO copy_execution_intents (processing_record_id, intent_payload, idempotency_key, status)
+        VALUES ($1, $2, $3, 'awaiting_confirmation')
+        RETURNING *
+        `,
+        [processingRecordId, JSON.stringify(payload), idempotencyKey]
+      );
+      return result.rows[0];
+    },
+
+    async findCopyRecordForConfirmation(recordId, workspaceId) {
+      const result = await db.query(
+        `
+        SELECT record.*, config.workspace_id, config.status AS config_status,
+               intent.id AS copy_intent_id, intent.intent_payload, intent.status AS intent_status
+        FROM copy_signal_processing_records record
+        JOIN copy_configurations config ON config.id = record.config_id
+        LEFT JOIN copy_execution_intents intent ON intent.id = record.execution_intent_id
+        WHERE record.id = $1 AND config.workspace_id = $2
+        `,
+        [recordId, workspaceId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async claimCopyExecutionIntent(intentId, expectedStatus) {
+      const result = await db.query(
+        `
+        UPDATE copy_execution_intents
+        SET status = 'confirming'
+        WHERE id = $1 AND status = $2
+        RETURNING *
+        `,
+        [intentId, expectedStatus]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateCopyExecutionIntent(intentId, { status, payload }, client = db) {
+      const result = await client.query(
+        `
+        UPDATE copy_execution_intents
+        SET status = COALESCE($2, status),
+            intent_payload = COALESCE($3, intent_payload)
+        WHERE id = $1
+        RETURNING *
+        `,
+        [intentId, status ?? null, payload ? JSON.stringify(payload) : null]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateCopyDestinationResult(processingRecordId, { outcome, skipReason, destinationOrderId }, client = db) {
+      const result = await client.query(
+        `
+        UPDATE copy_signal_destination_results
+        SET outcome = $2,
+            skip_reason = $3,
+            destination_order_id = $4
+        WHERE processing_record_id = $1
+        RETURNING *
+        `,
+        [processingRecordId, outcome, skipReason ?? null, destinationOrderId ?? null]
+      );
+      return result.rows[0] || null;
+    },
+
     async listCopyProcessingRecordsForWorkspace(workspaceId, { limit = 50 } = {}) {
       const result = await db.query(
         `
-        SELECT r.*, c.workspace_id, p.handle AS provider_handle
+        SELECT r.*, c.workspace_id, p.handle AS provider_handle,
+               p.display_name AS provider_name, signal.instrument, signal.direction,
+               intent.status AS intent_status, intent.intent_payload,
+               destination.destination_order_id, destination.outcome AS destination_outcome
         FROM copy_signal_processing_records r
         JOIN copy_configurations c ON c.id = r.config_id
         JOIN marketplace_provider_profiles p ON p.id = c.provider_id
+        JOIN marketplace_published_signals signal ON signal.id = r.published_signal_id
+        LEFT JOIN copy_execution_intents intent ON intent.id = r.execution_intent_id
+        LEFT JOIN copy_signal_destination_results destination ON destination.processing_record_id = r.id
         WHERE c.workspace_id = $1
         ORDER BY r.processing_timestamp DESC
         LIMIT $2

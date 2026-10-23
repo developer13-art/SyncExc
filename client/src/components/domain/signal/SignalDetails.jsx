@@ -39,7 +39,14 @@ export function SignalDetails({ signal, className }) {
         <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <Field label="Direction" value={signal.direction?.toUpperCase() ?? '—'} />
           <Field label="Market" value={signal.marketType ?? '—'} />
+          <Field label="Order type" value={signal.orderType?.toUpperCase() ?? 'MARKET'} />
           <Field label="Entry" value={signal.entry ? formatQuantity(signal.entry, 6) : '—'} />
+          {signal.entryRange ? (
+            <Field
+              label="Entry range"
+              value={`${formatQuantity(signal.entryRange.min, 6)} – ${formatQuantity(signal.entryRange.max, 6)}`}
+            />
+          ) : null}
           <Field
             label="Stop Loss"
             value={signal.stopLoss ? formatQuantity(signal.stopLoss, 6) : '—'}
@@ -50,16 +57,26 @@ export function SignalDetails({ signal, className }) {
                 <Target className="h-3 w-3" /> Targets
               </p>
               <div className="mt-1 flex flex-wrap gap-3">
-                {signal.targets.map((t, i) => (
-                  <span key={i} className="text-sm font-medium text-foreground">
-                    {t.label ? `${t.label}: ` : ''}
-                    {formatQuantity(t.price, 6)}
-                  </span>
-                ))}
+                {signal.targets.map((target, i) => {
+                  const price = typeof target === 'object' ? target.price : target;
+                  return (
+                    <span key={i} className="text-sm font-medium text-foreground">
+                      {typeof target === 'object' && target.label ? `${target.label}: ` : ''}
+                      {formatQuantity(price, 6)}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           ) : null}
           <Field label="Leverage" value={signal.leverage ?? 'Not stated'} />
+          <Field
+            label="Entry time"
+            value={signal.entryTime ? formatDateTime(signal.entryTime) : '—'}
+          />
+          {signal.copyCount !== undefined ? (
+            <Field label="Copies" value={signal.copyCount.toLocaleString()} />
+          ) : null}
           <Field
             label="Occurred"
             value={signal.occurredAt ? formatDateTime(signal.occurredAt) : '—'}

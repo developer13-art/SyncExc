@@ -10,6 +10,7 @@ import {
   serializeProviderPlan,
   serializeProviderSubscriber,
   serializeCopyConfiguration,
+  serializeCopyProcessingRecord,
 } from '../../lib/serializers.js';
 
 export function createMarketplaceController(services) {
@@ -23,6 +24,7 @@ export function createMarketplaceController(services) {
     performanceService,
     disclosureService,
     moderationService,
+    signalDiscussionService,
   } = services;
 
   return {
@@ -177,6 +179,8 @@ export function createMarketplaceController(services) {
         instrument: req.body.instrument,
         marketType: req.body.marketType,
         direction: req.body.direction,
+        orderType: req.body.orderType,
+        entryTime: req.body.entryTime,
         entry: req.body.entry,
         entryRange: req.body.entryRange,
         stopLoss: req.body.stopLoss,
@@ -246,6 +250,61 @@ export function createMarketplaceController(services) {
         reason: req.body.reason,
       });
       return success(res, serializePublishedSignal(signal));
+    },
+
+    async listSignalComments(req, res) {
+      const comments = await signalDiscussionService.list({
+        signalId: req.params.signalId,
+        userId: req.auth.userId,
+      });
+      return success(res, comments.map((comment) => ({
+        id: comment.id,
+        signalId: comment.signal_id,
+        content: comment.content,
+        author: {
+          displayName: comment.display_name,
+          username: comment.username,
+        },
+        proof: comment.proof_name ? {
+          name: comment.proof_name,
+          mimeType: comment.proof_mime_type,
+          url: `/api/v1/marketplace/signal-comments/${comment.id}/proof`,
+        } : null,
+        createdAt: comment.created_at,
+      })));
+    },
+
+    async createSignalComment(req, res) {
+      const comment = await signalDiscussionService.create({
+        signalId: req.params.signalId,
+        userId: req.auth.userId,
+        content: req.body.content,
+        file: req.file
+          ? { buffer: req.file.buffer, mimeType: req.file.mimetype, originalname: req.file.originalname }
+          : null,
+      });
+      return created(res, {
+        id: comment.id,
+        signalId: comment.signal_id,
+        content: comment.content,
+        proof: comment.proof_name ? {
+          name: comment.proof_name,
+          mimeType: comment.proof_mime_type,
+          url: `/api/v1/marketplace/signal-comments/${comment.id}/proof`,
+        } : null,
+        createdAt: comment.created_at,
+      });
+    },
+
+    async getSignalCommentProof(req, res) {
+      const proof = await signalDiscussionService.getProof({
+        commentId: req.params.commentId,
+        userId: req.auth.userId,
+      });
+      res.set('Content-Type', proof.mimeType);
+      res.set('Content-Disposition', 'inline');
+      res.set('X-Content-Type-Options', 'nosniff');
+      return res.send(proof.buffer);
     },
 
     /* Follows */
@@ -362,7 +421,16 @@ export function createMarketplaceController(services) {
         req.workspace.id,
         { limit: Number(req.query.limit) || 50 }
       );
-      return success(res, results);
+      return success(res, results.map(serializeCopyProcessingRecord));
+    },
+
+    async confirmCopyResult(req, res) {
+      const result = await copyOrchestrationService.confirmRecord({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        recordId: req.params.recordId,
+      });
+      return success(res, result);
     },
 
     /* Performance */

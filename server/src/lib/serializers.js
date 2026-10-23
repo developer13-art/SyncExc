@@ -557,6 +557,9 @@ export function serializeProvider(row) {
     coverImageUrl: row.cover_image_url || null,
     supportedMarkets: row.supported_markets || [],
     supportedLanguages: row.supported_languages || [],
+    subscriberCount: row.subscriber_count == null ? undefined : Number(row.subscriber_count),
+    signalCount: row.signal_count == null ? undefined : Number(row.signal_count),
+    autoPublishTrades: Boolean(row.auto_publish_trades),
     currentVersion: row.current_version,
     createdAt: row.created_at,
   };
@@ -570,6 +573,8 @@ export function serializePublishedSignal(row) {
     instrument: row.instrument,
     marketType: row.market_type,
     direction: row.direction,
+    orderType: row.order_type || 'market',
+    entryTime: row.entry_time || row.created_at,
     entry: row.entry,
     entryRange: row.entry_range || null,
     stopLoss: row.stop_loss,
@@ -580,6 +585,7 @@ export function serializePublishedSignal(row) {
     validUntil: row.valid_until,
     disclosures: row.disclosures || row.metadata?.disclosures || null,
     sourceEvidence: row.metadata?.sourceEvidence || null,
+    copyCount: Number(row.copy_count || 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -620,6 +626,25 @@ export function serializeCopyConfiguration(row) {
     executionMode: row.execution_mode,
     status: row.status,
     createdAt: row.created_at,
+  };
+}
+
+export function serializeCopyProcessingRecord(row) {
+  if (!row) return null;
+  const payload = typeof row.intent_payload === 'string'
+    ? JSON.parse(row.intent_payload)
+    : row.intent_payload || {};
+  return {
+    id: row.id,
+    provider: row.provider_name || row.provider_handle,
+    instrument: row.instrument,
+    direction: row.direction,
+    outcome: row.outcome,
+    skipReason: row.skip_reason || null,
+    destinationOrderId: row.destination_order_id || null,
+    intentStatus: row.intent_status || null,
+    executionRequestId: payload.executionRequestId || null,
+    occurredAt: row.processing_timestamp,
   };
 }
 

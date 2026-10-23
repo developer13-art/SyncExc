@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { BarChart3 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { Card, CardContent } from '../../components/ui/Card.jsx';
+import { Button } from '../../components/ui/Button.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
@@ -16,11 +18,30 @@ import { usePagination } from '../../hooks/usePagination.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { useToast } from '../../hooks/useToast.js';
 
 export default function CopyResults() {
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const pagination = usePagination({ initialPageSize: 25 });
   const [outcome, setOutcome] = useState('all');
+  const confirmCopy = useMutation({
+    mutationFn: (recordId) => marketplaceApi.confirmCopySignalResult(recordId),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.marketplace.copySignalResults({}) });
+      toast.success(
+        result.status === 'terminal_confirmation_required'
+          ? 'Additional terminal risk confirmation is required'
+          : result.status === 'reconciliation_required'
+            ? 'Order outcome needs reconciliation; do not retry'
+            : result.status === 'rejected'
+              ? 'The exchange rejected this order'
+            : 'Copy order submitted',
+      );
+    },
+  });
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Copy Results'));
@@ -100,6 +121,36 @@ export default function CopyResults() {
         <span className="text-xs text-muted-foreground">{row.destinationLabel ?? '—'}</span>
       ),
     },
+    {
+      key: 'confirmation',
+      label: 'Action',
+      render: (row) =>
+        row.outcome === 'held' && row.intentStatus === 'confirming' ? (
+          <Button size="sm" variant="outline" disabled>
+            Processing…
+          </Button>
+        ) : row.outcome === 'held' && [
+          'awaiting_confirmation',
+          'terminal_confirmation_required',
+        ].includes(row.intentStatus) ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={confirmCopy.isPending}
+            onClick={() => confirmCopy.mutate(row.id)}
+          >
+            {row.intentStatus === 'terminal_confirmation_required'
+              ? 'Approve risk & submit'
+              : 'Confirm order'}
+          </Button>
+        ) : row.executionRequestId ? (
+        <Button size="sm" variant="outline" asChild>
+          <Link to={ROUTES.app.terminal.execution(row.executionRequestId)}>
+            View terminal execution
+          </Link>
+        </Button>
+      ) : null,
+    },
   ];
 
   return (
@@ -136,6 +187,11 @@ export default function CopyResults() {
 
       <Card>
         <CardContent className="p-5 pt-5">
+          {confirmCopy.isError ? (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {getErrorMessage(confirmCopy.error)}
+            </p>
+          ) : null}
           {results.length === 0 && !resultsQuery.isLoading ? (
             <EmptyState
               icon={BarChart3}

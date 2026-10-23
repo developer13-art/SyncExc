@@ -27,6 +27,15 @@ export const marketplaceApi = {
   listProviderSignals: (providerId, params) =>
     api.getPaged(endpoints.marketplace.providerSignals(providerId), { params }),
 
+  listSignalComments: (signalId) => api.get(`/marketplace/signals/${signalId}/comments`),
+
+  createSignalComment: (signalId, { content, proof }) => {
+    const formData = new FormData();
+    formData.append('content', content || '');
+    if (proof) formData.append('proof', proof);
+    return api.upload(`/marketplace/signals/${signalId}/comments`, formData);
+  },
+
   listProviderPlans: (providerId) =>
     api.get(endpoints.marketplace.providerPlans(providerId)),
 
@@ -124,6 +133,9 @@ export const marketplaceApi = {
 
   listCopySignalResults: (params) =>
     api.getPaged(endpoints.marketplace.copySignalResults, { params }),
+
+  confirmCopySignalResult: (recordId) =>
+    api.post(`/marketplace/copy-results/${recordId}/confirm`),
 
   getCopySignalResult: (resultId) =>
     api.get(endpoints.marketplace.copySignalResult(resultId)),

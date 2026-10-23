@@ -75,7 +75,8 @@ export function createTerminalModule({ services }) {
 
   const publicApi = {
     getOrder: (orderId) => service.getOrder(orderId),
-    submitOrder: (params) => orderSubmissionService.submit(params),
+    submitOrder: (params, options) => orderSubmissionService.submit(params, options),
+    confirmExecution: (params) => orderSubmissionService.confirm(params),
     listOrdersForScope: (params) => service.listOrdersForScope(params),
     recordExecutionUpdate: (params) => executionService.handleExecutionUpdate(params),
   };

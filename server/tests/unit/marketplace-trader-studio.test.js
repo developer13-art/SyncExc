@@ -12,6 +12,10 @@ import { createProviderService } from '../../src/modules/marketplace/provider.se
 import { createSubscriptionService } from '../../src/modules/marketplace/subscription.service.js';
 import { createMarketplaceQueries } from '../../src/modules/marketplace/marketplace.queries.js';
 import { createCopyConfigurationService } from '../../src/modules/marketplace/copy-configuration.service.js';
+import { createCopyOrchestrationService } from '../../src/modules/marketplace/copy-orchestration.service.js';
+import { PublishSignalRequestSchema } from '@syncexc/shared';
+import { createMarketplaceListeners } from '../../src/modules/marketplace/listeners.js';
+import { createSignalDiscussionService } from '../../src/modules/marketplace/signal-discussion.service.js';
 
 function createResponse() {
   return {
@@ -28,6 +32,138 @@ function createResponse() {
 }
 
 describe('Trader Studio API', () => {
+  it('requires a second explicit confirmation for terminal risk approval and records the submitted order', async () => {
+    const record = {
+      id: 'record-1',
+      subscriber_user_id: 'subscriber-1',
+      outcome: 'held',
+      copy_intent_id: 'intent-1',
+      intent_status: 'awaiting_confirmation',
+      intent_payload: {
+        connectionId: 'connection-1',
+        accountId: 'account-1',
+        instrumentId: 'BTCUSDT',
+        marketType: 'spot',
+        side: 'buy',
+        type: 'market',
+        quantity: '0.01',
+        idempotencyKey: 'copy-submit-key',
+      },
+    };
+    let terminalConfirmationCalls = 0;
+    let submitCalls = 0;
+    const queries = {
+      async findCopyRecordForConfirmation() { return record; },
+      async claimCopyExecutionIntent(_intentId, expectedStatus) {
+        if (record.intent_status !== expectedStatus) return null;
+        record.intent_status = 'confirming';
+        return {
+          intent_payload: record.intent_payload,
+          status: 'confirming',
+        };
+      },
+      async updateCopyExecutionIntent(_intentId, { status, payload }) {
+        record.intent_status = status;
+        if (payload) record.intent_payload = payload;
+      },
+      async updateCopyProcessingRecord(_id, changes) {
+        Object.assign(record, changes);
+      },
+      async updateCopyDestinationResult() {},
+    };
+    const service = createCopyOrchestrationService({
+      db: { async tx(callback) { return callback({}); } },
+      queries,
+      terminal: {
+        async submitOrder() {
+          submitCalls += 1;
+          return {
+            requiresConfirmation: true,
+            executionRequest: { id: 'execution-request-1' },
+          };
+        },
+        async confirmExecution({ executionRequestId }) {
+          terminalConfirmationCalls += 1;
+          assert.equal(executionRequestId, 'execution-request-1');
+          return { order: { id: 'order-1', status: 'submitted' } };
+        },
+      },
+    });
+
+    const firstResult = await service.confirmRecord({
+      userId: 'subscriber-1',
+      workspaceId: 'workspace-1',
+      recordId: 'record-1',
+    });
+    assert.deepEqual(firstResult, {
+      status: 'terminal_confirmation_required',
+      executionRequestId: 'execution-request-1',
+    });
+    assert.equal(record.outcome, 'held');
+    assert.equal(record.intent_status, 'terminal_confirmation_required');
+
+    const finalResult = await service.confirmRecord({
+      userId: 'subscriber-1',
+      workspaceId: 'workspace-1',
+      recordId: 'record-1',
+    });
+    assert.deepEqual(finalResult, { status: 'submitted', orderId: 'order-1' });
+    assert.equal(submitCalls, 1);
+    assert.equal(terminalConfirmationCalls, 1);
+    assert.equal(record.outcome, 'executed');
+    assert.equal(record.intent_status, 'submitted');
+  });
+
+  it('accepts explicit order type and entry time for published signals', () => {
+    const { value, error } = PublishSignalRequestSchema.validate({
+      instrument: 'BTCUSDT',
+      marketType: 'spot',
+      direction: 'long',
+      orderType: 'limit',
+      entryTime: '2026-03-01T12:30:00.000Z',
+      entry: '60000',
+    });
+
+    assert.equal(error, undefined);
+    assert.equal(value.orderType, 'limit');
+    assert.equal(value.entryTime.toISOString(), '2026-03-01T12:30:00.000Z');
+  });
+
+  it('defaults signal order type to market', () => {
+    const { value, error } = PublishSignalRequestSchema.validate({
+      instrument: 'BTCUSDT',
+      marketType: 'spot',
+      direction: 'long',
+      entry: '60000',
+    });
+
+    assert.equal(error, undefined);
+    assert.equal(value.orderType, 'market');
+  });
+
+  it('serializes full execution details and distinct copy configurations', () => {
+    const signal = serializePublishedSignal({
+      id: 'signal-1',
+      provider_id: 'provider-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'limit',
+      entry_time: new Date('2026-03-01T12:30:00.000Z'),
+      entry: '60000',
+      entry_range: null,
+      stop_loss: '58000',
+      targets: ['62000', '64000'],
+      copy_count: '3',
+      created_at: new Date('2026-03-01T12:00:00.000Z'),
+    });
+
+    assert.equal(signal.orderType, 'limit');
+    assert.equal(signal.entryTime.toISOString(), '2026-03-01T12:30:00.000Z');
+    assert.deepEqual(signal.targets, ['62000', '64000']);
+    assert.equal(signal.copyCount, 3);
+  });
+
   it('creates new Trader profiles as approved', async () => {
     let insertQuery;
     const client = {
@@ -194,6 +330,119 @@ describe('Trader Studio API', () => {
 
     assert.match(sql, /signal\.status IN \('published', 'updated'\)/);
     assert.doesNotMatch(sql, /draft|cancelled|rejected/);
+  });
+
+  it('includes subscriber and active signal counts in marketplace provider listings', async () => {
+    let sql;
+    const queries = createMarketplaceQueries({
+      db: {
+        async query(query) {
+          sql = query;
+          return { rows: [] };
+        },
+      },
+    });
+
+    await queries.listProviders();
+
+    assert.match(sql, /AS subscriber_count/);
+    assert.match(sql, /AS signal_count/);
+    assert.match(sql, /subscription\.status IN \('active', 'trialing'\)/);
+  });
+
+  it('publishes an opted-in terminal fill once as a limit signal', async () => {
+    const handlers = new Map();
+    let publishedSignal;
+    createMarketplaceListeners({
+      events: {
+        subscribe(topic, handler) {
+          handlers.set(topic, handler);
+        },
+      },
+      copyOrchestration: { async processPublishedSignal() {} },
+      publicationService: {
+        async publishSignal(signal) {
+          publishedSignal = signal;
+        },
+      },
+      queries: {
+        async findPublishedSignalBySourceOrderId() {
+          return null;
+        },
+        async findOrderForAutoPublication(orderId) {
+          assert.equal(orderId, 'order-1');
+          return {
+            id: orderId,
+            workspace_id: 'workspace-1',
+            provider_id: 'provider-1',
+            user_id: 'user-1',
+            instrument: 'BTCUSDT',
+            market_type: 'spot',
+            side: 'buy',
+            type: 'limit',
+            average_fill_price: '60000',
+            created_at: new Date('2026-03-01T12:30:00.000Z'),
+          };
+        },
+      },
+      logger: { debug() {}, error() {} },
+    });
+
+    await handlers.get('execution.order_filled')({ payload: { orderId: 'order-1' } });
+
+    assert.equal(publishedSignal.orderType, 'limit');
+    assert.equal(publishedSignal.entry, '60000');
+    assert.equal(publishedSignal.direction, 'long');
+    assert.equal(publishedSignal.sourceOrderId, 'order-1');
+  });
+
+  it('requires signal access before returning comments', async () => {
+    const discussion = createSignalDiscussionService({
+      queries: {
+        async canAccessSignalDiscussion() { return false; },
+        async listSignalComments() { throw new Error('must not query comments'); },
+      },
+    });
+
+    await assert.rejects(
+      discussion.list({ signalId: 'signal-1', userId: 'user-1' }),
+      { code: 'NOT_FOUND' },
+    );
+  });
+
+  it('stores only image proofs with valid file signatures', async () => {
+    let saved;
+    const discussion = createSignalDiscussionService({
+      queries: {
+        async canAccessSignalDiscussion() { return true; },
+        async insertSignalComment(comment) {
+          saved = comment;
+          return { id: 'comment-1' };
+        },
+      },
+    });
+
+    await discussion.create({
+      signalId: 'signal-1',
+      userId: 'user-1',
+      content: 'Closed green',
+      file: {
+        mimetype: 'image/png',
+        originalname: '..\\proof.png',
+        buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      },
+    });
+    assert.equal(saved.proofMimeType, 'image/png');
+    assert.equal(saved.proofName, 'proof.png');
+    await assert.rejects(
+      discussion.create({
+        signalId: 'signal-1',
+        userId: 'user-1',
+        content: '',
+        file: { mimetype: 'image/png', buffer: Buffer.from('not png') },
+      }),
+      { code: 'VALIDATION_ERROR' },
+    );
   });
 
   it('does not allow copy configuration without an active subscription', async () => {

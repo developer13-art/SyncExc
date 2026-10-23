@@ -564,6 +564,8 @@ export const PublishSignalRequestSchema = Joi.object({
   instrument: InstrumentSchema.required(),
   marketType: Joi.string().valid('spot', 'futures', 'perpetual').required(),
   direction: Joi.string().valid('long', 'short').required(),
+  orderType: Joi.string().valid('market', 'limit').default('market'),
+  entryTime: Joi.date().iso().optional(),
   entry: PositiveDecimalSchema.optional(),
   entryRange: Joi.object({
     min: PositiveDecimalSchema.required(),

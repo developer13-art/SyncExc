@@ -56,6 +56,7 @@ export function createCopyConfigurationService({
         workspaceId,
         providerId,
         providerPlanId,
+        createdBy: userId,
         sizingRule,
         instrumentFilters,
         marketTypes,

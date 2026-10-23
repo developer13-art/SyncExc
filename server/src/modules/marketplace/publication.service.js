@@ -13,6 +13,8 @@ export function createPublicationService({ db, queries, events, disclosureServic
     instrument,
     marketType,
     direction,
+    orderType = 'market',
+    entryTime,
     entry,
     entryRange,
     stopLoss,
@@ -21,6 +23,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
     validUntil,
     disclosures,
     sourceEvidence,
+    sourceOrderId,
   }) {
     const provider = await queries.findProviderById(providerId);
     if (!provider) throw new NotFoundError('Provider');
@@ -42,11 +45,14 @@ export function createPublicationService({ db, queries, events, disclosureServic
         instrument,
         marketType,
         direction,
+        orderType,
+        entryTime,
         entry,
         entryRange,
         stopLoss,
         leverage,
         validUntil,
+        sourceOrderId,
         metadata: { sourceEvidence, disclosures },
       });
 
