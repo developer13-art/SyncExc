@@ -35,7 +35,10 @@ import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { userPreferencesQueryKey } from '../settings/useUserPreferences.js';
 
-const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
+const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'];
+const EXCHANGE_TIMEFRAMES = {
+  bitget: TIMEFRAMES.filter((option) => option !== '1M'),
+};
 
 function formatMarketValue(value, maximumFractionDigits = 6) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
@@ -305,6 +308,7 @@ export default function TerminalOverview() {
   }
 
   const change24h = Number(marketData?.overview?.priceChangePercent);
+  const availableTimeframes = EXCHANGE_TIMEFRAMES[activeConnection?.exchange] ?? TIMEFRAMES;
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -391,6 +395,33 @@ export default function TerminalOverview() {
       <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_250px]">
           <Card className="min-w-0 overflow-hidden">
+            <div className="client-terminal-toolbar flex flex-wrap items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+              <div className="flex flex-wrap items-center gap-0.5" aria-label="Chart timeframe">
+                {availableTimeframes.map((option) => (
+                  <Button
+                    key={option}
+                    type="button"
+                    size="sm"
+                    variant={timeframe === option ? 'secondary' : 'ghost'}
+                    aria-pressed={timeframe === option}
+                    onClick={() => setTimeframe(option)}
+                    className="client-timeframe-button h-7 min-w-8 px-2 text-2xs"
+                  >
+                    {option}
+                  </Button>
+                ))}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-2xs"
+                onClick={() => document.getElementById('terminal-order-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+              >
+                New order
+              </Button>
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">
@@ -403,21 +434,9 @@ export default function TerminalOverview() {
                     : ''}
                 </p>
               </div>
-              <div className="flex items-center gap-0.5" aria-label="Chart timeframe">
-                {TIMEFRAMES.map((option) => (
-                  <Button
-                    key={option}
-                    type="button"
-                    size="sm"
-                    variant={timeframe === option ? 'secondary' : 'ghost'}
-                    aria-pressed={timeframe === option}
-                    onClick={() => setTimeframe(option)}
-                    className="h-7 px-2 text-xs"
-                  >
-                    {option}
-                  </Button>
-                ))}
-              </div>
+              <span className="rounded border border-border bg-muted/40 px-2 py-1 text-2xs uppercase tracking-wide text-muted-foreground">
+                {selectedInstrument?.marketType ?? 'spot'} · {timeframe}
+              </span>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -492,6 +511,7 @@ export default function TerminalOverview() {
                 currentPrice={marketData?.overview?.lastPrice}
                 indicators={indicators}
                 levels={levels}
+                timeframe={timeframe}
                 isLoading={marketDataQuery.isLoading}
                 error={marketDataQuery.isError ? 'Exchange market data is temporarily unavailable.' : undefined}
                 onRetry={marketDataQuery.refetch}
@@ -529,7 +549,7 @@ export default function TerminalOverview() {
           </Card>
         </div>
 
-        <Card className="min-w-0 overflow-hidden">
+        <Card id="terminal-order-form" className="min-w-0 overflow-hidden">
           <div className="border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-foreground">Place order</p>
             <p className="text-2xs text-muted-foreground">

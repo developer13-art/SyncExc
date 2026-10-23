@@ -12,7 +12,7 @@ import { ROUTES } from '../../config/routes.config.js';
 import { SettingsSectionNav } from './components/SettingsSectionNav.jsx';
 import { useUserPreferences } from './useUserPreferences.js';
 
-const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d'];
+const timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'];
 
 export default function TradingPreferences() {
   const dispatch = useDispatch();

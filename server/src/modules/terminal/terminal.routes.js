@@ -32,7 +32,7 @@ const MarketDataParamsSchema = Joi.object({
 
 const MarketDataQuerySchema = Joi.object({
   marketType: Joi.string().valid('spot', 'futures', 'perpetual').default('spot'),
-  timeframe: Joi.string().valid('1m', '5m', '15m', '1h', '4h', '1d').default('1h'),
+  timeframe: Joi.string().valid('1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M').default('1h'),
   limit: Joi.number().integer().min(25).max(300).default(120),
 });
 

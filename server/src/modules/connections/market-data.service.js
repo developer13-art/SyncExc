@@ -11,22 +11,22 @@ const EXCHANGES = {
   binance: {
     spot: 'https://api.binance.com',
     futures: 'https://fapi.binance.com',
-    timeframes: ['1m', '5m', '15m', '1h', '4h', '1d'],
+    timeframes: ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'],
   },
   bybit: {
     spot: 'https://api.bybit.com',
     futures: 'https://api.bybit.com',
-    timeframes: ['1m', '5m', '15m', '1h', '4h', '1d'],
+    timeframes: ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'],
   },
   bitget: {
     spot: 'https://api.bitget.com',
     futures: 'https://api.bitget.com',
-    timeframes: ['1m', '5m', '15m', '1h', '4h', '1d'],
+    timeframes: ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'],
   },
   okx: {
     spot: 'https://www.okx.com',
     futures: 'https://www.okx.com',
-    timeframes: ['1m', '5m', '15m', '1h', '4h', '1d'],
+    timeframes: ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'],
   },
 };
 
@@ -115,13 +115,13 @@ export function normalizeMarketDataPayload(exchangeCode, payload, { now = Date.n
 
 function timeframeFor(exchangeCode, timeframe) {
   if (exchangeCode === 'bybit') {
-    return ({ '1m': '1', '5m': '5', '15m': '15', '1h': '60', '4h': '240', '1d': 'D' })[timeframe];
+    return ({ '1m': '1', '5m': '5', '15m': '15', '30m': '30', '1h': '60', '4h': '240', '1d': 'D', '1w': 'W', '1M': 'M' })[timeframe];
   }
   if (exchangeCode === 'bitget') {
-    return ({ '1m': '1min', '5m': '5min', '15m': '15min', '1h': '1H', '4h': '4H', '1d': '1D' })[timeframe];
+    return ({ '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '1H', '4h': '4H', '1d': '1D', '1w': '1W' })[timeframe];
   }
   if (exchangeCode === 'okx') {
-    return ({ '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' })[timeframe];
+    return ({ '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D', '1w': '1W', '1M': '1M' })[timeframe];
   }
   return timeframe;
 }
@@ -424,7 +424,7 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
     const exchange = String(exchangeCode || '').toLowerCase();
     const normalizedSymbol = String(symbol || '').trim().toUpperCase();
     const normalizedMarketType = marketType === 'spot' ? 'spot' : 'futures';
-    const normalizedTimeframe = String(timeframe || '1h').toLowerCase();
+    const normalizedTimeframe = String(timeframe || '1h');
     const config = EXCHANGES[exchange];
 
     if (!config) throw new ValidationError('Unsupported exchange');

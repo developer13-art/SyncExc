@@ -74,6 +74,37 @@ test('market data service rejects unrecognized exchanges and symbols', async () 
   );
 });
 
+test('market data service preserves extended and case-sensitive Binance intervals', async () => {
+  const requests = [];
+  const marketData = createMarketDataService({
+    fetchImpl: async (url) => {
+      requests.push(new URL(url));
+      return jsonResponse({});
+    },
+  });
+
+  for (const timeframe of ['30m', '1w', '1M']) {
+    await marketData.getMarketData({
+      exchangeCode: 'binance',
+      symbol: 'BTCUSDT',
+      timeframe,
+    });
+  }
+
+  const intervals = requests
+    .filter((url) => url.pathname.endsWith('/klines'))
+    .map((url) => url.searchParams.get('interval'));
+  assert.deepEqual(intervals, ['30m', '1w', '1M']);
+  await assert.rejects(
+    marketData.getMarketData({
+      exchangeCode: 'bitget',
+      symbol: 'BTCUSDT',
+      timeframe: '1M',
+    }),
+    { code: 'VALIDATION_ERROR' },
+  );
+});
+
 test('spot price lookup fetches and caches a normalized exchange ticker', async () => {
   const requests = [];
   const marketData = createMarketDataService({
