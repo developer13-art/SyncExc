@@ -5,7 +5,6 @@ import { ArrowLeft } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Input } from '../../components/ui/Input.jsx';
-import { Textarea } from '../../components/ui/Textarea.jsx';
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { FormField } from '../../components/forms/FormField.jsx';
 import { FormError } from '../../components/forms/FormError.jsx';
@@ -23,8 +22,7 @@ export default function CreateLink() {
 
   const [form, setForm] = useState({
     name: '',
-    campaignId: '',
-    description: '',
+    campaignLabel: '',
   });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -53,8 +51,7 @@ export default function CreateLink() {
     try {
       const created = await createLink({
         name: form.name.trim(),
-        campaignId: form.campaignId || undefined,
-        description: form.description.trim() || undefined,
+        campaignLabel: form.campaignLabel.trim() || undefined,
       });
 
       toast.success('Referral link created');
@@ -104,23 +101,14 @@ export default function CreateLink() {
               </FormField>
 
               <FormField
-                label="Campaign ID"
-                htmlFor="link-campaign"
-                hint="Optional. Groups related links under a campaign."
+                label="Campaign label"
+                htmlFor="link-campaign-label"
+                hint="Optional label to identify the channel or campaign."
               >
                 <Input
-                  id="link-campaign"
-                  value={form.campaignId}
-                  onChange={(e) => setForm({ ...form, campaignId: e.target.value })}
-                />
-              </FormField>
-
-              <FormField label="Description" htmlFor="link-description">
-                <Textarea
-                  id="link-description"
-                  rows={3}
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  id="link-campaign-label"
+                  value={form.campaignLabel}
+                  onChange={(e) => setForm({ ...form, campaignLabel: e.target.value })}
                 />
               </FormField>
 

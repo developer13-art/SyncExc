@@ -60,6 +60,16 @@ const CommunityMessages = lazy(() => import('../features/community/Messages.jsx'
 const CommunityModerationCenter = lazy(() => import('../features/community/ModerationCenter.jsx'));
 const Referral = lazy(() => import('../features/referral/ReferralDashboard.jsx'));
 const ReferralEnroll = lazy(() => import('../features/referral/Enroll.jsx'));
+const ReferralLinks = lazy(() => import('../features/referral/Links.jsx'));
+const ReferralCreateLink = lazy(() => import('../features/referral/CreateLink.jsx'));
+const ReferralCommissions = lazy(() => import('../features/referral/Commissions.jsx'));
+const ReferralLedger = lazy(() =>
+  import('../features/referral/Ledger.jsx').then((module) => ({ default: module.Ledger })),
+);
+const ReferralPayouts = lazy(() => import('../features/referral/Payouts.jsx'));
+const ReferralPayoutDetails = lazy(() => import('../features/referral/PayoutDetails.jsx'));
+const ReferralStatements = lazy(() => import('../features/referral/Statements.jsx'));
+const ReferralCampaigns = lazy(() => import('../features/referral/Campaigns.jsx'));
 const BillingPlans = lazy(() => import('../features/billing/Plans.jsx'));
 const BillingSubscription = lazy(() => import('../features/billing/Subscription.jsx'));
 const BillingUsage = lazy(() => import('../features/billing/Usage.jsx'));
@@ -162,7 +172,17 @@ export function AppRoutes() {
           <Route path="community/*" element={<Fallback><CommunityFeed /></Fallback>} />
         </Route>
         <Route path="referral/enroll" element={<Fallback><ReferralEnroll /></Fallback>} />
-        <Route path="referral/*" element={<Fallback><Referral /></Fallback>} />
+        <Route path="referral/links/new" element={<Fallback><ReferralCreateLink /></Fallback>} />
+        <Route path="referral/links" element={<Fallback><ReferralLinks /></Fallback>} />
+        <Route path="referral/commissions" element={<Fallback><ReferralCommissions /></Fallback>} />
+        <Route path="referral/ledger" element={<Fallback><ReferralLedger /></Fallback>} />
+        <Route path="referral/payouts/:payoutId" element={<Fallback><ReferralPayoutDetails /></Fallback>} />
+        <Route path="referral/payouts/new" element={<Fallback><ReferralPayouts /></Fallback>} />
+        <Route path="referral/payouts" element={<Fallback><ReferralPayouts /></Fallback>} />
+        <Route path="referral/statements" element={<Fallback><ReferralStatements /></Fallback>} />
+        <Route path="referral/campaigns" element={<Fallback><ReferralCampaigns /></Fallback>} />
+        <Route path="referral" element={<Fallback><Referral /></Fallback>} />
+        <Route path="referral/*" element={<Navigate to={ROUTES.app.referral.dashboard} replace />} />
         <Route path="billing" element={<Outlet />}>
           <Route index element={<Navigate to="subscription" replace />} />
           <Route path="plans" element={<Fallback><BillingPlans /></Fallback>} />

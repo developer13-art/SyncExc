@@ -11,7 +11,7 @@ import { Pagination } from '../../components/ui/Pagination.jsx';
 import { SegmentedControl } from '../../components/navigation/SegmentedControl.jsx';
 import { useLedger } from '../../hooks/useReferrals.js';
 import { usePagination } from '../../hooks/usePagination.js';
-import { uiActions } from '../../app/slices/uiActions.js';
+import { uiActions } from '../../app/slices/uiSlice.js';
 import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
 import { formatDateTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
