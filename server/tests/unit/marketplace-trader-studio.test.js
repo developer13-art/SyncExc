@@ -537,44 +537,67 @@ describe('Trader Studio API', () => {
     assert.equal(JSON.stringify(logged).includes('Sensitive provider response'), false);
   });
 
-  it('accepts explicit order type and entry time for published signals', () => {
+  it('accepts a complete limit signal with an explicit entry price', () => {
     const { value, error } = PublishSignalRequestSchema.validate({
       instrument: 'BTCUSDT',
       marketType: 'spot',
       direction: 'long',
       orderType: 'limit',
-      entryTime: '2026-03-01T12:30:00.000Z',
       entry: '60000',
+      stopLoss: '58000',
+      targets: ['62000'],
     });
 
     assert.equal(error, undefined);
     assert.equal(value.orderType, 'limit');
-    assert.equal(value.entryTime.toISOString(), '2026-03-01T12:30:00.000Z');
+    assert.equal(value.entry, '60000');
   });
 
-  it('defaults signal order type to market', () => {
+  it('defaults signal order type to market without requiring an entry price', () => {
     const { value, error } = PublishSignalRequestSchema.validate({
       instrument: 'BTCUSDT',
       marketType: 'spot',
       direction: 'long',
-      entry: '60000',
+      stopLoss: '58000',
+      targets: ['62000'],
     });
 
     assert.equal(error, undefined);
     assert.equal(value.orderType, 'market');
-    assert.equal(value.entryRange, undefined);
+    assert.equal(value.entry, undefined);
   });
 
-  it('rejects a signal that provides both an exact entry and a price range', () => {
-    const { error } = PublishSignalRequestSchema.validate({
+  it('requires entry price for limit signals and disallows it for market signals', () => {
+    const missingLimitEntry = PublishSignalRequestSchema.validate({
+      instrument: 'BTCUSDT',
+      marketType: 'spot',
+      direction: 'long',
+      orderType: 'limit',
+      stopLoss: '58000',
+      targets: ['62000'],
+    });
+    assert.equal(missingLimitEntry.error?.details[0]?.path[0], 'entry');
+
+    const marketWithEntry = PublishSignalRequestSchema.validate({
       instrument: 'BTCUSDT',
       marketType: 'spot',
       direction: 'long',
       entry: '60000',
-      entryRange: { min: '59900', max: '60100' },
+      stopLoss: '58000',
+      targets: ['62000'],
     });
+    assert.equal(marketWithEntry.error?.details[0]?.path[0], 'entry');
+  });
 
-    assert.equal(error?.details[0]?.type, 'object.xor');
+  it('requires positive stop loss and at least one take-profit target', () => {
+    const { error } = PublishSignalRequestSchema.validate({
+      instrument: 'BTCUSDT',
+      marketType: 'spot',
+      direction: 'long',
+    }, { abortEarly: false });
+    const paths = error.details.map((detail) => detail.path[0]);
+    assert.ok(paths.includes('stopLoss'));
+    assert.ok(paths.includes('targets'));
   });
 
   it('serializes full execution details and copy count', () => {
@@ -1086,10 +1109,58 @@ describe('Trader Studio API', () => {
       marketType: 'spot',
       direction: 'long',
       entry: '60000',
+      orderType: 'limit',
+      stopLoss: '58000',
+      targets: ['62000'],
     });
 
     assert.equal(updateClient, transaction);
     assert.equal(publishedSignal.status, 'published');
+  });
+
+  it('requires stop loss, take profit, and limit entry before manual publication', async () => {
+    const service = createPublicationService({
+      db: { async tx() { throw new Error('Invalid signal must not start a transaction'); } },
+      queries: {
+        async findProviderById() {
+          return {
+            id: 'provider-1',
+            user_id: 'user-1',
+            workspace_id: 'workspace-1',
+            moderation_state: 'approved',
+          };
+        },
+      },
+      events: {},
+    });
+
+    await assert.rejects(
+      service.publishSignal({
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        providerId: 'provider-1',
+        instrument: 'BTCUSDT',
+        marketType: 'spot',
+        direction: 'long',
+        orderType: 'limit',
+        stopLoss: '58000',
+        targets: ['62000'],
+      }),
+      /Limit orders require a positive entry price/,
+    );
+
+    await assert.rejects(
+      service.publishSignal({
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        providerId: 'provider-1',
+        instrument: 'BTCUSDT',
+        marketType: 'spot',
+        direction: 'long',
+        orderType: 'market',
+      }),
+      /A positive stop loss is required/,
+    );
   });
 
   it('saves the Trader profile and version snapshot in one transaction', async () => {

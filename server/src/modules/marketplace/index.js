@@ -104,6 +104,7 @@ export function createMarketplaceModule({ services }) {
     copyConfigurationService,
     risk: services.risk,
     terminal: services.terminal,
+    marketData: services.connections.marketData,
     events: services.events,
     logger,
   });
@@ -113,6 +114,7 @@ export function createMarketplaceModule({ services }) {
     queries,
     connections: services.connections,
     terminal: services.terminal,
+    marketData: services.connections.marketData,
     performance: performanceService,
     logger,
   });

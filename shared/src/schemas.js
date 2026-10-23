@@ -567,19 +567,14 @@ export const PublishSignalRequestSchema = Joi.object({
   marketType: Joi.string().valid('spot', 'futures', 'perpetual').required(),
   direction: Joi.string().valid('long', 'short').required(),
   orderType: Joi.string().valid('market', 'limit').default('market'),
-  entryTime: Joi.date().iso().optional(),
-  entry: PositiveDecimalSchema.optional(),
-  entryRange: Joi.object({
-    min: PositiveDecimalSchema.required(),
-    max: PositiveDecimalSchema.required(),
-  }).optional(),
-  stopLoss: PositiveDecimalSchema.optional(),
-  targets: Joi.array().items(PositiveDecimalSchema).max(10).optional(),
-  leverage: PositiveDecimalSchema.optional(),
-  validUntil: Joi.date().iso().greater('now').optional(),
-  disclosures: Joi.string().trim().max(5000).optional(),
-  sourceEvidence: UrlSchema.optional(),
-}).xor('entry', 'entryRange');
+  entry: PositiveDecimalSchema.when('orderType', {
+    is: 'limit',
+    then: Joi.required(),
+    otherwise: Joi.forbidden(),
+  }),
+  stopLoss: PositiveDecimalSchema.required(),
+  targets: Joi.array().items(PositiveDecimalSchema).min(1).max(10).required(),
+}).unknown(false);
 
 export const CreateCopyConfigurationRequestSchema = Joi.object({
   providerId: UuidSchema.required(),

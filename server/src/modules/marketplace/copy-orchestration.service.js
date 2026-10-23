@@ -23,6 +23,7 @@ export function createCopyOrchestrationService({
   copyConfigurationService,
   risk,
   terminal,
+  marketData,
   events,
   logger,
 }) {
@@ -199,12 +200,34 @@ export function createCopyOrchestrationService({
       return;
     }
 
+    let referencePrice = signal.entry == null ? null : Number(signal.entry);
+    if (referencePrice == null && config.sizing_rule?.type === 'fixed_percentage') {
+      try {
+        referencePrice = await fetchReferencePrice(
+          marketData,
+          destination.exchange_code,
+          signal.instrument,
+          signal.market_type,
+        );
+      } catch (err) {
+        await recordSkip({
+          config,
+          signal,
+          destination,
+          reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
+          message: `Could not get a market price for percentage sizing: ${err.message}`,
+        });
+        return;
+      }
+    }
+
     // Compute the sizing
     let allocation;
     try {
       allocation = computeAllocation({
         sizingRule: config.sizing_rule,
         signal,
+        referencePrice,
       });
     } catch (err) {
       await recordSkip({
@@ -242,7 +265,7 @@ export function createCopyOrchestrationService({
           side: signal.direction === 'long' ? 'buy' : 'sell',
           type: signal.order_type || 'market',
           quantity: allocation.quantity,
-          price: signal.entry,
+          price: signal.entry ?? referencePrice,
         },
       });
     } catch (err) {
@@ -349,7 +372,7 @@ export function createCopyOrchestrationService({
     return record;
   }
 
-  function computeAllocation({ sizingRule, signal }) {
+  function computeAllocation({ sizingRule, signal, referencePrice }) {
     if (!sizingRule || typeof sizingRule !== 'object') {
       throw new Error('Sizing rule is required');
     }
@@ -368,14 +391,17 @@ export function createCopyOrchestrationService({
       }
 
       case 'fixed_percentage': {
-        if (!signal.entry) throw new Error('Signal has no entry price for percentage sizing');
+        const sizingPrice = signal.entry == null ? referencePrice : Number(signal.entry);
+        if (!Number.isFinite(sizingPrice) || sizingPrice <= 0) {
+          throw new Error('Signal has no valid price for percentage sizing');
+        }
         const percentage = Number(config?.percentage || 0);
         const accountBase = Number(config?.accountBase || 1000);
-        const quantity = (accountBase * (percentage / 100)) / Number(signal.entry);
+        const quantity = (accountBase * (percentage / 100)) / sizingPrice;
         return {
           type,
           quantity: String(quantity),
-          reasoning: `${percentage}% of ${accountBase} at ${signal.entry}`,
+          reasoning: `${percentage}% of ${accountBase} at ${sizingPrice}`,
         };
       }
 
@@ -567,6 +593,27 @@ export function createCopyOrchestrationService({
     confirmRecord,
     listRecordsForWorkspace,
   };
+}
+
+async function fetchReferencePrice(marketData, exchangeCode, symbol, marketType) {
+  if (marketType === 'spot' && typeof marketData?.getSpotPrice === 'function') {
+    const price = Number(await marketData.getSpotPrice({ exchangeCode, symbol }));
+    if (!Number.isFinite(price) || price <= 0) throw new Error('No valid market price was returned');
+    return price;
+  }
+  if (typeof marketData?.getMarketData !== 'function') {
+    throw new Error('Market data is unavailable');
+  }
+  const data = await marketData.getMarketData({
+    exchangeCode,
+    symbol,
+    marketType,
+    timeframe: '1m',
+    limit: 25,
+  });
+  const price = Number(data?.overview?.lastPrice);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('No valid market price was returned');
+  return price;
 }
 
 export default createCopyOrchestrationService;

@@ -32,11 +32,51 @@ export function createPublicationService({ db, queries, events, disclosureServic
       throw new ConflictError('Provider is not approved to publish', 'PROVIDER_NOT_APPROVED');
     }
 
-    if (!instrument || !direction) {
-      throw new ValidationError('instrument and direction are required');
+    if (!instrument || !marketType || !direction || !orderType) {
+      throw new ValidationError('instrument, market type, direction, and order type are required');
     }
     if (!['long', 'short'].includes(direction)) {
       throw new ValidationError('direction must be long or short');
+    }
+    if (!['spot', 'futures', 'perpetual'].includes(marketType)) {
+      throw new ValidationError('marketType must be spot, futures, or perpetual');
+    }
+    if (!['market', 'limit'].includes(orderType)) {
+      throw new ValidationError('orderType must be market or limit');
+    }
+
+    if (!sourceOrderId) {
+      const stop = Number(stopLoss);
+      const takeProfits = Array.isArray(targets) ? targets.map(Number) : [];
+      if (!Number.isFinite(stop) || stop <= 0) {
+        throw new ValidationError('A positive stop loss is required');
+      }
+      if (
+        takeProfits.length === 0 ||
+        takeProfits.some((target) => !Number.isFinite(target) || target <= 0)
+      ) {
+        throw new ValidationError('At least one positive take-profit target is required');
+      }
+      if (orderType === 'limit' && (!Number.isFinite(Number(entry)) || Number(entry) <= 0)) {
+        throw new ValidationError('Limit orders require a positive entry price');
+      }
+      if (orderType === 'market' && (entry != null || entryRange != null)) {
+        throw new ValidationError('Market orders must not include an entry price');
+      }
+      const entryPrice = orderType === 'limit' ? Number(entry) : null;
+      const invalidLevelOrder = direction === 'long'
+        ? takeProfits.some((target) => target <= stop) ||
+          (entryPrice !== null &&
+            (stop >= entryPrice || takeProfits.some((target) => target <= entryPrice)))
+        : takeProfits.some((target) => target >= stop) ||
+          (entryPrice !== null &&
+            (stop <= entryPrice || takeProfits.some((target) => target >= entryPrice)));
+      if (invalidLevelOrder) {
+        throw new ValidationError('Stop loss, entry, and take profit must match the signal direction');
+      }
+      if (entryRange != null) {
+        throw new ValidationError('Entry ranges are not supported when publishing a signal');
+      }
     }
 
     return db.tx(async (tx) => {

@@ -40,7 +40,15 @@ function resolveTakeProfit(targets) {
   return price == null ? null : String(price);
 }
 
-export function createTraderSignalExecutionService({ db, queries, connections, terminal, performance, logger }) {
+export function createTraderSignalExecutionService({
+  db,
+  queries,
+  connections,
+  terminal,
+  marketData,
+  performance,
+  logger,
+}) {
   async function recordExecution(data) {
     await db.tx((tx) => queries.recordTraderSignalExecution(tx, data));
   }
@@ -61,15 +69,15 @@ export function createTraderSignalExecutionService({ db, queries, connections, t
       signal.user_id,
       signal.workspace_id,
     );
-    const price = resolveSignalPrice(signal);
-    if (!Number.isFinite(price) || price <= 0) {
-      logger.warn({ signalId: signal.id }, 'Trader signal execution skipped: entry price unavailable');
-      return;
-    }
-
     const marketType = signal.market_type === 'spot' ? 'spot' : 'futures';
     for (const account of accounts) {
       try {
+        const price = signal.order_type === 'limit'
+          ? resolveSignalPrice(signal)
+          : await fetchReferencePrice(marketData, account.exchange_code, signal.instrument, marketType);
+        if (!Number.isFinite(price) || price <= 0) {
+          throw new Error('No valid reference price is available for signal sizing');
+        }
         await executeForAccount({ signal, account, marketType, price, percentage });
       } catch (err) {
         await recordExecution({
@@ -320,4 +328,21 @@ export function createTraderSignalExecutionService({ db, queries, connections, t
   }
 
   return { executePublishedSignal, handleOrderFilled, handleOrderStatus, handleClosedTrade };
+}
+
+async function fetchReferencePrice(marketData, exchangeCode, symbol, marketType) {
+  if (marketType === 'spot' && typeof marketData?.getSpotPrice === 'function') {
+    return Number(await marketData.getSpotPrice({ exchangeCode, symbol }));
+  }
+  if (typeof marketData?.getMarketData !== 'function') {
+    throw new Error('Market data is unavailable for market-order sizing');
+  }
+  const data = await marketData.getMarketData({
+    exchangeCode,
+    symbol,
+    marketType,
+    timeframe: '1m',
+    limit: 25,
+  });
+  return Number(data?.overview?.lastPrice);
 }

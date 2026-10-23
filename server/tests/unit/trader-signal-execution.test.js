@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTraderSignalExecutionService } from '../../src/modules/marketplace/trader-signal-execution.service.js';
 
-function createDependencies({ signal, percentage = '10', accounts = [] }) {
+function createDependencies({
+  signal,
+  percentage = '10',
+  accounts = [],
+  marketData = { async getSpotPrice() { return 100; } },
+}) {
   const submitted = [];
   const records = [];
   const observations = [];
@@ -68,6 +73,7 @@ function createDependencies({ signal, percentage = '10', accounts = [] }) {
         };
       },
     },
+    marketData,
     performance: {
       async recordObservation(observation) {
         observations.push(observation);
@@ -127,6 +133,49 @@ test('submits a limit signal to every matching trader account with percentage si
   assert.match(submitted[0].idempotencyKey, /^[\da-f]+$/);
   assert.equal(records.length, 2);
   assert.equal(records[0].status, 'submitted');
+});
+
+test('sizes market signals from a live market price without sending an entry limit', async () => {
+  const { service, submitted } = createDependencies({
+    signal: {
+      id: 'market-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'futures',
+      direction: 'long',
+      order_type: 'market',
+      entry: null,
+      stop_loss: '90',
+      targets: ['110'],
+      status: 'published',
+      source_order_id: null,
+    },
+    accounts: [{
+      connection_id: 'connection-1',
+      account_id: 'account-1',
+      account_type: 'unified',
+      exchange_code: 'bybit',
+      environment: 'testnet',
+    }],
+    marketData: {
+      async getMarketData({ exchangeCode, symbol, marketType }) {
+        assert.equal(exchangeCode, 'bybit');
+        assert.equal(symbol, 'BTCUSDT');
+        assert.equal(marketType, 'futures');
+        return { overview: { lastPrice: 100 } };
+      },
+    },
+  });
+
+  await service.executePublishedSignal({ publishedSignalId: 'market-signal' });
+
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].type, 'market');
+  assert.equal(submitted[0].price, undefined);
+  assert.equal(submitted[0].quantity, '1');
+  assert.equal(submitted[0].stopLoss, '90');
+  assert.equal(submitted[0].takeProfit, '110');
 });
 
 test('does not execute a terminal fill that was already traded before auto-publication', async () => {

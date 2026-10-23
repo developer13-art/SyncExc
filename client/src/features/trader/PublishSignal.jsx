@@ -9,7 +9,6 @@ import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Input } from '../../components/ui/Input.jsx';
 import { Label } from '../../components/ui/Label.jsx';
-import { Textarea } from '../../components/ui/Textarea.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ROUTES } from '../../config/routes.config.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
@@ -27,16 +26,9 @@ export default function PublishSignal() {
     marketType: 'spot',
     direction: 'long',
     orderType: 'market',
-    entryTime: '',
     entry: '',
-    entryMin: '',
-    entryMax: '',
     stopLoss: '',
-    targets: '',
-    leverage: '',
-    validUntil: '',
-    disclosures: '',
-    sourceEvidence: '',
+    takeProfit: '',
   });
   const profileQuery = useQuery({
     queryKey: profileKey(activeWorkspaceId),
@@ -59,101 +51,43 @@ export default function PublishSignal() {
   });
 
   const updateField = (field) => (event) => {
-    const value = event.target.value;
-    setForm((current) => {
-      if (field === 'entry') {
-        return { ...current, entry: value, entryMin: '', entryMax: '' };
-      }
-      if (field === 'entryMin' || field === 'entryMax') {
-        return { ...current, [field]: value, entry: '' };
-      }
-      return { ...current, [field]: value };
-    });
-  };
-
-  const getEntryBounds = () => {
-    if (form.entry.trim()) {
-      const entry = Number(form.entry);
-      return { min: entry, max: entry };
-    }
-    if (form.entryMin.trim() && form.entryMax.trim()) {
-      return { min: Number(form.entryMin), max: Number(form.entryMax) };
-    }
-    return null;
+    setForm((current) => ({ ...current, [field]: event.target.value }));
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    const hasEntry = Boolean(form.entry.trim());
-    const hasRange = Boolean(form.entryMin.trim() || form.entryMax.trim());
-    if (hasEntry === hasRange) {
-      setValidationError('Enter one entry price or both ends of an entry range.');
+    const entry = form.entry.trim() ? Number(form.entry) : null;
+    const stopLoss = Number(form.stopLoss);
+    const takeProfit = Number(form.takeProfit);
+    if (!form.instrument.trim()) {
+      setValidationError('Instrument is required.');
       return;
     }
-    if (form.orderType === 'limit' && !hasEntry) {
-      setValidationError('Limit orders require one exact entry price, not a range.');
+    if (form.orderType === 'limit' && (!Number.isFinite(entry) || entry <= 0)) {
+      setValidationError('A limit order requires an entry price greater than zero.');
       return;
     }
-    if (hasRange && (!form.entryMin.trim() || !form.entryMax.trim() ||
-        Number(form.entryMin) > Number(form.entryMax))) {
-      setValidationError('Enter a complete range with the minimum no greater than the maximum.');
-      return;
-    }
-    if ((hasEntry && Number(form.entry) <= 0) ||
-        (hasRange && (Number(form.entryMin) <= 0 || Number(form.entryMax) <= 0))) {
-      setValidationError('Entry prices must be greater than zero.');
-      return;
-    }
-
-    const targets = form.targets
-      .split(',')
-      .map((target) => target.trim())
-      .filter(Boolean);
-    if (targets.some((target) => !Number.isFinite(Number(target)) || Number(target) <= 0)) {
-      setValidationError('Take-profit targets must be positive numbers.');
-      return;
-    }
-    if (form.stopLoss.trim() && Number(form.stopLoss) <= 0) {
+    if (form.stopLoss.trim() === '' || !Number.isFinite(stopLoss) || stopLoss <= 0) {
       setValidationError('Stop loss must be greater than zero.');
       return;
     }
-    if (form.leverage.trim() && Number(form.leverage) <= 0) {
-      setValidationError('Leverage must be greater than zero.');
+    if (form.takeProfit.trim() === '' || !Number.isFinite(takeProfit) || takeProfit <= 0) {
+      setValidationError('Take profit must be greater than zero.');
       return;
     }
-
-    const bounds = getEntryBounds();
-    if (bounds && form.stopLoss.trim()) {
-      const stopLoss = Number(form.stopLoss);
-      if ((form.direction === 'long' && stopLoss >= bounds.min) ||
-          (form.direction === 'short' && stopLoss <= bounds.max)) {
-        setValidationError(
-          form.direction === 'long'
-            ? 'For a long signal, the stop loss must be below the entry price or range.'
-            : 'For a short signal, the stop loss must be above the entry price or range.'
-        );
-        return;
-      }
-    }
-    if (bounds && targets.some((target) =>
-      form.direction === 'long' ? Number(target) <= bounds.max : Number(target) >= bounds.min
-    )) {
-      setValidationError(
-        form.direction === 'long'
-          ? 'For a long signal, every take-profit target must be above the entry price or range.'
-          : 'For a short signal, every take-profit target must be below the entry price or range.'
-      );
+    if (
+      (form.direction === 'long' && stopLoss >= takeProfit) ||
+      (form.direction === 'short' && stopLoss <= takeProfit)
+    ) {
+      setValidationError('Take profit must be above stop loss for a long, and below it for a short.');
       return;
     }
-
-    const expiry = form.validUntil ? new Date(form.validUntil) : null;
-    const entryTime = form.entryTime ? new Date(form.entryTime) : null;
-    if (expiry && expiry <= new Date()) {
-      setValidationError('Valid until must be a future date and time.');
-      return;
-    }
-    if (expiry && entryTime && expiry <= entryTime) {
-      setValidationError('Valid until must be later than the signal entry time.');
+    if (
+      entry !== null &&
+      ((form.direction === 'long' && !(stopLoss < entry && entry < takeProfit)) ||
+        (form.direction === 'short' && !(stopLoss > entry && entry > takeProfit)))
+    ) {
+      setValidationError('For a limit order, entry must be between stop loss and take profit.');
       return;
     }
 
@@ -163,16 +97,9 @@ export default function PublishSignal() {
       marketType: form.marketType,
       direction: form.direction,
       orderType: form.orderType,
-      ...(form.entryTime ? { entryTime: new Date(form.entryTime).toISOString() } : {}),
-      ...(hasEntry
-        ? { entry: form.entry.trim() }
-        : { entryRange: { min: form.entryMin.trim(), max: form.entryMax.trim() } }),
-      ...(form.stopLoss.trim() ? { stopLoss: form.stopLoss.trim() } : {}),
-      ...(targets.length ? { targets } : {}),
-      ...(form.leverage.trim() ? { leverage: form.leverage.trim() } : {}),
-      ...(form.validUntil ? { validUntil: new Date(form.validUntil).toISOString() } : {}),
-      ...(form.disclosures.trim() ? { disclosures: form.disclosures.trim() } : {}),
-      ...(form.sourceEvidence.trim() ? { sourceEvidence: form.sourceEvidence.trim() } : {}),
+      ...(form.orderType === 'limit' ? { entry: form.entry.trim() } : {}),
+      stopLoss: form.stopLoss.trim(),
+      targets: [form.takeProfit.trim()],
     });
   };
 
@@ -200,7 +127,7 @@ export default function PublishSignal() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Publish a signal</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          This publishes signal information to marketplace subscribers. It does not submit exchange orders.
+          Publishing shares the setup with subscribers. If trader-side execution is configured, the trade may also be submitted to connected accounts.
         </p>
       </header>
 
@@ -231,7 +158,7 @@ export default function PublishSignal() {
         <CardHeader>
           <CardTitle>Signal details</CardTitle>
           <CardDescription>
-            An entry price or range is required. Stop loss, targets, and leverage are optional.
+            Enter the instrument, market, direction, order type, stop loss, and take profit. Limit orders also need an entry price.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -245,58 +172,36 @@ export default function PublishSignal() {
               <p className="text-sm text-destructive" role="alert">{validationError}</p>
             ) : null}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Instrument" id="signal-instrument">
+              <Field label="Instrument" id="signal-instrument" required>
                 <Input id="signal-instrument" required maxLength={32} value={form.instrument} onChange={updateField('instrument')} placeholder="BTCUSDT" />
               </Field>
-              <Field label="Market" id="signal-market">
+              <Field label="Market" id="signal-market" required>
                 <select id="signal-market" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={form.marketType} onChange={updateField('marketType')}>
                   <option value="spot">Spot</option><option value="futures">Futures</option><option value="perpetual">Perpetual</option>
                 </select>
               </Field>
-              <Field label="Direction" id="signal-direction">
+              <Field label="Direction" id="signal-direction" required>
                 <select id="signal-direction" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={form.direction} onChange={updateField('direction')}>
                   <option value="long">Long</option><option value="short">Short</option>
                 </select>
               </Field>
-              <Field label="Order type" id="signal-order-type">
+              <Field label="Order type" id="signal-order-type" required>
                 <select id="signal-order-type" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={form.orderType} onChange={updateField('orderType')}>
                   <option value="market">Market</option><option value="limit">Limit</option>
                 </select>
               </Field>
-              <Field label="Entry time" id="signal-entry-time">
-                <Input id="signal-entry-time" type="datetime-local" value={form.entryTime} onChange={updateField('entryTime')} />
+              {form.orderType === 'limit' ? (
+                <Field label="Entry price" id="signal-entry" required>
+                  <Input id="signal-entry" type="number" min="0" step="any" value={form.entry} onChange={updateField('entry')} placeholder="Required for limit orders" required />
+                </Field>
+              ) : null}
+              <Field label="Stop loss" id="signal-stop" required>
+                <Input id="signal-stop" type="number" min="0" step="any" value={form.stopLoss} onChange={updateField('stopLoss')} placeholder="Required" required />
               </Field>
-              <Field label="Entry price (or provide a range)" id="signal-entry">
-                <Input id="signal-entry" type="number" min="0" step="any" value={form.entry} onChange={updateField('entry')} placeholder="Optional" />
-              </Field>
-              <Field label="Entry range minimum" id="signal-entry-min">
-                <Input id="signal-entry-min" type="number" min="0" step="any" value={form.entryMin} onChange={updateField('entryMin')} placeholder="Optional" />
-              </Field>
-              <Field label="Entry range maximum" id="signal-entry-max">
-                <Input id="signal-entry-max" type="number" min="0" step="any" value={form.entryMax} onChange={updateField('entryMax')} placeholder="Optional" />
-              </Field>
-              <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">
-                Enter one exact price, or both the minimum and maximum of a range. Editing one entry option clears the other. Limit orders need one exact price.
-              </p>
-              <Field label="Stop loss" id="signal-stop">
-                <Input id="signal-stop" type="number" min="0" step="any" value={form.stopLoss} onChange={updateField('stopLoss')} placeholder="Optional" />
-              </Field>
-              <Field label="Take-profit targets (comma separated)" id="signal-targets">
-                <Input id="signal-targets" value={form.targets} onChange={updateField('targets')} placeholder="e.g. 68000, 69500" />
-              </Field>
-              <Field label="Leverage" id="signal-leverage">
-                <Input id="signal-leverage" type="number" min="0" step="any" value={form.leverage} onChange={updateField('leverage')} placeholder="Optional" />
-              </Field>
-              <Field label="Valid until" id="signal-expiry">
-                <Input id="signal-expiry" type="datetime-local" value={form.validUntil} onChange={updateField('validUntil')} />
-              </Field>
-              <Field label="Source evidence URL" id="signal-source">
-                <Input id="signal-source" type="url" value={form.sourceEvidence} onChange={updateField('sourceEvidence')} placeholder="https://" />
+              <Field label="Take profit" id="signal-take-profit" required>
+                <Input id="signal-take-profit" type="number" min="0" step="any" value={form.takeProfit} onChange={updateField('takeProfit')} placeholder="Required" required />
               </Field>
             </div>
-            <Field label="Notes and risk disclosures" id="signal-disclosures">
-              <Textarea id="signal-disclosures" rows={4} maxLength={5000} value={form.disclosures} onChange={updateField('disclosures')} />
-            </Field>
             <div className="flex justify-end">
               <Button type="submit" disabled={publishMutation.isPending}>
                 <Send className="h-4 w-4" />
@@ -310,6 +215,6 @@ export default function PublishSignal() {
   );
 }
 
-function Field({ label, id, children }) {
-  return <div className="grid gap-2"><Label htmlFor={id}>{label}</Label>{children}</div>;
+function Field({ label, id, required = false, children }) {
+  return <div className="grid gap-2"><Label htmlFor={id}>{label}{required ? ' *' : ''}</Label>{children}</div>;
 }

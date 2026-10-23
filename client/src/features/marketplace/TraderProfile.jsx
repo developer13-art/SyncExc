@@ -29,15 +29,10 @@ const EMPTY_SIGNAL = {
   instrument: '',
   marketType: 'spot',
   direction: 'long',
+  orderType: 'market',
   entry: '',
-  entryMin: '',
-  entryMax: '',
   stopLoss: '',
-  targets: '',
-  leverage: '',
-  validUntil: '',
-  disclosures: '',
-  sourceEvidence: '',
+  takeProfit: '',
 };
 
 export default function TraderProfile() {
@@ -201,18 +196,38 @@ export default function TraderProfile() {
 
   const publishSignal = async (event) => {
     event.preventDefault();
-    const hasEntry = Boolean(signalForm.entry.trim());
-    const hasRange = Boolean(signalForm.entryMin.trim() || signalForm.entryMax.trim());
-    if (hasEntry === hasRange) {
-      toast.error('Add either one entry price or a complete entry range');
+    const entry = signalForm.entry.trim() ? Number(signalForm.entry) : null;
+    const stopLoss = Number(signalForm.stopLoss);
+    const takeProfit = Number(signalForm.takeProfit);
+    if (!signalForm.instrument.trim()) {
+      toast.error('Instrument is required');
       return;
     }
-    if (hasRange && (!signalForm.entryMin.trim() || !signalForm.entryMax.trim())) {
-      toast.error('Enter both the minimum and maximum for the entry range');
+    if (signalForm.orderType === 'limit' && (!Number.isFinite(entry) || entry <= 0)) {
+      toast.error('A limit order requires an entry price greater than zero');
       return;
     }
-    if (hasRange && Number(signalForm.entryMin) > Number(signalForm.entryMax)) {
-      toast.error('Entry range minimum must not exceed its maximum');
+    if (!Number.isFinite(stopLoss) || stopLoss <= 0) {
+      toast.error('Stop loss must be greater than zero');
+      return;
+    }
+    if (!Number.isFinite(takeProfit) || takeProfit <= 0) {
+      toast.error('Take profit must be greater than zero');
+      return;
+    }
+    if (
+      (signalForm.direction === 'long' && stopLoss >= takeProfit) ||
+      (signalForm.direction === 'short' && stopLoss <= takeProfit)
+    ) {
+      toast.error('Take profit must be above stop loss for a long, and below it for a short');
+      return;
+    }
+    if (
+      entry !== null &&
+      ((signalForm.direction === 'long' && !(stopLoss < entry && entry < takeProfit)) ||
+        (signalForm.direction === 'short' && !(stopLoss > entry && entry > takeProfit)))
+    ) {
+      toast.error('For a limit order, entry must be between stop loss and take profit');
       return;
     }
     if (!provider || provider.visibility !== 'public' || provider.moderationState !== 'approved') {
@@ -235,19 +250,10 @@ export default function TraderProfile() {
         instrument: signalForm.instrument.trim().toUpperCase(),
         marketType: signalForm.marketType,
         direction: signalForm.direction,
-        ...(hasEntry
-          ? { entry: signalForm.entry.trim() }
-          : { entryRange: { min: signalForm.entryMin.trim(), max: signalForm.entryMax.trim() } }),
-        ...(signalForm.stopLoss.trim() ? { stopLoss: signalForm.stopLoss.trim() } : {}),
-        ...(targets.length ? { targets } : {}),
-        ...(signalForm.leverage.trim() ? { leverage: signalForm.leverage.trim() } : {}),
-        ...(signalForm.validUntil
-          ? { validUntil: new Date(signalForm.validUntil).toISOString() }
-          : {}),
-        ...(signalForm.disclosures.trim() ? { disclosures: signalForm.disclosures.trim() } : {}),
-        ...(signalForm.sourceEvidence.trim()
-          ? { sourceEvidence: signalForm.sourceEvidence.trim() }
-          : {}),
+        orderType: signalForm.orderType,
+        ...(signalForm.orderType === 'limit' ? { entry: signalForm.entry.trim() } : {}),
+        stopLoss: signalForm.stopLoss.trim(),
+        targets: [signalForm.takeProfit.trim()],
       });
       setSignalForm(EMPTY_SIGNAL);
       await queryClient.invalidateQueries({ queryKey: signalsKey(activeWorkspaceId) });
@@ -365,7 +371,7 @@ export default function TraderProfile() {
               <CardHeader>
                 <CardTitle>New signal</CardTitle>
                 <CardDescription>
-                  Enter only the levels you intend to publish. Blank optional fields are not inferred.
+                  Add the required trade details. Limit orders also require an entry price.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -374,51 +380,36 @@ export default function TraderProfile() {
                     <SignalField label="Instrument" id="signal-instrument" required>
                       <Input id="signal-instrument" value={signalForm.instrument} onChange={updateSignalField('instrument')} placeholder="BTCUSDT" required />
                     </SignalField>
-                    <SignalField label="Market" id="signal-market">
+                    <SignalField label="Market" id="signal-market" required>
                       <select id="signal-market" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={signalForm.marketType} onChange={updateSignalField('marketType')}>
                         <option value="spot">Spot</option><option value="futures">Futures</option><option value="perpetual">Perpetual</option>
                       </select>
                     </SignalField>
-                    <SignalField label="Direction" id="signal-direction">
+                    <SignalField label="Direction" id="signal-direction" required>
                       <select id="signal-direction" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={signalForm.direction} onChange={updateSignalField('direction')}>
                         <option value="long">Long</option><option value="short">Short</option>
                       </select>
                     </SignalField>
-                    <SignalField label="Entry price (or use range)" id="signal-entry">
-                      <Input id="signal-entry" type="number" min="0" step="any" value={signalForm.entry} onChange={updateSignalField('entry')} placeholder="Optional" />
+                    <SignalField label="Order type" id="signal-order-type" required>
+                      <select id="signal-order-type" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={signalForm.orderType} onChange={updateSignalField('orderType')}>
+                        <option value="market">Market</option><option value="limit">Limit</option>
+                      </select>
+                    </SignalField>
+                    {signalForm.orderType === 'limit' ? (
+                      <SignalField label="Entry price" id="signal-entry">
+                        <Input id="signal-entry" type="number" min="0" step="any" value={signalForm.entry} onChange={updateSignalField('entry')} placeholder="Required for limit orders" required />
+                      </SignalField>
+                    ) : null}
+                    <SignalField label="Stop loss" id="signal-stop-loss" required>
+                      <Input id="signal-stop-loss" type="number" min="0" step="any" value={signalForm.stopLoss} onChange={updateSignalField('stopLoss')} placeholder="Required" required />
+                    </SignalField>
+                    <SignalField label="Take profit" id="signal-take-profit" required>
+                      <Input id="signal-take-profit" type="number" min="0" step="any" value={signalForm.takeProfit} onChange={updateSignalField('takeProfit')} placeholder="Required" required />
                     </SignalField>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <SignalField label="Entry range minimum" id="signal-entry-min">
-                      <Input id="signal-entry-min" type="number" min="0" step="any" value={signalForm.entryMin} onChange={updateSignalField('entryMin')} placeholder="Optional" />
-                    </SignalField>
-                    <SignalField label="Entry range maximum" id="signal-entry-max">
-                      <Input id="signal-entry-max" type="number" min="0" step="any" value={signalForm.entryMax} onChange={updateSignalField('entryMax')} placeholder="Optional" />
-                    </SignalField>
-                    <SignalField label="Stop loss" id="signal-stop-loss">
-                      <Input id="signal-stop-loss" type="number" min="0" step="any" value={signalForm.stopLoss} onChange={updateSignalField('stopLoss')} placeholder="Optional" />
-                    </SignalField>
-                    <SignalField label="Take-profit targets (comma separated)" id="signal-targets">
-                      <Input id="signal-targets" value={signalForm.targets} onChange={updateSignalField('targets')} placeholder="e.g. 68000, 69500" />
-                    </SignalField>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <SignalField label="Leverage" id="signal-leverage">
-                      <Input id="signal-leverage" type="number" min="0" step="any" value={signalForm.leverage} onChange={updateSignalField('leverage')} placeholder="Optional" />
-                    </SignalField>
-                    <SignalField label="Valid until" id="signal-valid-until">
-                      <Input id="signal-valid-until" type="datetime-local" value={signalForm.validUntil} onChange={updateSignalField('validUntil')} />
-                    </SignalField>
-                    <SignalField label="Source evidence URL" id="signal-evidence">
-                      <Input id="signal-evidence" type="url" value={signalForm.sourceEvidence} onChange={updateSignalField('sourceEvidence')} placeholder="https://" />
-                    </SignalField>
-                  </div>
-                  <SignalField label="Additional disclosure" id="signal-disclosures">
-                    <Textarea id="signal-disclosures" rows={3} maxLength={5000} value={signalForm.disclosures} onChange={updateSignalField('disclosures')} placeholder="Optional context or risk disclosure" />
-                  </SignalField>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="max-w-xl text-xs text-muted-foreground">
-                      Publishing shares this signal with marketplace subscribers only; it does not create an exchange order.
+                      Publishing shares this signal with subscribers; trader-side execution may also submit it to connected accounts when configured.
                     </p>
                     <Button type="submit" disabled={publishingSignal}>
                       <Send className="h-4 w-4" /> {publishingSignal ? 'Publishing…' : 'Publish signal'}
