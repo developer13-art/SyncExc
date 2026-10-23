@@ -31,6 +31,65 @@ function formatQuantity(quantity) {
   return quantity.toFixed(12).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 }
 
+function decimalText(value) {
+  const text = String(value);
+  if (/^\d+(?:\.\d+)?$/.test(text)) return text;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric >= 1e21) return null;
+  return numeric.toFixed(18).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function decimalScale(value) {
+  const text = decimalText(value);
+  if (text == null) return 0;
+  const fraction = text.split('.')[1] || '';
+  return fraction.length;
+}
+
+function scaledInteger(value, scale) {
+  const text = decimalText(value);
+  if (text == null) return null;
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
+  const [whole, fraction = ''] = text.split('.');
+  if (fraction.length > scale) return null;
+  return BigInt(`${whole}${fraction.padEnd(scale, '0')}`);
+}
+
+function formatScaledInteger(value, scale) {
+  const digits = value.toString().padStart(scale + 1, '0');
+  const whole = scale ? digits.slice(0, -scale) : digits;
+  const fraction = scale ? digits.slice(-scale).replace(/0+$/, '') : '';
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+function getProtectedMarketLimitPrice({ referencePrice, tickSize, direction, maxSlippageBps }) {
+  const scale = Math.max(decimalScale(referencePrice), decimalScale(tickSize)) + 6;
+  if (scale > 24) throw new Error('Market price precision is unsupported for protected execution');
+  const reference = scaledInteger(referencePrice, scale);
+  const tick = scaledInteger(tickSize, scale);
+  const basisPoints = Number(maxSlippageBps);
+  if (
+    reference == null ||
+    tick == null ||
+    reference <= 0n ||
+    tick <= 0n ||
+    !Number.isInteger(basisPoints) ||
+    basisPoints <= 0 ||
+    basisPoints >= 10_000
+  ) {
+    throw new Error('Cannot calculate a valid protected market-order price cap');
+  }
+
+  const multiplier = direction === 'long' ? 10_000 + basisPoints : 10_000 - basisPoints;
+  const rawPrice = (reference * BigInt(multiplier)) / 10_000n;
+  const ticks = direction === 'long'
+    ? rawPrice / tick
+    : (rawPrice + tick - 1n) / tick;
+  const cappedPrice = ticks * tick;
+  if (cappedPrice <= 0n) throw new Error('Protected market-order price cap is below the minimum price');
+  return formatScaledInteger(cappedPrice, scale);
+}
+
 function resolveTakeProfit(targets) {
   const parsedTargets = typeof targets === 'string' ? JSON.parse(targets) : targets;
   const firstTarget = Array.isArray(parsedTargets) ? parsedTargets[0] : null;
@@ -160,13 +219,39 @@ export function createTraderSignalExecutionService({
     }
     const stopLoss = signal.stop_loss == null ? null : String(signal.stop_loss);
     const takeProfit = resolveTakeProfit(signal.targets);
-    const orderType = signal.order_type === 'limit' ? 'limit' : 'market';
+    let orderType = signal.order_type === 'limit' ? 'limit' : 'market';
+    let orderPrice = orderType === 'limit' ? String(price) : undefined;
+    let timeInForce;
     const bracketMarkets = adapter.capabilities?.hasAttachedBracketProtectionMarkets || [];
     const bracketOrderTypes = adapter.capabilities?.hasAttachedBracketProtectionOrderTypes?.[marketType];
-    const supportsBracketOrder = bracketMarkets.includes(marketType) &&
+    let supportsBracketOrder = bracketMarkets.includes(marketType) &&
       (Array.isArray(bracketOrderTypes)
         ? bracketOrderTypes.includes(orderType)
         : ['market', 'limit'].includes(orderType));
+    if (!supportsBracketOrder && orderType === 'market') {
+      const fallback = adapter.capabilities?.protectedMarketOrderFallbacks?.[marketType];
+      if (
+        fallback?.orderType === 'limit' &&
+        fallback?.timeInForce === 'IOC' &&
+        fallback.directions?.includes(signal.direction) &&
+        stopLoss &&
+        takeProfit
+      ) {
+        orderType = 'limit';
+        orderPrice = getProtectedMarketLimitPrice({
+          referencePrice: price,
+          tickSize: instrument.tick_size,
+          direction: signal.direction,
+          maxSlippageBps: fallback.maxSlippageBps,
+        });
+        timeInForce = fallback.timeInForce;
+        supportsBracketOrder = bracketMarkets.includes(marketType) &&
+          (bracketOrderTypes?.includes(orderType) ?? false);
+      }
+    }
+    if (marketType === 'spot' && signal.direction === 'short') {
+      supportsBracketOrder = false;
+    }
     if (
       !supportsBracketOrder ||
       !stopLoss ||
@@ -179,7 +264,9 @@ export function createTraderSignalExecutionService({
         connectionId: account.connection_id,
         accountId: account.account_id,
         status: 'skipped_protection_unsupported',
-        errorMessage: `Automatic ${orderType} trader execution requires attached stop-loss and take-profit support for ${marketType} on this exchange.`,
+        errorMessage: marketType === 'spot' && signal.direction === 'short'
+          ? 'Spot accounts cannot open short positions; connect a supported futures account for short signals.'
+          : `Automatic ${signal.order_type || 'market'} trader execution requires attached stop-loss and take-profit support for ${marketType} on this exchange.`,
       });
       logger.warn(
         {
@@ -265,7 +352,8 @@ export function createTraderSignalExecutionService({
       quantity: formattedQuantity,
       stopLoss,
       takeProfit,
-      ...(orderType === 'limit' ? { price: String(price) } : {}),
+      ...(orderType === 'limit' ? { price: orderPrice } : {}),
+      ...(timeInForce ? { timeInForce } : {}),
       idempotencyKey: fnv1aHash(`trader-signal:${signal.id}:${account.account_id}`),
     });
 

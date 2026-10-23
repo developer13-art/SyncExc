@@ -6,6 +6,12 @@ function createDependencies({
   signal,
   percentage = '10',
   accounts = [],
+  instrument = {
+    trading_status: 'active',
+    base_asset: 'BTC',
+    quote_asset: 'USDT',
+    tick_size: '0.01',
+  },
   capabilities = {
     hasSpot: true,
     hasFutures: true,
@@ -56,13 +62,7 @@ function createDependencies({
           },
         };
       },
-      async getInstrument() {
-        return {
-          trading_status: 'active',
-          base_asset: 'BTC',
-          quote_asset: 'USDT',
-        };
-      },
+      async getInstrument() { return instrument; },
       async loadCredentials() { return {}; },
     },
     terminal: {
@@ -222,6 +222,150 @@ test('executes protected Bybit Spot limit signals with the configured balance al
   assert.equal(submitted[0].quantity, '1');
   assert.equal(submitted[0].stopLoss, '90');
   assert.equal(submitted[0].takeProfit, '110');
+});
+
+test('uses a protected IOC limit with a 0.5 percent slippage cap for Spot market signals', async () => {
+  const { service, submitted } = createDependencies({
+    signal: {
+      id: 'spot-market-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'market',
+      entry: null,
+      stop_loss: '90',
+      targets: ['110'],
+      status: 'published',
+      source_order_id: null,
+    },
+    capabilities: {
+      hasSpot: true,
+      hasFutures: true,
+      hasAttachedBracketProtectionMarkets: ['spot', 'futures'],
+      hasAttachedBracketProtectionOrderTypes: {
+        spot: ['limit'],
+        futures: ['market', 'limit'],
+      },
+      protectedMarketOrderFallbacks: {
+        spot: {
+          orderType: 'limit',
+          timeInForce: 'IOC',
+          maxSlippageBps: 50,
+          directions: ['long'],
+        },
+      },
+    },
+    accounts: [{
+      connection_id: 'connection-1',
+      account_id: 'account-1',
+      account_type: 'unified',
+      exchange_code: 'bybit',
+      environment: 'testnet',
+    }],
+    marketData: { async getSpotPrice() { return 100; } },
+  });
+
+  await service.executePublishedSignal({ publishedSignalId: 'spot-market-signal' });
+
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].type, 'limit');
+  assert.equal(submitted[0].price, '100.5');
+  assert.equal(submitted[0].timeInForce, 'IOC');
+  assert.equal(submitted[0].quantity, '1');
+  assert.equal(submitted[0].stopLoss, '90');
+  assert.equal(submitted[0].takeProfit, '110');
+});
+
+test('rounds protected Spot market price caps correctly for tiny decimal tick sizes', async () => {
+  const { service, submitted } = createDependencies({
+    signal: {
+      id: 'tiny-price-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'TINYUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'market',
+      entry: null,
+      stop_loss: '0.00000001',
+      targets: ['0.00000002'],
+      status: 'published',
+      source_order_id: null,
+    },
+    instrument: {
+      trading_status: 'active',
+      base_asset: 'TINY',
+      quote_asset: 'USDT',
+      tick_size: '0.0000000001',
+    },
+    capabilities: {
+      hasSpot: true,
+      hasFutures: false,
+      hasAttachedBracketProtectionMarkets: ['spot'],
+      hasAttachedBracketProtectionOrderTypes: { spot: ['limit'] },
+      protectedMarketOrderFallbacks: {
+        spot: {
+          orderType: 'limit',
+          timeInForce: 'IOC',
+          maxSlippageBps: 50,
+          directions: ['long'],
+        },
+      },
+    },
+    accounts: [{
+      connection_id: 'connection-1',
+      account_id: 'account-1',
+      account_type: 'unified',
+      exchange_code: 'bybit',
+      environment: 'testnet',
+    }],
+    marketData: { async getSpotPrice() { return 0.00000001234; } },
+  });
+
+  await service.executePublishedSignal({ publishedSignalId: 'tiny-price-signal' });
+
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].price, '0.0000000124');
+});
+
+test('blocks Spot short signal execution instead of submitting an unprotected sell', async () => {
+  const { service, submitted, records } = createDependencies({
+    signal: {
+      id: 'spot-short-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'short',
+      order_type: 'limit',
+      entry: '100',
+      stop_loss: '110',
+      targets: ['90'],
+      status: 'published',
+      source_order_id: null,
+    },
+    capabilities: {
+      hasSpot: true,
+      hasFutures: false,
+      hasAttachedBracketProtectionMarkets: ['spot'],
+      hasAttachedBracketProtectionOrderTypes: { spot: ['limit'] },
+    },
+    accounts: [{
+      connection_id: 'connection-1',
+      account_id: 'account-1',
+      account_type: 'unified',
+      exchange_code: 'bybit',
+      environment: 'testnet',
+    }],
+  });
+
+  await service.executePublishedSignal({ publishedSignalId: 'spot-short-signal' });
+
+  assert.equal(submitted.length, 0);
+  assert.equal(records[0].status, 'skipped_protection_unsupported');
+  assert.match(records[0].errorMessage, /cannot open short positions/);
 });
 
 test('does not execute a terminal fill that was already traded before auto-publication', async () => {

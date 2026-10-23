@@ -12,7 +12,10 @@ import { Label } from '../../components/ui/Label.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ROUTES } from '../../config/routes.config.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
-import { useUserPreferences } from '../settings/useUserPreferences.js';
+import {
+  TraderSignalExecutionReadiness,
+  useTraderSignalExecutionReadiness,
+} from './TraderSignalExecutionReadiness.jsx';
 
 const profileKey = (workspaceId) => ['marketplace', 'my-provider', workspaceId];
 const signalsKey = (workspaceId) => ['marketplace', 'my-signals', workspaceId];
@@ -21,11 +24,6 @@ export default function PublishSignal() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
-  const {
-    query: preferencesQuery,
-    save: savePreferences,
-    isSaving: isSavingExecutionPreference,
-  } = useUserPreferences();
   const [validationError, setValidationError] = useState('');
   const [executionPercentage, setExecutionPercentage] = useState('');
   const [form, setForm] = useState({
@@ -37,6 +35,11 @@ export default function PublishSignal() {
     stopLoss: '',
     takeProfit: '',
   });
+  const executionReadiness = useTraderSignalExecutionReadiness({
+    marketType: form.marketType,
+    direction: form.direction,
+    orderType: form.orderType,
+  });
   const profileQuery = useQuery({
     queryKey: profileKey(activeWorkspaceId),
     queryFn: () => marketplaceApi.getMyProvider(),
@@ -44,9 +47,9 @@ export default function PublishSignal() {
   });
   const provider = profileQuery.data;
   useEffect(() => {
-    const savedPercentage = preferencesQuery.data?.trading?.signalExecutionPercentage;
+    const savedPercentage = executionReadiness.percentage;
     setExecutionPercentage(savedPercentage == null ? '' : String(savedPercentage));
-  }, [preferencesQuery.data?.trading?.signalExecutionPercentage]);
+  }, [executionReadiness.percentage]);
 
   const publishMutation = useMutation({
     mutationFn: (payload) => marketplaceApi.publishSignal(payload),
@@ -122,7 +125,9 @@ export default function PublishSignal() {
     ) {
       return;
     }
-    await savePreferences({ trading: { signalExecutionPercentage: percentage } });
+    await executionReadiness.savePreferences({
+      trading: { signalExecutionPercentage: percentage },
+    });
   };
 
   if (profileQuery.isLoading) return <LoadingState label="Checking Trader profile" />;
@@ -149,7 +154,7 @@ export default function PublishSignal() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Publish a signal</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Publishing shares the setup with subscribers. If trader-side execution is configured, the trade may also be submitted to connected accounts.
+          Review the trader-account execution check below before publishing. A signal cannot be published until a protected execution path is available for at least one active account.
         </p>
       </header>
 
@@ -195,7 +200,7 @@ export default function PublishSignal() {
                 inputMode="decimal"
                 placeholder="Disabled"
                 value={executionPercentage}
-                disabled={preferencesQuery.isLoading || isSavingExecutionPreference}
+                disabled={executionReadiness.isLoading || executionReadiness.isSavingPreferences}
                 onChange={(event) => setExecutionPercentage(event.target.value)}
               />
             </Field>
@@ -203,25 +208,25 @@ export default function PublishSignal() {
               type="submit"
               variant="outline"
               disabled={
-                preferencesQuery.isLoading ||
-                preferencesQuery.isError ||
-                isSavingExecutionPreference ||
+                executionReadiness.isLoading ||
+                executionReadiness.error ||
+                executionReadiness.isSavingPreferences ||
                 (executionPercentage !== '' &&
                   (!Number.isFinite(Number(executionPercentage)) ||
                     Number(executionPercentage) < 0.01 ||
                     Number(executionPercentage) > 100))
               }
             >
-              {isSavingExecutionPreference ? 'Saving…' : 'Save execution size'}
+              {executionReadiness.isSavingPreferences ? 'Saving…' : 'Save execution size'}
             </Button>
           </form>
-          {preferencesQuery.isError ? (
+          {executionReadiness.error ? (
             <p className="mt-2 text-sm text-destructive" role="alert">
-              Could not load your execution setting: {getErrorMessage(preferencesQuery.error)}
+              Could not verify execution readiness: {getErrorMessage(executionReadiness.error)}
             </p>
           ) : null}
           <p className="mt-2 text-xs text-muted-foreground">
-            Leave blank to disable automatic trader-side orders. Orders still require active matching accounts, exchange support for attached stop-loss and take-profit at this order type, and passing risk/permission checks. Bybit Spot protection is currently supported for limit orders; unsupported combinations are blocked and shown in Signal History.
+            This allocation is required for publishing signals that execute in your account. It is applied separately to each eligible active account; unsupported accounts and risk/permission failures are never bypassed.
           </p>
         </CardContent>
       </Card>
@@ -274,8 +279,17 @@ export default function PublishSignal() {
                 <Input id="signal-take-profit" type="number" min="0" step="any" value={form.takeProfit} onChange={updateField('takeProfit')} placeholder="Required" required />
               </Field>
             </div>
+            <TraderSignalExecutionReadiness
+              readiness={executionReadiness}
+              marketType={form.marketType}
+              direction={form.direction}
+              orderType={form.orderType}
+            />
             <div className="flex justify-end">
-              <Button type="submit" disabled={publishMutation.isPending}>
+              <Button
+                type="submit"
+                disabled={publishMutation.isPending || !executionReadiness.canPublish}
+              >
                 <Send className="h-4 w-4" />
                 {publishMutation.isPending ? 'Publishing…' : 'Publish signal'}
               </Button>

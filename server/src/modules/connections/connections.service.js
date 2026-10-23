@@ -689,8 +689,10 @@ export function createConnectionsService({
         queries.getHealth(connection.id),
         queries.findExchangeByCode(connection.exchange_code),
       ]);
+      const adapter = adapterRegistry.get(connection.exchange_code);
       return {
         ...connection,
+        capabilities: adapter?.capabilities || connection.capabilities || {},
         accounts,
         account_count: accounts.length,
         exchange_name: exchange?.display_name || connection.exchange_code,

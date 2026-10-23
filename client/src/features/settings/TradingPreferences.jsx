@@ -138,7 +138,7 @@ export default function TradingPreferences() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                When set, new signals are sized using this share of available balance on every active matching account in this workspace. The exchange must support attached stop-loss and take-profit for that market and order type. Bybit Spot currently supports protected limit entries; unsupported combinations are blocked. Leave blank to disable automatic execution. Risk and permission checks can still block an order or require approval.
+                When set, new signals are sized using this share of available balance on each eligible active account. Bybit Spot limit entries use native TP/SL; Spot market long entries use a protected IOC limit capped at 0.5% slippage and may partially fill or not fill. Spot short entries and other unsupported combinations are blocked. Risk and permission checks can still block an order or require approval.
               </p>
             </div>
             <div className="flex flex-col gap-2">

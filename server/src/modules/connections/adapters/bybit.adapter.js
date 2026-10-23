@@ -60,6 +60,14 @@ export function createBybitAdapter({ config, logger }) {
         spot: ['limit'],
         futures: ['market', 'limit'],
       },
+      protectedMarketOrderFallbacks: {
+        spot: {
+          orderType: 'limit',
+          timeInForce: 'IOC',
+          maxSlippageBps: 50,
+          directions: ['long'],
+        },
+      },
       supportedOrderTypes: [
         'market',
         'limit',

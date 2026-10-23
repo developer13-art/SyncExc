@@ -21,6 +21,10 @@ import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { apiConfig } from '../../config/api.config.js';
 import { resolveProfileImageUrl } from '../../lib/profile-image-url.js';
+import {
+  TraderSignalExecutionReadiness,
+  useTraderSignalExecutionReadiness,
+} from '../trader/TraderSignalExecutionReadiness.jsx';
 
 const profileKey = (workspaceId) => ['marketplace', 'my-provider', workspaceId];
 const signalsKey = (workspaceId) => ['marketplace', 'my-signals', workspaceId];
@@ -75,6 +79,11 @@ export default function TraderProfile() {
     enabled: activeWorkspace?.type === 'trader' && Boolean(provider),
   });
   const signals = signalsQuery.data?.items ?? [];
+  const executionReadiness = useTraderSignalExecutionReadiness({
+    marketType: signalForm.marketType,
+    direction: signalForm.direction,
+    orderType: signalForm.orderType,
+  });
 
   useEffect(() => {
     if (!provider) return;
@@ -196,6 +205,10 @@ export default function TraderProfile() {
 
   const publishSignal = async (event) => {
     event.preventDefault();
+    if (!executionReadiness.canPublish) {
+      toast.error('Signal cannot be published until trader-account execution is ready');
+      return;
+    }
     const entry = signalForm.entry.trim() ? Number(signalForm.entry) : null;
     const stopLoss = Number(signalForm.stopLoss);
     const takeProfit = Number(signalForm.takeProfit);
@@ -407,11 +420,27 @@ export default function TraderProfile() {
                       <Input id="signal-take-profit" type="number" min="0" step="any" value={signalForm.takeProfit} onChange={updateSignalField('takeProfit')} placeholder="Required" required />
                     </SignalField>
                   </div>
+                  <TraderSignalExecutionReadiness
+                    readiness={executionReadiness}
+                    marketType={signalForm.marketType}
+                    direction={signalForm.direction}
+                    orderType={signalForm.orderType}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Manage the balance allocation in{' '}
+                    <Link className="text-primary underline" to={ROUTES.app.settings.trading}>
+                      Trading preferences
+                    </Link>
+                    .
+                  </p>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="max-w-xl text-xs text-muted-foreground">
-                      Publishing shares this signal with subscribers; trader-side execution may also submit it to connected accounts when configured.
+                      Publishing sends the signal to your subscribers and attempts the protected trader-account order described above.
                     </p>
-                    <Button type="submit" disabled={publishingSignal}>
+                    <Button
+                      type="submit"
+                      disabled={publishingSignal || !executionReadiness.canPublish}
+                    >
                       <Send className="h-4 w-4" /> {publishingSignal ? 'Publishing…' : 'Publish signal'}
                     </Button>
                   </div>
