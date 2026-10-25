@@ -18,6 +18,7 @@ function createDependencies({
     hasAttachedBracketProtectionMarkets: ['futures'],
   },
   marketData = { async getSpotPrice() { return 100; } },
+  accountStateByExchange = {},
 }) {
   const submitted = [];
   const records = [];
@@ -46,12 +47,12 @@ function createDependencies({
       },
     },
     connections: {
-      async getAdapter() {
+      async getAdapter(exchangeCode) {
         return {
           capabilities,
           async fetchAccountState({ accountType }) {
             assert.equal(accountType, 'unified');
-            return {
+            return accountStateByExchange[exchangeCode] || {
               equity: '1000',
               availableEquity: '1000',
               balances: [
@@ -224,8 +225,86 @@ test('executes protected Bybit Spot limit signals with the configured balance al
   assert.equal(submitted[0].takeProfit, '110');
 });
 
-test('uses a protected IOC limit with a 0.5 percent slippage cap for Spot market signals', async () => {
-  const { service, submitted } = createDependencies({
+test('executes the trader-sized private plan before publication and skips an underfunded account', async () => {
+  const { service, submitted, records } = createDependencies({
+    signal: {
+      id: 'private-size-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'limit',
+      entry: '100',
+      stop_loss: '90',
+      targets: ['110'],
+      status: 'draft',
+      source_order_id: null,
+    },
+    capabilities: {
+      hasSpot: true,
+      hasFutures: true,
+      hasAttachedBracketProtectionMarkets: ['spot'],
+      hasAttachedBracketProtectionOrderTypes: { spot: ['limit'] },
+    },
+    accounts: [
+      {
+        connection_id: 'connection-low',
+        account_id: 'account-low',
+        account_type: 'unified',
+        exchange_code: 'bybit',
+        environment: 'testnet',
+        connection_status: 'active',
+        account_status: 'active',
+      },
+      {
+        connection_id: 'connection-ready',
+        account_id: 'account-ready',
+        account_type: 'unified',
+        exchange_code: 'binance',
+        environment: 'testnet',
+        connection_status: 'active',
+        account_status: 'active',
+      },
+    ],
+    accountStateByExchange: {
+      bybit: {
+        availableEquity: '50',
+        balances: [{ asset: 'USDT', free: '50' }],
+      },
+      binance: {
+        availableEquity: '1000',
+        balances: [{ asset: 'USDT', free: '1000' }],
+      },
+    },
+  });
+
+  await service.executeSignalForPublication({
+    signal: {
+      id: 'private-size-signal',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'limit',
+      entry: '100',
+      stop_loss: '90',
+      targets: ['110'],
+      status: 'draft',
+    },
+    accountIds: ['account-low', 'account-ready'],
+    amount: '200',
+  });
+
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].accountId, 'account-ready');
+  assert.equal(submitted[0].quantity, '2');
+  assert.equal(records.find((record) => record.accountId === 'account-low').status, 'skipped_insufficient_balance');
+});
+
+test('skips Spot market TP/SL when only a Spot limit bracket is declared', async () => {
+  const { service, submitted, records } = createDependencies({
     signal: {
       id: 'spot-market-signal',
       user_id: 'trader-1',
@@ -269,65 +348,10 @@ test('uses a protected IOC limit with a 0.5 percent slippage cap for Spot market
 
   await service.executePublishedSignal({ publishedSignalId: 'spot-market-signal' });
 
-  assert.equal(submitted.length, 1);
-  assert.equal(submitted[0].type, 'limit');
-  assert.equal(submitted[0].price, '100.5');
-  assert.equal(submitted[0].timeInForce, 'IOC');
-  assert.equal(submitted[0].quantity, '1');
-  assert.equal(submitted[0].stopLoss, '90');
-  assert.equal(submitted[0].takeProfit, '110');
-});
-
-test('rounds protected Spot market price caps correctly for tiny decimal tick sizes', async () => {
-  const { service, submitted } = createDependencies({
-    signal: {
-      id: 'tiny-price-signal',
-      user_id: 'trader-1',
-      workspace_id: 'workspace-1',
-      instrument: 'TINYUSDT',
-      market_type: 'spot',
-      direction: 'long',
-      order_type: 'market',
-      entry: null,
-      stop_loss: '0.00000001',
-      targets: ['0.00000002'],
-      status: 'published',
-      source_order_id: null,
-    },
-    instrument: {
-      trading_status: 'active',
-      base_asset: 'TINY',
-      quote_asset: 'USDT',
-      tick_size: '0.0000000001',
-    },
-    capabilities: {
-      hasSpot: true,
-      hasFutures: false,
-      hasAttachedBracketProtectionMarkets: ['spot'],
-      hasAttachedBracketProtectionOrderTypes: { spot: ['limit'] },
-      protectedMarketOrderFallbacks: {
-        spot: {
-          orderType: 'limit',
-          timeInForce: 'IOC',
-          maxSlippageBps: 50,
-          directions: ['long'],
-        },
-      },
-    },
-    accounts: [{
-      connection_id: 'connection-1',
-      account_id: 'account-1',
-      account_type: 'unified',
-      exchange_code: 'bybit',
-      environment: 'testnet',
-    }],
-    marketData: { async getSpotPrice() { return 0.00000001234; } },
-  });
-
-  await service.executePublishedSignal({ publishedSignalId: 'tiny-price-signal' });
-
-  assert.equal(submitted.length, 1);
-  assert.equal(submitted[0].price, '0.0000000124');
+  assert.equal(submitted.length, 0);
+  assert.equal(records[0].status, 'skipped_protection_unsupported');
+  assert.match(records[0].errorMessage, /Spot market orders do not have declared/);
+  assert.match(records[0].errorMessage, /Post-fill trigger emulation is not enabled/);
 });
 
 test('blocks Spot short signal execution instead of submitting an unprotected sell', async () => {
@@ -440,7 +464,7 @@ test('records why spot trader-side execution was skipped when bracket protection
 
   assert.equal(submitted.length, 0);
   assert.equal(records[0].status, 'skipped_protection_unsupported');
-  assert.match(records[0].errorMessage, /attached stop-loss and take-profit support for spot/);
+  assert.match(records[0].errorMessage, /not supported for this market and order type/);
 });
 
 test('records realized signal PnL only after an exact exchange order link', async () => {

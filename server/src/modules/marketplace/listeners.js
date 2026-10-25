@@ -18,10 +18,9 @@ export function createMarketplaceListeners({
       const { signalId } = envelope.payload || {};
       if (!signalId) return;
       try {
-        await Promise.all([
-          copyOrchestration.processPublishedSignal({ publishedSignalId: signalId }),
-          traderSignalExecution.executePublishedSignal({ publishedSignalId: signalId }),
-        ]);
+        // The publisher finishes the trader's own account execution before it
+        // emits this event. Copy fanout therefore starts only after that baseline.
+        await copyOrchestration.processPublishedSignal({ publishedSignalId: signalId });
       } catch (err) {
         logger.error({ err, signalId }, 'Signal execution orchestration failed after publish');
       }

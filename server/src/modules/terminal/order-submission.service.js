@@ -18,6 +18,7 @@
 import { AppError, ValidationError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { normalizeOrderQuantity } from '../../lib/order-quantity.js';
 import { compareDecimals, ORDER_STATUS } from '@syncexc/shared';
+import { resolveBracketProtectionPlan } from '../connections/bracket-protection.policy.js';
 
 export function createOrderSubmissionService({
   db,
@@ -55,10 +56,10 @@ export function createOrderSubmissionService({
       workspaceId,
       connectionId,
       accountId,
-      marketType,
+      marketType: requestedMarketType,
       instrumentId,
       side,
-      type,
+      type: requestedOrderType,
       quantity: requestedQuantity,
       price,
       stopLoss,
@@ -69,6 +70,11 @@ export function createOrderSubmissionService({
       clientOrderId,
       idempotencyKey,
     } = params;
+    const marketType = requestedMarketType === 'perpetual' ? 'futures' : requestedMarketType;
+    const type = String(requestedOrderType || '').toLowerCase();
+    if (!['spot', 'futures'].includes(marketType)) {
+      throw new ValidationError('Market type must be Spot or Futures/Perpetuals');
+    }
 
     // 1. Idempotency check — return prior result if the key exists
     const existing = await queries.findExecutionRequestByKey(idempotencyKey);
@@ -122,21 +128,38 @@ export function createOrderSubmissionService({
 
     const adapter = await connections.getAdapter(connection.exchange_code);
     if (!adapter) throw new NotFoundError('Exchange adapter');
-    const bracketMarkets = adapter.capabilities?.hasAttachedBracketProtectionMarkets || [];
-    const bracketOrderTypes = adapter.capabilities?.hasAttachedBracketProtectionOrderTypes?.[marketType];
-    const supportsBracketOrder = bracketMarkets.includes(marketType) &&
-      (Array.isArray(bracketOrderTypes)
-        ? bracketOrderTypes.includes(type)
-        : ['market', 'limit'].includes(type));
-    if (
-      (stopLoss || takeProfit) &&
-      (!stopLoss ||
-        !takeProfit ||
-        !supportsBracketOrder)
-    ) {
+    const supportedOrderTypes = adapter.capabilities?.supportedOrderTypes;
+    if (Array.isArray(supportedOrderTypes) && !supportedOrderTypes.includes(type)) {
       throw new ConflictError(
-        'The selected exchange does not support attached stop-loss and take-profit protection for this market and order type',
-        'ATTACHED_PROTECTION_UNSUPPORTED',
+        `The selected exchange does not support ${type} orders`,
+        'ORDER_TYPE_UNSUPPORTED',
+      );
+    }
+    const protectionPlan = resolveBracketProtectionPlan({
+      capabilities: adapter.capabilities,
+      marketType,
+      orderType: type,
+      stopLoss,
+      takeProfit,
+    });
+    if (!protectionPlan.supported) {
+      logger.warn(
+        {
+          connectionId,
+          accountId,
+          exchange: connection.exchange_code,
+          marketType,
+          orderType: type,
+          protectionStrategy: protectionPlan.strategy,
+          warning: protectionPlan.warning,
+        },
+        'Order rejected by TP/SL compatibility policy',
+      );
+      throw new ConflictError(
+        protectionPlan.warning,
+        protectionPlan.code === 'MARKET_TYPE_UNSUPPORTED'
+          ? 'MARKET_TYPE_UNSUPPORTED'
+          : 'ATTACHED_PROTECTION_UNSUPPORTED',
       );
     }
     const marketSupported = marketType === 'spot'

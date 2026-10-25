@@ -121,7 +121,7 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0]?.percentage ?? null;
     },
 
-    async listTraderSignalExecutionAccounts(userId, workspaceId) {
+    async listTraderSignalExecutionAccounts(userId, workspaceId, accountIds = null) {
       const result = await db.query(
         `
         SELECT
@@ -136,11 +136,10 @@ export function createMarketplaceQueries({ db }) {
         JOIN exchange_accounts account ON account.connection_id = connection.id
         WHERE connection.owner_id = $1
           AND connection.workspace_id = $2
-          AND connection.status = 'active'
-          AND account.status = 'active'
+          AND ($3::uuid[] IS NULL OR account.id = ANY($3::uuid[]))
         ORDER BY connection.created_at, account.created_at
         `,
-        [userId, workspaceId]
+        [userId, workspaceId, accountIds]
       );
       return result.rows;
     },
@@ -1187,9 +1186,11 @@ export function createMarketplaceQueries({ db }) {
     async listCopyDestinations(configId) {
       const result = await db.query(
         `
-        SELECT d.*, c.exchange_code, c.status AS connection_status
+        SELECT d.*, c.exchange_code, c.status AS connection_status,
+               c.environment, a.account_type, a.status AS account_status
         FROM copy_destination_accounts d
         JOIN exchange_connections c ON c.id = d.connection_id
+        JOIN exchange_accounts a ON a.id = d.account_id
         WHERE d.config_id = $1
         `,
         [configId]
@@ -1311,6 +1312,44 @@ export function createMarketplaceQueries({ db }) {
         [signalId, configId, workspaceId]
       );
       return result.rows;
+    },
+
+    async cancelPendingCopyIntentsForSignal(signalId, configId, client = db) {
+      const result = await client.query(
+        `
+        UPDATE copy_execution_intents intent
+        SET status = 'cancelled'
+        FROM copy_signal_processing_records record
+        WHERE record.execution_intent_id = intent.id
+          AND record.published_signal_id = $1
+          AND record.config_id = $2
+          AND record.outcome = 'held'
+          AND intent.status IN ('awaiting_confirmation', 'terminal_confirmation_required')
+        RETURNING record.id
+        `,
+        [signalId, configId],
+      );
+      const recordIds = result.rows.map((row) => row.id);
+      if (recordIds.length > 0) {
+        await client.query(
+          `
+          UPDATE copy_signal_processing_records
+          SET outcome = 'skipped', skip_reason = 'manual_copy_overridden'
+          WHERE id = ANY($1::uuid[])
+          `,
+          [recordIds],
+        );
+        await client.query(
+          `
+          UPDATE copy_signal_destination_results
+          SET outcome = 'skipped', skip_reason = 'manual_copy_overridden',
+              error_message = 'Replaced by a manually sized copy request.'
+          WHERE processing_record_id = ANY($1::uuid[])
+          `,
+          [recordIds],
+        );
+      }
+      return recordIds.length;
     },
 
     async claimCopyExecutionIntent(intentId, expectedStatus) {

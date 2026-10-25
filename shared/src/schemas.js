@@ -575,6 +575,8 @@ export const PublishSignalRequestSchema = Joi.object({
   }),
   stopLoss: PositiveDecimalSchema.required(),
   targets: Joi.array().items(PositiveDecimalSchema).min(1).max(10).required(),
+  executionAccountIds: Joi.array().items(UuidSchema).min(1).unique().required(),
+  executionAmount: PositiveDecimalSchema.required(),
 }).unknown(false);
 
 export const CreateCopyConfigurationRequestSchema = Joi.object({

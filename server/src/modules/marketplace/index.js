@@ -104,6 +104,7 @@ export function createMarketplaceModule({ services }) {
     copyConfigurationService,
     risk: services.risk,
     terminal: services.terminal,
+    connections: services.connections,
     marketData: services.connections.marketData,
     events: services.events,
     logger,
@@ -140,6 +141,7 @@ export function createMarketplaceModule({ services }) {
     moderationService,
     signalDiscussionService,
     stripeMarketplaceService,
+    traderSignalExecutionService,
     middleware: services.middleware,
   });
 

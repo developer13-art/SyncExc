@@ -1,4 +1,5 @@
 import { fnv1aHash } from '@syncexc/shared';
+import { resolveBracketProtectionPlan } from '../connections/bracket-protection.policy.js';
 
 function resolveSignalPrice(signal) {
   if (signal.entry != null) return Number(signal.entry);
@@ -29,65 +30,6 @@ function resolveSignalPrice(signal) {
 function formatQuantity(quantity) {
   if (!Number.isFinite(quantity) || quantity <= 0) return null;
   return quantity.toFixed(12).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
-}
-
-function decimalText(value) {
-  const text = String(value);
-  if (/^\d+(?:\.\d+)?$/.test(text)) return text;
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric < 0 || numeric >= 1e21) return null;
-  return numeric.toFixed(18).replace(/0+$/, '').replace(/\.$/, '');
-}
-
-function decimalScale(value) {
-  const text = decimalText(value);
-  if (text == null) return 0;
-  const fraction = text.split('.')[1] || '';
-  return fraction.length;
-}
-
-function scaledInteger(value, scale) {
-  const text = decimalText(value);
-  if (text == null) return null;
-  if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
-  const [whole, fraction = ''] = text.split('.');
-  if (fraction.length > scale) return null;
-  return BigInt(`${whole}${fraction.padEnd(scale, '0')}`);
-}
-
-function formatScaledInteger(value, scale) {
-  const digits = value.toString().padStart(scale + 1, '0');
-  const whole = scale ? digits.slice(0, -scale) : digits;
-  const fraction = scale ? digits.slice(-scale).replace(/0+$/, '') : '';
-  return fraction ? `${whole}.${fraction}` : whole;
-}
-
-function getProtectedMarketLimitPrice({ referencePrice, tickSize, direction, maxSlippageBps }) {
-  const scale = Math.max(decimalScale(referencePrice), decimalScale(tickSize)) + 6;
-  if (scale > 24) throw new Error('Market price precision is unsupported for protected execution');
-  const reference = scaledInteger(referencePrice, scale);
-  const tick = scaledInteger(tickSize, scale);
-  const basisPoints = Number(maxSlippageBps);
-  if (
-    reference == null ||
-    tick == null ||
-    reference <= 0n ||
-    tick <= 0n ||
-    !Number.isInteger(basisPoints) ||
-    basisPoints <= 0 ||
-    basisPoints >= 10_000
-  ) {
-    throw new Error('Cannot calculate a valid protected market-order price cap');
-  }
-
-  const multiplier = direction === 'long' ? 10_000 + basisPoints : 10_000 - basisPoints;
-  const rawPrice = (reference * BigInt(multiplier)) / 10_000n;
-  const ticks = direction === 'long'
-    ? rawPrice / tick
-    : (rawPrice + tick - 1n) / tick;
-  const cappedPrice = ticks * tick;
-  if (cappedPrice <= 0n) throw new Error('Protected market-order price cap is below the minimum price');
-  return formatScaledInteger(cappedPrice, scale);
 }
 
 function resolveTakeProfit(targets) {
@@ -150,6 +92,18 @@ export function createTraderSignalExecutionService({
 
     const marketType = signal.market_type === 'spot' ? 'spot' : 'futures';
     for (const account of accounts) {
+      if (account.connection_status && account.connection_status !== 'active' ||
+        account.account_status && account.account_status !== 'active') {
+        await recordExecution({
+          signalId: signal.id,
+          workspaceId: signal.workspace_id,
+          userId: signal.user_id,
+          connectionId: account.connection_id,
+          accountId: account.account_id,
+          status: 'skipped_unhealthy_account',
+        });
+        continue;
+      }
       try {
         const price = signal.order_type === 'limit'
           ? resolveSignalPrice(signal)
@@ -176,7 +130,87 @@ export function createTraderSignalExecutionService({
     }
   }
 
-  async function executeForAccount({ signal, account, marketType, price, percentage }) {
+  async function executeSignalForPublication({ signal, accountIds, amount }) {
+    if (!signal?.id || !Array.isArray(accountIds) || accountIds.length === 0) {
+      throw new Error('Signal execution requires a saved signal and at least one selected account');
+    }
+    const requestedAmount = Number(amount);
+    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+      throw new Error('Trader execution amount must be a positive quote-currency amount');
+    }
+    const accounts = await queries.listTraderSignalExecutionAccounts(
+      signal.user_id,
+      signal.workspace_id,
+      accountIds,
+    );
+    const foundAccountIds = new Set(accounts.map((account) => account.account_id));
+    if (accountIds.some((accountId) => !foundAccountIds.has(accountId))) {
+      throw new Error('One or more selected trader accounts are unavailable in this workspace');
+    }
+
+    const marketType = signal.market_type === 'spot' ? 'spot' : 'futures';
+    for (const account of accounts) {
+      if (
+        account.connection_status !== 'active' ||
+        account.account_status !== 'active'
+      ) {
+        await recordExecution({
+          signalId: signal.id,
+          workspaceId: signal.workspace_id,
+          userId: signal.user_id,
+          connectionId: account.connection_id,
+          accountId: account.account_id,
+          status: 'skipped_unhealthy_account',
+          errorMessage: `Connection status: ${account.connection_status}; account status: ${account.account_status}.`,
+        });
+        continue;
+      }
+
+      try {
+        const price = signal.order_type === 'limit'
+          ? resolveSignalPrice(signal)
+          : await fetchReferencePrice(
+            marketData,
+            account.exchange_code,
+            signal.instrument,
+            marketType,
+          );
+        if (!Number.isFinite(price) || price <= 0) {
+          throw new Error('No valid reference price is available for signal sizing');
+        }
+        await executeForAccount({
+          signal,
+          account,
+          marketType,
+          price,
+          requestedAmount,
+        });
+      } catch (err) {
+        await recordExecution({
+          signalId: signal.id,
+          workspaceId: signal.workspace_id,
+          userId: signal.user_id,
+          connectionId: account.connection_id,
+          accountId: account.account_id,
+          status: 'failed',
+          errorMessage: err.message,
+        });
+        logger.error(
+          { err, signalId: signal.id, accountId: account.account_id },
+          'Trader signal execution failed for account',
+        );
+      }
+    }
+  }
+
+  async function executeForAccount({
+    signal,
+    account,
+    marketType,
+    price,
+    percentage,
+    requestedAmount,
+  }) {
     const adapter = await connections.getAdapter(account.exchange_code);
     const supported = marketType === 'spot'
       ? adapter?.capabilities?.hasSpot
@@ -219,44 +253,37 @@ export function createTraderSignalExecutionService({
     }
     const stopLoss = signal.stop_loss == null ? null : String(signal.stop_loss);
     const takeProfit = resolveTakeProfit(signal.targets);
-    let orderType = signal.order_type === 'limit' ? 'limit' : 'market';
-    let orderPrice = orderType === 'limit' ? String(price) : undefined;
-    let timeInForce;
-    const bracketMarkets = adapter.capabilities?.hasAttachedBracketProtectionMarkets || [];
-    const bracketOrderTypes = adapter.capabilities?.hasAttachedBracketProtectionOrderTypes?.[marketType];
-    let supportsBracketOrder = bracketMarkets.includes(marketType) &&
-      (Array.isArray(bracketOrderTypes)
-        ? bracketOrderTypes.includes(orderType)
-        : ['market', 'limit'].includes(orderType));
-    if (!supportsBracketOrder && orderType === 'market') {
-      const fallback = adapter.capabilities?.protectedMarketOrderFallbacks?.[marketType];
-      if (
-        fallback?.orderType === 'limit' &&
-        fallback?.timeInForce === 'IOC' &&
-        fallback.directions?.includes(signal.direction) &&
-        stopLoss &&
-        takeProfit
-      ) {
-        orderType = 'limit';
-        orderPrice = getProtectedMarketLimitPrice({
-          referencePrice: price,
-          tickSize: instrument.tick_size,
-          direction: signal.direction,
-          maxSlippageBps: fallback.maxSlippageBps,
-        });
-        timeInForce = fallback.timeInForce;
-        supportsBracketOrder = bracketMarkets.includes(marketType) &&
-          (bracketOrderTypes?.includes(orderType) ?? false);
-      }
+    const orderType = signal.order_type === 'limit' ? 'limit' : 'market';
+    const orderPrice = orderType === 'limit' ? String(price) : undefined;
+    const supportedOrderTypes = adapter.capabilities?.supportedOrderTypes;
+    if (Array.isArray(supportedOrderTypes) && !supportedOrderTypes.includes(orderType)) {
+      const warning = `Exchange ${account.exchange_code} does not support ${orderType} orders.`;
+      await recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_order_type_unsupported',
+        errorMessage: warning,
+      });
+      logger.warn(
+        { signalId: signal.id, accountId: account.account_id, marketType, orderType, warning },
+        'Trader signal execution skipped: order type unsupported',
+      );
+      return;
     }
-    if (marketType === 'spot' && signal.direction === 'short') {
-      supportsBracketOrder = false;
-    }
-    if (
-      !supportsBracketOrder ||
-      !stopLoss ||
-      !takeProfit
-    ) {
+    const protectionPlan = resolveBracketProtectionPlan({
+      capabilities: adapter.capabilities,
+      marketType,
+      orderType,
+      stopLoss,
+      takeProfit,
+    });
+    if (!protectionPlan.supported || (marketType === 'spot' && signal.direction === 'short')) {
+      const warning = marketType === 'spot' && signal.direction === 'short'
+        ? 'Spot accounts cannot open short positions; connect a supported futures account for short signals.'
+        : protectionPlan.warning;
       await recordExecution({
         signalId: signal.id,
         workspaceId: signal.workspace_id,
@@ -264,9 +291,7 @@ export function createTraderSignalExecutionService({
         connectionId: account.connection_id,
         accountId: account.account_id,
         status: 'skipped_protection_unsupported',
-        errorMessage: marketType === 'spot' && signal.direction === 'short'
-          ? 'Spot accounts cannot open short positions; connect a supported futures account for short signals.'
-          : `Automatic ${signal.order_type || 'market'} trader execution requires attached stop-loss and take-profit support for ${marketType} on this exchange.`,
+        errorMessage: warning,
       });
       logger.warn(
         {
@@ -274,8 +299,11 @@ export function createTraderSignalExecutionService({
           accountId: account.account_id,
           exchange: account.exchange_code,
           marketType,
+          orderType,
+          protectionStrategy: protectionPlan.strategy,
+          warning,
         },
-        'Trader signal execution skipped: exchange or signal lacks attached stop-loss and take-profit support',
+        'Trader signal execution skipped by TP/SL compatibility policy',
       );
       return;
     }
@@ -299,8 +327,9 @@ export function createTraderSignalExecutionService({
     );
     const availableEquity = Number(accountState.availableEquity);
     const available = marketType === 'futures' &&
+      accountState.availableEquity != null &&
       Number.isFinite(availableEquity) &&
-      availableEquity > 0
+      availableEquity >= 0
       ? availableEquity
       : Number(balance?.free ?? balance?.available ?? 0);
     if (!Number.isFinite(available) || available <= 0) {
@@ -319,10 +348,34 @@ export function createTraderSignalExecutionService({
       return;
     }
 
-    const allocatedBalance = available * (percentage / 100);
-    const quantity = marketType === 'spot' && signal.direction === 'short'
+    const allocatedBalance = requestedAmount == null
+      ? available * (percentage / 100)
+      : requestedAmount;
+    const quantity = requestedAmount == null && marketType === 'spot' && signal.direction === 'short'
       ? allocatedBalance
       : allocatedBalance / price;
+    const leverage = Math.max(1, Number(signal.leverage) || 1);
+    const requiredBalance = marketType === 'spot' && signal.direction === 'short'
+      ? quantity
+      : marketType === 'futures'
+        ? allocatedBalance / leverage
+        : allocatedBalance;
+    if (requestedAmount != null && available < requiredBalance) {
+      await recordExecution({
+        signalId: signal.id,
+        workspaceId: signal.workspace_id,
+        userId: signal.user_id,
+        connectionId: account.connection_id,
+        accountId: account.account_id,
+        status: 'skipped_insufficient_balance',
+        errorMessage: `Available ${balanceAsset} balance is below the required ${formatQuantity(requiredBalance)}.`,
+      });
+      logger.warn(
+        { signalId: signal.id, accountId: account.account_id, balanceAsset },
+        'Trader signal execution skipped: selected amount exceeds available balance',
+      );
+      return;
+    }
     const formattedQuantity = formatQuantity(quantity);
     if (!formattedQuantity) {
       await recordExecution({
@@ -353,10 +406,14 @@ export function createTraderSignalExecutionService({
       stopLoss,
       takeProfit,
       ...(orderType === 'limit' ? { price: orderPrice } : {}),
-      ...(timeInForce ? { timeInForce } : {}),
       idempotencyKey: fnv1aHash(`trader-signal:${signal.id}:${account.account_id}`),
     });
 
+    const executionStatus = result.requiresConfirmation
+      ? 'awaiting_confirmation'
+      : result.ambiguous
+        ? 'reconciliation_required'
+        : result.order?.status || 'failed';
     await recordExecution({
       signalId: signal.id,
       workspaceId: signal.workspace_id,
@@ -365,20 +422,30 @@ export function createTraderSignalExecutionService({
       accountId: account.account_id,
       executionRequestId: result.executionRequest?.id,
       orderId: result.order?.id,
-      status: result.requiresConfirmation ? 'awaiting_confirmation' : result.order?.status || 'submitted',
+      status: executionStatus,
       requestedQuantity: formattedQuantity,
     });
 
-    logger.info(
-      {
+    const hasRejectedOrder = ['rejected', 'failed', 'canceled', 'cancelled']
+      .includes(String(executionStatus).toLowerCase());
+    const logFields = {
         signalId: signal.id,
         accountId: account.account_id,
         orderId: result.order?.id || null,
         requiresConfirmation: Boolean(result.requiresConfirmation),
-        quantity: formattedQuantity,
-      },
-      'Trader signal execution submitted',
-    );
+        status: executionStatus,
+      };
+    if (result.requiresConfirmation) {
+      logger.warn(logFields, 'Trader signal execution is awaiting explicit approval');
+    } else if (
+      hasRejectedOrder ||
+      executionStatus === 'reconciliation_required' ||
+      executionStatus === 'failed'
+    ) {
+      logger.warn(logFields, 'Trader signal execution did not complete successfully');
+    } else {
+      logger.info(logFields, 'Trader signal execution submitted');
+    }
   }
 
   async function handleOrderFilled({ orderId }) {
@@ -442,7 +509,13 @@ export function createTraderSignalExecutionService({
     });
   }
 
-  return { executePublishedSignal, handleOrderFilled, handleOrderStatus, handleClosedTrade };
+  return {
+    executePublishedSignal,
+    executeSignalForPublication,
+    handleOrderFilled,
+    handleOrderStatus,
+    handleClosedTrade,
+  };
 }
 
 async function fetchReferencePrice(marketData, exchangeCode, symbol, marketType) {

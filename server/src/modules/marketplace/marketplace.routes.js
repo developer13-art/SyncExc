@@ -20,6 +20,8 @@ const SubscribeSchema = Joi.object({
 
 const CopySignalSchema = Joi.object({
   configurationId: UuidSchema.required(),
+  destinationAccountIds: Joi.array().items(UuidSchema).min(1).unique().required(),
+  amount: Joi.string().trim().pattern(/^\d+(?:\.\d+)?$/).required(),
 });
 
 const CancelSignalSchema = Joi.object({

@@ -24,6 +24,9 @@ export function createPublicationService({ db, queries, events, disclosureServic
     disclosures,
     sourceEvidence,
     sourceOrderId,
+    executionAccountIds,
+    executionAmount,
+    beforePublish,
   }) {
     const provider = await queries.findProviderById(providerId);
     if (!provider) throw new NotFoundError('Provider');
@@ -43,6 +46,12 @@ export function createPublicationService({ db, queries, events, disclosureServic
     }
     if (!['market', 'limit'].includes(orderType)) {
       throw new ValidationError('orderType must be market or limit');
+    }
+    if (!sourceOrderId && beforePublish && (!Array.isArray(executionAccountIds) ||
+      executionAccountIds.length === 0 ||
+      !Number.isFinite(Number(executionAmount)) ||
+      Number(executionAmount) <= 0)) {
+      throw new ValidationError('Select at least one trader account and enter a positive execution amount');
     }
 
     if (!sourceOrderId) {
@@ -79,7 +88,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
       }
     }
 
-    return db.tx(async (tx) => {
+    const signal = await db.tx(async (tx) => {
       const signal = await queries.insertPublishedSignal(tx, {
         providerId,
         instrument,
@@ -115,9 +124,31 @@ export function createPublicationService({ db, queries, events, disclosureServic
         visibility: 'subscribers',
       });
 
-      // Update status to published
-      const publishedSignal = await queries.updatePublishedSignal(signal.id, { status: 'published' }, false, tx);
+      return {
+        ...signal,
+        user_id: userId,
+        workspace_id: workspaceId,
+        targets: targets || [],
+      };
+    });
 
+    // Manual publications execute the trader's selected accounts before their
+    // signal becomes visible to subscribers or enters the copy-trading fanout.
+    if (beforePublish && !sourceOrderId) {
+      await beforePublish({
+        signal,
+        accountIds: executionAccountIds,
+        amount: String(executionAmount),
+      });
+    }
+
+    return db.tx(async (tx) => {
+      const publishedSignal = await queries.updatePublishedSignal(
+        signal.id,
+        { status: 'published' },
+        false,
+        tx,
+      );
       await events.publish(
         tx,
         'marketplace.signal_published',

@@ -1,6 +1,5 @@
 import { useConnections } from '../../hooks/useConnections.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
-import { useUserPreferences } from '../settings/useUserPreferences.js';
 import { getErrorMessage } from '../../api/errors.js';
 
 export function useTraderSignalExecutionReadiness({ marketType, direction, orderType }) {
@@ -9,9 +8,6 @@ export function useTraderSignalExecutionReadiness({ marketType, direction, order
     { status: 'active' },
     Boolean(activeWorkspaceId),
   );
-  const preferences = useUserPreferences();
-  const preferenceQuery = preferences.query;
-  const percentage = preferenceQuery.data?.trading?.signalExecutionPercentage;
   const activeAccounts = connectionsQuery.connections.flatMap((connection) => {
     if (connection.status !== 'active' || connection.isShared) return [];
     return (connection.accounts || [])
@@ -46,14 +42,10 @@ export function useTraderSignalExecutionReadiness({ marketType, direction, order
     return supportsAttachedProtection || supportsProtectedFallback;
   });
 
-  const isLoading = connectionsQuery.isLoading || preferenceQuery.isLoading;
-  const error = connectionsQuery.error || preferenceQuery.error;
-  const executionConfigured = Number.isFinite(Number(percentage)) &&
-    Number(percentage) > 0 &&
-    Number(percentage) <= 100;
+  const isLoading = connectionsQuery.isLoading;
+  const error = connectionsQuery.error;
   const canPublish = !isLoading &&
     !error &&
-    executionConfigured &&
     compatibleAccounts.length > 0;
   const unsupportedAccounts = activeAccounts.filter(
     ({ connection }) => !compatibleAccounts.some(
@@ -73,13 +65,10 @@ export function useTraderSignalExecutionReadiness({ marketType, direction, order
     canPublish,
     isLoading,
     error,
-    percentage,
     activeAccounts,
     compatibleAccounts,
     unsupportedAccounts,
     fallbackSlippagePercent: fallback ? Number(fallback.maxSlippageBps) / 100 : null,
-    savePreferences: preferences.save,
-    isSavingPreferences: preferences.isSaving,
   };
 }
 
@@ -88,14 +77,13 @@ export function TraderSignalExecutionReadiness({
   marketType,
   direction,
   orderType,
+  selectedAccountCount,
 }) {
   let message;
   if (readiness.isLoading) {
-    message = 'Checking your execution size, exchange accounts, and protection support…';
+    message = 'Checking your connected exchange accounts and protection support…';
   } else if (readiness.error) {
     message = `Execution readiness could not be verified: ${getErrorMessage(readiness.error)}. Fix this before publishing.`;
-  } else if (!readiness.percentage) {
-    message = 'Automatic trader-account execution is disabled. Set a balance allocation below before publishing a signal.';
   } else if (readiness.activeAccounts.length === 0) {
     message = 'No active exchange accounts are available in this workspace. Connect and activate an exchange account before publishing.';
   } else if (readiness.compatibleAccounts.length === 0) {
@@ -103,9 +91,9 @@ export function TraderSignalExecutionReadiness({
       ? 'Spot accounts cannot open short positions. Choose Futures/Perpetual or a supported Spot long setup.'
       : `None of your active exchange accounts can attach stop-loss and take-profit for this ${marketType} ${orderType} setup. Choose a supported market and order type before publishing.`;
   } else if (marketType === 'spot' && orderType === 'market') {
-    message = `Publishing will attempt a protected Spot entry using a marketable IOC limit capped at ${readiness.fallbackSlippagePercent}% slippage, with ${readiness.percentage}% of available balance per eligible account. It may partially fill or not fill; risk and permission checks still apply.`;
+    message = `Publishing will attempt a protected Spot entry using a marketable IOC limit capped at ${readiness.fallbackSlippagePercent}% slippage. Your selected quote-currency amount is applied separately to each selected account; balance, pair support, account health, and risk checks can skip individual accounts.`;
   } else {
-    message = `Publishing will attempt this protected ${marketType} ${orderType} trade on ${readiness.compatibleAccounts.length} eligible account(s), using ${readiness.percentage}% of available balance per account. Risk and permission checks can still block it or require approval.`;
+    message = `Publishing will attempt this protected ${marketType} ${orderType} trade on ${selectedAccountCount} selected account(s). Your quote-currency amount is applied separately to each account; balance, pair support, account health, and risk checks can skip individual accounts.`;
   }
 
   return (
@@ -119,7 +107,7 @@ export function TraderSignalExecutionReadiness({
     >
       {message}
       {readiness.canPublish && readiness.unsupportedAccounts.length > 0
-        ? ` ${readiness.unsupportedAccounts.length} other active account(s) will be skipped because they cannot safely execute this setup.`
+        ? ` ${readiness.unsupportedAccounts.length} other active account(s) cannot execute this market/order setup.`
         : ''}
     </p>
   );

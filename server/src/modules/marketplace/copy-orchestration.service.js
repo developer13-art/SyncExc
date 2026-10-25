@@ -15,6 +15,7 @@
 import { fnv1aHash } from '@syncexc/shared';
 import { COPY_PROCESSING_OUTCOME, COPY_SKIP_REASON } from '@syncexc/shared';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors.js';
+import { resolveBracketProtectionPlan } from '../connections/bracket-protection.policy.js';
 
 export function createCopyOrchestrationService({
   db,
@@ -23,6 +24,7 @@ export function createCopyOrchestrationService({
   copyConfigurationService,
   risk,
   terminal,
+  connections,
   marketData,
   events,
   logger,
@@ -57,6 +59,8 @@ export function createCopyOrchestrationService({
     workspaceId,
     signalId,
     configId,
+    destinationAccountIds,
+    amount,
     canApproveExecution = false,
   }) {
     const signal = await queries.findPublishedSignalById(signalId);
@@ -81,6 +85,107 @@ export function createCopyOrchestrationService({
     });
     if (!subscription) {
       throw new ConflictError('An active subscription is required to copy this signal', 'SUBSCRIPTION_REQUIRED');
+    }
+
+    if (destinationAccountIds || amount != null) {
+      if (
+        !Array.isArray(destinationAccountIds) ||
+        destinationAccountIds.length === 0 ||
+        !Number.isFinite(Number(amount)) ||
+        Number(amount) <= 0
+      ) {
+        throw new ConflictError('Select at least one destination and enter a positive amount', 'INVALID_COPY_ALLOCATION');
+      }
+      if (config.execution_mode === 'monitor_only') {
+        throw new ConflictError('Monitor-only configurations cannot submit copy orders', 'COPY_EXECUTION_UNAVAILABLE');
+      }
+      if (
+        (config.instrument_filters?.length > 0 &&
+          !config.instrument_filters.includes(signal.instrument)) ||
+        (config.market_types && !config.market_types.includes(signal.market_type))
+      ) {
+        throw new ConflictError('This signal is outside the active copy configuration filters', 'COPY_NOT_ELIGIBLE');
+      }
+      if ((signal.order_type || 'market') === 'limit' && !signal.entry) {
+        throw new ConflictError('Limit-order signals need an exact entry price before they can be copied', 'COPY_NOT_ELIGIBLE');
+      }
+
+      const destinations = await queries.listCopyDestinations(config.id);
+      const selected = destinations.filter((destination) =>
+        destinationAccountIds.includes(destination.account_id)
+      );
+      if (selected.length !== new Set(destinationAccountIds).size) {
+        throw new NotFoundError('Configured destination account');
+      }
+
+      const requestConfig = {
+        ...config,
+        subscriber_user_id: userId,
+        sizing_rule: {
+          type: 'fixed_notional',
+          config: { amount: String(amount) },
+        },
+      };
+      await db.tx((tx) =>
+        queries.cancelPendingCopyIntentsForSignal(signal.id, config.id, tx)
+      );
+      const results = [];
+      for (const destination of selected) {
+        let record;
+        try {
+          record = await processDestination({
+            config: requestConfig,
+            signal,
+            destination,
+            manualCopy: true,
+          });
+        } catch (err) {
+          logger.warn(
+            { err, signalId: signal.id, accountId: destination.account_id },
+            'Copy destination was skipped after validation failed',
+          );
+          record = await recordSkip({
+            config: requestConfig,
+            signal,
+            destination,
+            reason: COPY_SKIP_REASON.DESTINATION_DISCONNECTED,
+            message: `Exchange validation failed; no order was submitted: ${err.message}`,
+          });
+        }
+        if (!record) {
+          results.push({ status: 'already_processed', accountId: destination.account_id });
+        } else if (record.outcome === COPY_PROCESSING_OUTCOME.HELD) {
+          try {
+            results.push({
+              ...(await confirmRecord({
+            userId,
+            workspaceId,
+            recordId: record.id,
+            canApproveExecution,
+              })),
+              accountId: destination.account_id,
+            });
+          } catch (err) {
+            logger.warn(
+              { err, signalId: signal.id, accountId: destination.account_id },
+              'Copy order outcome requires reconciliation',
+            );
+            results.push({
+              status: 'reconciliation_required',
+              errorMessage: err.message,
+              accountId: destination.account_id,
+            });
+          }
+        } else {
+          results.push({
+            status: record.outcome,
+            skipReason: record.skip_reason || null,
+            errorMessage: record.destination_error || record.error_message || null,
+            accountId: destination.account_id,
+          });
+        }
+      }
+      return { results };
     }
 
     let records = await queries.listCopyRecordsForSignalConfiguration(
@@ -187,21 +292,29 @@ export function createCopyOrchestrationService({
     }
   }
 
-  async function processDestination({ config, signal, destination }) {
+  async function processDestination({ config, signal, destination, manualCopy = false }) {
     // Skip if the destination connection is not active
     if (destination.connection_status !== 'active') {
-      await recordSkip({
+      return recordSkip({
         config,
         signal,
         destination,
         reason: COPY_SKIP_REASON.DESTINATION_DISCONNECTED,
         message: `Connection status: ${destination.connection_status}`,
       });
-      return;
+    }
+    if (destination.account_status !== 'active') {
+      return recordSkip({
+        config,
+        signal,
+        destination,
+        reason: COPY_SKIP_REASON.DESTINATION_DISCONNECTED,
+        message: `Account status: ${destination.account_status}`,
+      });
     }
 
     let referencePrice = signal.entry == null ? null : Number(signal.entry);
-    if (referencePrice == null && config.sizing_rule?.type === 'fixed_percentage') {
+    if (referencePrice == null) {
       try {
         referencePrice = await fetchReferencePrice(
           marketData,
@@ -210,14 +323,13 @@ export function createCopyOrchestrationService({
           signal.market_type,
         );
       } catch (err) {
-        await recordSkip({
+        return recordSkip({
           config,
           signal,
           destination,
           reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
-          message: `Could not get a market price for percentage sizing: ${err.message}`,
+          message: `Could not get a market price for sizing and balance validation: ${err.message}`,
         });
-        return;
       }
     }
 
@@ -230,25 +342,39 @@ export function createCopyOrchestrationService({
         referencePrice,
       });
     } catch (err) {
-      await recordSkip({
+      return recordSkip({
         config,
         signal,
         destination,
         reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
         message: err.message,
       });
-      return;
     }
 
     if (!allocation || Number(allocation.quantity) <= 0) {
-      await recordSkip({
+      return recordSkip({
         config,
         signal,
         destination,
         reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
         message: 'Sizing produced invalid quantity',
       });
-      return;
+    }
+
+    const destinationCheck = await validateDestination({
+      destination,
+      signal,
+      quantity: allocation.quantity,
+      referencePrice,
+    });
+    if (!destinationCheck.valid) {
+      return recordSkip({
+        config,
+        signal,
+        destination,
+        reason: destinationCheck.reason,
+        message: destinationCheck.message,
+      });
     }
 
     // Risk evaluation
@@ -266,28 +392,28 @@ export function createCopyOrchestrationService({
           type: signal.order_type || 'market',
           quantity: allocation.quantity,
           price: signal.entry ?? referencePrice,
+          stopLoss: signal.stop_loss ?? null,
+          takeProfit: resolveTakeProfit(signal.targets),
         },
       });
     } catch (err) {
-      await recordSkip({
+      return recordSkip({
         config,
         signal,
         destination,
         reason: COPY_SKIP_REASON.RISK_LIMIT_EXCEEDED,
         message: `Risk evaluation failed: ${err.message}`,
       });
-      return;
     }
 
     if (riskDecision.outcome === 'blocked') {
-      await recordSkip({
+      return recordSkip({
         config,
         signal,
         destination,
         reason: COPY_SKIP_REASON.RISK_LIMIT_EXCEEDED,
         message: `Blocked: ${riskDecision.reasonCode}`,
       });
-      return;
     }
 
     // Determine outcome based on execution mode
@@ -299,8 +425,12 @@ export function createCopyOrchestrationService({
     }
 
     // Record the processing
+    const requestFingerprint = manualCopy
+      ? `manual:${config.sizing_rule?.config?.amount}`
+      : 'configured';
+    const operationKey = `${signal.id}:${config.id}:${destination.id}:${config.current_version}:${requestFingerprint}`;
     const idempotencyKey = fnv1aHash(
-      `copy:${signal.id}:${config.id}:${destination.id}:${config.current_version}`
+      `copy:${operationKey}`
     );
 
     const record = await db.tx(async (tx) => {
@@ -341,10 +471,12 @@ export function createCopyOrchestrationService({
             side: signal.direction === 'long' ? 'buy' : 'sell',
             type: signal.order_type || 'market',
             quantity: allocation.quantity,
+            stopLoss: signal.stop_loss ?? null,
+            takeProfit: resolveTakeProfit(signal.targets),
             ...(signal.order_type === 'limit' ? { price: signal.entry } : {}),
-            idempotencyKey: fnv1aHash(`copy-submit:${signal.id}:${config.id}:${destination.id}:${config.current_version}`),
+            idempotencyKey: fnv1aHash(`copy-submit:${operationKey}`),
           },
-          idempotencyKey: fnv1aHash(`copy-intent:${signal.id}:${config.id}:${destination.id}:${config.current_version}`),
+          idempotencyKey: fnv1aHash(`copy-intent:${operationKey}`),
         });
         await queries.updateCopyProcessingRecord(r.id, { executionIntentId: intent.id }, tx);
       }
@@ -370,6 +502,121 @@ export function createCopyOrchestrationService({
     });
 
     return record;
+  }
+
+  async function validateDestination({ destination, signal, quantity, referencePrice }) {
+    if (!connections) {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.RECONCILIATION_REQUIRED,
+        message: 'Exchange validation is unavailable; no order was submitted.',
+      };
+    }
+
+    const marketType = signal.market_type === 'spot' ? 'spot' : 'futures';
+    const adapter = await connections.getAdapter(destination.exchange_code);
+    const supportsMarket = marketType === 'spot'
+      ? adapter?.capabilities?.hasSpot
+      : adapter?.capabilities?.hasFutures;
+    if (!supportsMarket) {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.INSTRUMENT_UNSUPPORTED,
+        message: `This exchange does not support ${signal.market_type}.`,
+      };
+    }
+    if (marketType === 'spot' && signal.direction === 'short') {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.INSTRUMENT_UNSUPPORTED,
+        message: 'Spot destination accounts cannot open short positions.',
+      };
+    }
+    const orderType = signal.order_type || 'market';
+    const supportedOrderTypes = adapter.capabilities?.supportedOrderTypes;
+    if (Array.isArray(supportedOrderTypes) && !supportedOrderTypes.includes(orderType)) {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.ORDER_TYPE_UNSUPPORTED,
+        message: `This exchange does not support ${orderType} orders for ${signal.market_type}.`,
+      };
+    }
+    const protectionPlan = resolveBracketProtectionPlan({
+      capabilities: adapter.capabilities,
+      marketType,
+      orderType,
+      stopLoss: signal.stop_loss,
+      takeProfit: resolveTakeProfit(signal.targets),
+    });
+    if (!protectionPlan.supported) {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.PROTECTION_UNSUPPORTED,
+        message: protectionPlan.warning,
+      };
+    }
+
+    const instrument = await connections.getInstrument({
+      exchangeCode: destination.exchange_code,
+      symbol: signal.instrument,
+      marketType,
+    });
+    if (
+      !instrument ||
+      instrument.trading_status !== 'active' ||
+      (instrument.market_type && instrument.market_type !== marketType)
+    ) {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.INSTRUMENT_UNSUPPORTED,
+        message: `This exchange does not have an active ${signal.instrument} market.`,
+      };
+    }
+
+    const credentials = await connections.loadCredentials(destination.connection_id);
+    const balanceParams = {
+      ...credentials,
+      accountType: destination.account_type,
+      environment: destination.environment,
+    };
+    const state = adapter.fetchAccountState
+      ? await adapter.fetchAccountState(balanceParams)
+      : { balances: await adapter.fetchBalances(balanceParams) };
+    const health = String(state?.status || state?.health || '').toLowerCase();
+    if (state?.error || ['error', 'unhealthy', 'degraded', 'disabled'].includes(health)) {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.DESTINATION_DISCONNECTED,
+        message: `Exchange account health check failed${health ? ` (${health})` : ''}.`,
+      };
+    }
+
+    const baseAsset = instrument.base_asset;
+    const quoteAsset = instrument.quote_asset;
+    const sellingSpot = marketType === 'spot' && signal.direction === 'short';
+    const balanceAsset = sellingSpot ? baseAsset : quoteAsset;
+    const balance = state.balances?.find((item) => item.asset === balanceAsset);
+    const hasAvailableEquity = state.availableEquity != null || state.availableMargin != null;
+    const availableEquity = Number(state.availableEquity ?? state.availableMargin);
+    const available = marketType === 'futures' && hasAvailableEquity && Number.isFinite(availableEquity)
+      ? availableEquity
+      : Number(balance?.free ?? balance?.available ?? 0);
+    const notional = Number(quantity) * Number(referencePrice);
+    const leverage = Math.max(1, Number(signal.leverage) || 1);
+    const required = sellingSpot ? Number(quantity)
+      : marketType === 'futures' ? notional / leverage : notional;
+    if (
+      !Number.isFinite(available) ||
+      !Number.isFinite(required) ||
+      available < required
+    ) {
+      return {
+        valid: false,
+        reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
+        message: `Insufficient ${balanceAsset} balance for the requested amount.`,
+      };
+    }
+    return { valid: true, instrument };
   }
 
   function computeAllocation({ sizingRule, signal, referencePrice }) {
@@ -405,6 +652,23 @@ export function createCopyOrchestrationService({
         };
       }
 
+      case 'fixed_notional': {
+        const notional = Number(config?.amount || 0);
+        const sizingPrice = signal.entry == null ? Number(referencePrice) : Number(signal.entry);
+        if (!Number.isFinite(notional) || notional <= 0) {
+          throw new Error('Investment amount must be positive');
+        }
+        if (!Number.isFinite(sizingPrice) || sizingPrice <= 0) {
+          throw new Error('A valid price is required to size this investment amount');
+        }
+        return {
+          type,
+          notional: String(notional),
+          quantity: String(notional / sizingPrice),
+          reasoning: `Quote-currency amount ${notional} at ${sizingPrice}`,
+        };
+      }
+
       case 'provider_relative':
       case 'user_defined':
       default:
@@ -413,11 +677,21 @@ export function createCopyOrchestrationService({
   }
 
   async function recordSkip({ config, signal, destination, reason, message }) {
+    logger?.warn?.(
+      {
+        signalId: signal.id,
+        configId: config.id,
+        destinationAccountId: destination?.account_id || null,
+        reason,
+        warning: message,
+      },
+      'Copy destination skipped by pre-trade validation',
+    );
     const idempotencyKey = fnv1aHash(
       `copy-skip:${signal.id}:${config.id}:${destination?.id || 'none'}:${reason}`
     );
 
-    await db.tx(async (tx) => {
+    const result = await db.tx(async (tx) => {
       const record = await queries.insertCopyProcessingRecord(tx, {
         publishedSignalId: signal.id,
         configId: config.id,
@@ -431,7 +705,17 @@ export function createCopyOrchestrationService({
         idempotencyKey,
       });
 
-      if (!record) return;
+      if (!record) return null;
+
+      if (destination) {
+        await queries.insertCopyDestinationResult(tx, {
+          processingRecordId: record.id,
+          destinationAccountId: destination.id,
+          outcome: COPY_PROCESSING_OUTCOME.SKIPPED,
+          skipReason: reason,
+          errorMessage: message,
+        });
+      }
 
       await events.publish(
         tx,
@@ -451,7 +735,9 @@ export function createCopyOrchestrationService({
           resourceId: record.id,
         }
       );
+      return { ...record, destination_error: message };
     });
+    return result;
   }
 
   async function confirmRecord({ userId, workspaceId, recordId, canApproveExecution = false }) {
@@ -514,6 +800,8 @@ export function createCopyOrchestrationService({
             type: payload.type,
             quantity: payload.quantity,
             price: payload.price,
+            stopLoss: payload.stopLoss,
+            takeProfit: payload.takeProfit,
             idempotencyKey: payload.idempotencyKey,
           });
 
@@ -534,19 +822,32 @@ export function createCopyOrchestrationService({
         return { status: 'reconciliation_required' };
       }
 
-      if (result.order?.status === 'rejected') {
+      const finalOrderStatus = String(result.order?.status || '').toLowerCase();
+      const rejectedStatuses = new Set(['rejected', 'failed', 'canceled', 'cancelled']);
+      if (!result.order || rejectedStatuses.has(finalOrderStatus)) {
+        const rejectionMessage = result.order?.rejection_reason ||
+          'The exchange did not accept this order.';
         await markCopyRecordFailed(
           record,
-          'rejected',
+          rejectedStatuses.has(finalOrderStatus) ? 'rejected' : 'failed',
           'execution_rejected',
-          result.order.rejection_reason || 'The exchange rejected this order without a reason.',
-          result.order.id,
+          rejectionMessage,
+          result.order?.id,
+        );
+        logger?.warn?.(
+          {
+            signalId: record.published_signal_id,
+            accountId: payload.accountId,
+            orderId: result.order?.id || null,
+            orderStatus: finalOrderStatus || 'missing_order',
+            warning: rejectionMessage,
+          },
+          'Copy order was not accepted by the exchange',
         );
         return {
-          status: 'rejected',
-          orderId: result.order.id,
-          errorMessage: result.order.rejection_reason ||
-            'The exchange rejected this order without a reason.',
+          status: rejectedStatuses.has(finalOrderStatus) ? 'rejected' : 'failed',
+          orderId: result.order?.id || null,
+          errorMessage: rejectionMessage,
         };
       }
 
@@ -593,6 +894,13 @@ export function createCopyOrchestrationService({
     confirmRecord,
     listRecordsForWorkspace,
   };
+}
+
+function resolveTakeProfit(targets) {
+  const parsed = typeof targets === 'string' ? JSON.parse(targets) : targets;
+  const first = Array.isArray(parsed) ? parsed[0] : null;
+  const value = first && typeof first === 'object' ? first.price : first;
+  return value == null ? null : String(value);
 }
 
 async function fetchReferencePrice(marketData, exchangeCode, symbol, marketType) {

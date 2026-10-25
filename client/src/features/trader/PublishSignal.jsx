@@ -25,7 +25,8 @@ export default function PublishSignal() {
   const queryClient = useQueryClient();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const [validationError, setValidationError] = useState('');
-  const [executionPercentage, setExecutionPercentage] = useState('');
+  const [executionAmount, setExecutionAmount] = useState('');
+  const [selectedAccountIds, setSelectedAccountIds] = useState([]);
   const [form, setForm] = useState({
     instrument: '',
     marketType: 'spot',
@@ -40,6 +41,10 @@ export default function PublishSignal() {
     direction: form.direction,
     orderType: form.orderType,
   });
+  const compatibleAccountKey = executionReadiness.compatibleAccounts
+    .map(({ account }) => account.id)
+    .sort()
+    .join('|');
   const profileQuery = useQuery({
     queryKey: profileKey(activeWorkspaceId),
     queryFn: () => marketplaceApi.getMyProvider(),
@@ -47,9 +52,8 @@ export default function PublishSignal() {
   });
   const provider = profileQuery.data;
   useEffect(() => {
-    const savedPercentage = executionReadiness.percentage;
-    setExecutionPercentage(savedPercentage == null ? '' : String(savedPercentage));
-  }, [executionReadiness.percentage]);
+    setSelectedAccountIds(compatibleAccountKey ? compatibleAccountKey.split('|') : []);
+  }, [compatibleAccountKey]);
 
   const publishMutation = useMutation({
     mutationFn: (payload) => marketplaceApi.publishSignal(payload),
@@ -73,6 +77,15 @@ export default function PublishSignal() {
     const entry = form.entry.trim() ? Number(form.entry) : null;
     const stopLoss = Number(form.stopLoss);
     const takeProfit = Number(form.takeProfit);
+    const size = Number(executionAmount);
+    if (!Number.isFinite(size) || size <= 0) {
+      setValidationError('Trade size must be a positive quote-currency amount.');
+      return;
+    }
+    if (selectedAccountIds.length === 0) {
+      setValidationError('Select at least one connected exchange account.');
+      return;
+    }
     if (!form.instrument.trim()) {
       setValidationError('Instrument is required.');
       return;
@@ -114,19 +127,8 @@ export default function PublishSignal() {
       ...(form.orderType === 'limit' ? { entry: form.entry.trim() } : {}),
       stopLoss: form.stopLoss.trim(),
       targets: [form.takeProfit.trim()],
-    });
-  };
-  const saveExecutionPreference = async (event) => {
-    event.preventDefault();
-    const percentage = executionPercentage === '' ? null : Number(executionPercentage);
-    if (
-      percentage !== null &&
-      (!Number.isFinite(percentage) || percentage < 0.01 || percentage > 100)
-    ) {
-      return;
-    }
-    await executionReadiness.savePreferences({
-      trading: { signalExecutionPercentage: percentage },
+      executionAccountIds: selectedAccountIds,
+      executionAmount: executionAmount.trim(),
     });
   };
 
@@ -183,56 +185,6 @@ export default function PublishSignal() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Trader account execution</CardTitle>
-          <CardDescription>
-            Set the share of available balance used for each new signal on your active connected accounts.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-wrap items-end gap-3" onSubmit={saveExecutionPreference}>
-            <Field label="Balance allocation per signal (%)" id="signal-execution-percentage">
-              <Input
-                id="signal-execution-percentage"
-                type="number"
-                min="0.01"
-                max="100"
-                step="0.01"
-                inputMode="decimal"
-                placeholder="Disabled"
-                value={executionPercentage}
-                disabled={executionReadiness.isLoading || executionReadiness.isSavingPreferences}
-                onChange={(event) => setExecutionPercentage(event.target.value)}
-              />
-            </Field>
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={
-                executionReadiness.isLoading ||
-                executionReadiness.error ||
-                executionReadiness.isSavingPreferences ||
-                (executionPercentage !== '' &&
-                  (!Number.isFinite(Number(executionPercentage)) ||
-                    Number(executionPercentage) < 0.01 ||
-                    Number(executionPercentage) > 100))
-              }
-            >
-              {executionReadiness.isSavingPreferences ? 'Saving…' : 'Save execution size'}
-            </Button>
-          </form>
-          {executionReadiness.error ? (
-            <p className="mt-2 text-sm text-destructive" role="alert">
-              Could not verify execution readiness: {getErrorMessage(executionReadiness.error)}
-            </p>
-          ) : null}
-          <p className="mt-2 text-xs text-muted-foreground">
-            This allocation is required for publishing signals that execute in your account. It is applied separately to each eligible active account; unsupported accounts and risk/permission failures are never bypassed.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Signal details</CardTitle>
           <CardDescription>
             Enter the instrument, market, direction, order type, stop loss, and take profit. Limit orders also need an entry price.
@@ -278,17 +230,63 @@ export default function PublishSignal() {
               <Field label="Take profit" id="signal-take-profit" required>
                 <Input id="signal-take-profit" type="number" min="0" step="any" value={form.takeProfit} onChange={updateField('takeProfit')} placeholder="Required" required />
               </Field>
+              <Field label="Trade size (quote currency)" id="signal-execution-amount" required>
+                <Input
+                  id="signal-execution-amount"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={executionAmount}
+                  onChange={(event) => setExecutionAmount(event.target.value)}
+                  placeholder="Applied separately to each selected account"
+                  required
+                />
+              </Field>
             </div>
+            <fieldset className="grid gap-2">
+              <legend className="text-sm font-medium text-foreground">Trader execution accounts *</legend>
+              {executionReadiness.compatibleAccounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active account currently supports this market and protected order type.</p>
+              ) : (
+                <div className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-2">
+                  {executionReadiness.compatibleAccounts.map(({ connection, account }) => (
+                    <label key={account.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedAccountIds.includes(account.id)}
+                        onChange={(event) => setSelectedAccountIds((current) =>
+                          event.target.checked
+                            ? [...new Set([...current, account.id])]
+                            : current.filter((id) => id !== account.id)
+                        )}
+                      />
+                      <span>{connection.exchangeName || connection.exchange || 'Exchange'} · {account.name || account.accountType || 'Account'}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                The amount and account selection stay private. Each selected account is checked independently; unsupported pairs, unhealthy accounts, or insufficient balances are skipped.
+              </p>
+            </fieldset>
             <TraderSignalExecutionReadiness
               readiness={executionReadiness}
               marketType={form.marketType}
               direction={form.direction}
               orderType={form.orderType}
+              selectedAccountCount={selectedAccountIds.length}
             />
             <div className="flex justify-end">
               <Button
                 type="submit"
-                disabled={publishMutation.isPending || !executionReadiness.canPublish}
+                disabled={
+                  publishMutation.isPending ||
+                  !executionReadiness.canPublish ||
+                  selectedAccountIds.length === 0 ||
+                  !Number.isFinite(Number(executionAmount)) ||
+                  Number(executionAmount) <= 0
+                }
               >
                 <Send className="h-4 w-4" />
                 {publishMutation.isPending ? 'Publishing…' : 'Publish signal'}

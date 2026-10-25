@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import { ExternalProviderError } from '../../../lib/errors.js';
 import { createBaseAdapter } from './base.adapter.js';
+import { resolveBracketProtectionPlan } from '../bracket-protection.policy.js';
 
 const BASE_URL = 'https://api.bybit.com';
 const TESTNET_BASE_URL = 'https://api-testnet.bybit.com';
@@ -60,12 +61,16 @@ export function createBybitAdapter({ config, logger }) {
         spot: ['limit'],
         futures: ['market', 'limit'],
       },
-      protectedMarketOrderFallbacks: {
+      bracketProtection: {
         spot: {
-          orderType: 'limit',
-          timeInForce: 'IOC',
-          maxSlippageBps: 50,
-          directions: ['long'],
+          nativePositionOrderTypes: [],
+          entryAttachedConditionalOrderTypes: ['limit'],
+          postFillConditionalOrderTypes: [],
+        },
+        futures: {
+          nativePositionOrderTypes: ['market', 'limit'],
+          entryAttachedConditionalOrderTypes: [],
+          postFillConditionalOrderTypes: [],
         },
       },
       supportedOrderTypes: [
@@ -165,6 +170,16 @@ export function createBybitAdapter({ config, logger }) {
       if (![...marketOrderTypes, ...limitOrderTypes].includes(order.type)) {
         throw new Error(`Bybit does not support ${order.type} orders through this adapter`);
       }
+      const protectionPlan = resolveBracketProtectionPlan({
+        capabilities: this.capabilities,
+        marketType: order.marketType,
+        orderType: order.type,
+        stopLoss: order.stopLoss,
+        takeProfit: order.takeProfit,
+      });
+      if (!protectionPlan.supported) {
+        throw new Error(protectionPlan.warning);
+      }
       const conditionalOrder = order.type !== 'market' && order.type !== 'limit';
       if (conditionalOrder && order.marketType === 'spot') {
         throw new Error('Bybit conditional orders through this adapter require a futures/perpetual market');
@@ -207,13 +222,6 @@ export function createBybitAdapter({ config, logger }) {
       };
       if (order.price) body.price = order.price;
       if (order.stopLoss || order.takeProfit) {
-        if (
-          !order.stopLoss ||
-          !order.takeProfit ||
-          !this.capabilities.hasAttachedBracketProtectionOrderTypes[order.marketType]?.includes(order.type)
-        ) {
-          throw new Error('Bybit attached stop-loss and take-profit protection is not supported for this market and order type');
-        }
         if (order.marketType === 'spot') {
           body.tpOrderType = 'Market';
           body.slOrderType = 'Market';

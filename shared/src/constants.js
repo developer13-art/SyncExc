@@ -796,6 +796,8 @@ export const COPY_SKIP_REASON = Object.freeze({
   SIGNAL_WITHDRAWN: 'signal_withdrawn',
   SIGNAL_EXPIRED: 'signal_expired',
   INSTRUMENT_UNSUPPORTED: 'instrument_unsupported',
+  PROTECTION_UNSUPPORTED: 'protection_unsupported',
+  ORDER_TYPE_UNSUPPORTED: 'order_type_unsupported',
   DESTINATION_DISCONNECTED: 'destination_disconnected',
   MISSING_FIELDS: 'missing_fields',
   INVALID_ALLOCATION: 'invalid_allocation',

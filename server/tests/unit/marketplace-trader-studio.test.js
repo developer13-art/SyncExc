@@ -206,6 +206,186 @@ describe('Trader Studio API', () => {
     assert.equal(submittedOrder.idempotencyKey, 'copy-submit-key');
   });
 
+  it('routes a manual quote-sized copy to eligible selected accounts and skips an underfunded destination', async () => {
+    const records = new Map();
+    const intents = new Map();
+    const submitted = [];
+    let recordSequence = 0;
+    let intentSequence = 0;
+    const signal = {
+      id: 'signal-copy',
+      provider_id: 'provider-1',
+      status: 'published',
+      instrument: 'BTCUSDT',
+      market_type: 'futures',
+      direction: 'long',
+      order_type: 'market',
+      stop_loss: '90',
+      targets: ['110'],
+    };
+    const destinations = [
+      {
+        id: 'destination-low',
+        account_id: 'account-low',
+        connection_id: 'connection-low',
+        exchange_code: 'bybit',
+        connection_status: 'active',
+        account_status: 'active',
+        account_type: 'unified',
+        environment: 'testnet',
+      },
+      {
+        id: 'destination-funded',
+        account_id: 'account-funded',
+        connection_id: 'connection-funded',
+        exchange_code: 'binance',
+        connection_status: 'active',
+        account_status: 'active',
+        account_type: 'unified',
+        environment: 'testnet',
+      },
+      {
+        id: 'destination-uncertain',
+        account_id: 'account-uncertain',
+        connection_id: 'connection-uncertain',
+        exchange_code: 'okx',
+        connection_status: 'active',
+        account_status: 'active',
+        account_type: 'unified',
+        environment: 'testnet',
+      },
+    ];
+    const service = createCopyOrchestrationService({
+      db: { async tx(callback) { return callback({}); } },
+      queries: {
+        async findPublishedSignalById() { return signal; },
+        async findCopyConfigurationById() {
+          return {
+            id: 'config-1',
+            workspace_id: 'workspace-1',
+            created_by: 'subscriber-1',
+            provider_id: 'provider-1',
+            status: 'active',
+            current_version: 1,
+            execution_mode: 'confirm_before_execution',
+            market_types: ['futures'],
+          };
+        },
+        async listCopyDestinations() { return destinations; },
+        async cancelPendingCopyIntentsForSignal() { return 0; },
+        async insertCopyProcessingRecord(_tx, data) {
+          const record = {
+            id: `record-${++recordSequence}`,
+            ...data,
+            subscriber_user_id: data.subscriberUserId,
+          };
+          records.set(record.id, record);
+          return record;
+        },
+        async insertCopyDestinationResult() {},
+        async insertCopyExecutionIntent(_tx, data) {
+          const intent = {
+            id: `intent-${++intentSequence}`,
+            intent_payload: data.payload,
+            status: 'awaiting_confirmation',
+          };
+          intents.set(intent.id, intent);
+          return intent;
+        },
+        async updateCopyProcessingRecord(id, changes) {
+          Object.assign(records.get(id), changes);
+        },
+        async findCopyRecordForConfirmation(recordId) {
+          const record = records.get(recordId);
+          const intent = intents.get(record.executionIntentId);
+          return {
+            ...record,
+            workspace_id: 'workspace-1',
+            copy_intent_id: intent.id,
+            intent_payload: intent.intent_payload,
+            intent_status: intent.status,
+          };
+        },
+        async claimCopyExecutionIntent(intentId) {
+          const intent = intents.get(intentId);
+          intent.status = 'confirming';
+          return intent;
+        },
+        async updateCopyExecutionIntent(intentId, { status }) {
+          intents.get(intentId).status = status;
+        },
+        async updateCopyDestinationResult() {},
+      },
+      subscriptionService: {
+        async getSubscription() { return { status: 'active' }; },
+      },
+      connections: {
+        async getAdapter() {
+          return {
+            capabilities: {
+              hasFutures: true,
+              hasAttachedBracketProtectionMarkets: ['futures'],
+              hasAttachedBracketProtectionOrderTypes: { futures: ['market'] },
+            },
+            async fetchAccountState({ connectionId }) {
+              const free = connectionId === 'connection-low' ? '50' : '1000';
+              return { status: 'healthy', balances: [{ asset: 'USDT', free }] };
+            },
+          };
+        },
+        async getInstrument() {
+          return {
+            trading_status: 'active',
+            market_type: 'futures',
+            base_asset: 'BTC',
+            quote_asset: 'USDT',
+          };
+        },
+        async loadCredentials(connectionId) { return { connectionId }; },
+      },
+      risk: {
+        evaluation: {
+          async evaluate() { return { outcome: 'allowed', id: 'risk-1' }; },
+        },
+      },
+      terminal: {
+        async submitOrder(order) {
+          submitted.push(order);
+          if (order.accountId === 'account-uncertain') {
+            throw new Error('Exchange response timed out after submission');
+          }
+          return { order: { id: 'copy-order-funded', status: 'submitted' } };
+        },
+      },
+      marketData: { async getMarketData() { return { overview: { lastPrice: 100 } }; } },
+      events: { async publish() {} },
+      logger: { warn() {}, error() {}, info() {} },
+    });
+
+    const result = await service.copySignalNow({
+      userId: 'subscriber-1',
+      workspaceId: 'workspace-1',
+      signalId: signal.id,
+      configId: 'config-1',
+      destinationAccountIds: ['account-low', 'account-funded', 'account-uncertain'],
+      amount: '200',
+    });
+
+    assert.equal(result.results.length, 3);
+    assert.equal(result.results[0].status, 'skipped');
+    assert.match(result.results[0].errorMessage, /Insufficient USDT balance/);
+    assert.equal(result.results[1].status, 'submitted');
+    assert.equal(result.results[2].status, 'reconciliation_required');
+    assert.match(result.results[2].errorMessage, /timed out after submission/);
+    assert.equal(submitted.length, 2);
+    assert.equal(submitted[0].accountId, 'account-funded');
+    assert.equal(submitted[1].accountId, 'account-uncertain');
+    assert.equal(submitted[0].quantity, '2');
+    assert.equal(submitted[0].stopLoss, '90');
+    assert.equal(submitted[0].takeProfit, '110');
+    assert.equal(recordSequence, 3);
+  });
+
   it('returns and persists the exchange rejection reason for copied signals', async () => {
     const record = {
       id: 'record-rejected',
@@ -546,6 +726,8 @@ describe('Trader Studio API', () => {
       entry: '60000',
       stopLoss: '58000',
       targets: ['62000'],
+      executionAccountIds: ['550e8400-e29b-41d4-a716-446655440000'],
+      executionAmount: '100',
     });
 
     assert.equal(error, undefined);
@@ -560,6 +742,8 @@ describe('Trader Studio API', () => {
       direction: 'long',
       stopLoss: '58000',
       targets: ['62000'],
+      executionAccountIds: ['550e8400-e29b-41d4-a716-446655440000'],
+      executionAmount: '100',
     });
 
     assert.equal(error, undefined);
@@ -1107,12 +1291,15 @@ describe('Trader Studio API', () => {
     assert.equal(signal.disclosures, 'Risk applies');
   });
 
-  it('publishes the signal status within the same transaction as its signal record', async () => {
-    const transaction = {};
+  it('executes the private trader plan before publishing the signal event', async () => {
+    const transactions = [];
     let updateClient;
+    const order = [];
     const service = createPublicationService({
       db: {
         async tx(callback) {
+          const transaction = { index: transactions.length };
+          transactions.push(transaction);
           return callback(transaction);
         },
       },
@@ -1126,23 +1313,24 @@ describe('Trader Studio API', () => {
           };
         },
         async insertPublishedSignal(client) {
-          assert.equal(client, transaction);
+          assert.equal(client, transactions[0]);
           return { id: 'signal-1', provider_id: 'provider-1', status: 'draft' };
         },
         async insertPublishedSignalVersion(client) {
-          assert.equal(client, transaction);
+          assert.equal(client, transactions[0]);
         },
         async insertPublication(client) {
-          assert.equal(client, transaction);
+          assert.equal(client, transactions[0]);
         },
         async updatePublishedSignal(_signalId, changes, bumpVersion, client) {
+          order.push('published');
           updateClient = client;
           assert.deepEqual(changes, { status: 'published' });
           assert.equal(bumpVersion, false);
           return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
         },
       },
-      events: { async publish() {} },
+      events: { async publish() { order.push('event'); } },
     });
 
     const publishedSignal = await service.publishSignal({
@@ -1156,9 +1344,18 @@ describe('Trader Studio API', () => {
       orderType: 'limit',
       stopLoss: '58000',
       targets: ['62000'],
+      executionAccountIds: ['account-1'],
+      executionAmount: '250',
+      beforePublish: async ({ signal, accountIds, amount }) => {
+        assert.equal(signal.status, 'draft');
+        assert.deepEqual(accountIds, ['account-1']);
+        assert.equal(amount, '250');
+        order.push('trader-execution');
+      },
     });
 
-    assert.equal(updateClient, transaction);
+    assert.deepEqual(order, ['trader-execution', 'published', 'event']);
+    assert.equal(updateClient, transactions[1]);
     assert.equal(publishedSignal.status, 'published');
   });
 

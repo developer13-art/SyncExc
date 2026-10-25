@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
@@ -14,9 +14,10 @@ import { Link } from 'react-router-dom';
 import { ROUTES } from '../../config/routes.config.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { SignalDiscussion } from './components/SignalDiscussion.jsx';
-import { ConfirmDialog } from '../../components/ui/ConfirmDialog.jsx';
 import { useCopyConfigurations } from '../../hooks/useMarketplace.js';
 import { useToast } from '../../hooks/useToast.js';
+import { Modal } from '../../components/ui/Modal.jsx';
+import { Input } from '../../components/ui/Input.jsx';
 
 export function ProviderSignals({ providerId, onSubscribe }) {
   const queryClient = useQueryClient();
@@ -24,6 +25,8 @@ export function ProviderSignals({ providerId, onSubscribe }) {
   const [selectedSignalId, setSelectedSignalId] = useState(null);
   const [copyTarget, setCopyTarget] = useState(null);
   const [selectedConfigurationId, setSelectedConfigurationId] = useState('');
+  const [selectedDestinationAccountIds, setSelectedDestinationAccountIds] = useState([]);
+  const [copyAmount, setCopyAmount] = useState('');
   const signalsQuery = useQuery({
     queryKey: queryKeys.marketplace.providerSignals(providerId, {}),
     queryFn: () => marketplaceApi.listProviderSignals(providerId, { limit: 50 }),
@@ -45,18 +48,51 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       configuration.providerId === providerId &&
       configuration.executionMode !== 'monitor_only'
   );
+  const copyConfigurationDetailQuery = useQuery({
+    queryKey: queryKeys.marketplace.copyConfiguration(copyTarget?.configuration?.id),
+    queryFn: () => marketplaceApi.getCopyConfiguration(copyTarget.configuration.id),
+    enabled: Boolean(copyTarget?.configuration?.id),
+  });
+  const availableCopyDestinations = copyConfigurationDetailQuery.data?.destinations ?? [];
+  const availableDestinationKey = availableCopyDestinations
+    .filter((item) =>
+      item.connection_status === 'active' && item.account_status === 'active'
+    )
+    .map((item) => item.account_id)
+    .join('|');
+  useEffect(() => {
+    setSelectedDestinationAccountIds(availableDestinationKey ? availableDestinationKey.split('|') : []);
+  }, [copyTarget?.configuration?.id, availableDestinationKey]);
+  useEffect(() => {
+    setCopyAmount('');
+  }, [copyTarget?.signal?.id]);
   const copySignal = useMutation({
-    mutationFn: ({ signalId, configurationId }) =>
-      marketplaceApi.copyPublishedSignal(signalId, configurationId),
+    mutationFn: ({ signalId, configurationId, destinationAccountIds, amount }) =>
+      marketplaceApi.copyPublishedSignal(signalId, {
+        configurationId,
+        destinationAccountIds,
+        amount,
+      }),
     onSuccess: async (result) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.marketplace.copySignalResults({}) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.marketplace.providerSignals(providerId, {}) }),
       ]);
       const statuses = result.results?.map((item) => item.status) ?? [];
+      const submittedCount = statuses.filter((status) => status === 'submitted').length;
+      const skippedResults = result.results?.filter((item) =>
+        ['skipped', 'failed', 'reconciliation_required'].includes(item.status)
+      ) ?? [];
       if (statuses.includes('terminal_confirmation_required')) {
         toast.warning('Additional terminal risk approval is required', {
           description: 'Review and approve the exchange execution in Copy Results.',
+        });
+      } else if (submittedCount > 0 && skippedResults.length > 0) {
+        const firstSkip = skippedResults[0];
+        toast.warning('Copy order submitted with skipped destinations', {
+          description: `${submittedCount} submitted, ${skippedResults.length} skipped. ${
+            firstSkip.errorMessage || firstSkip.skipReason?.replace(/_/g, ' ') || ''
+          }`.trim(),
         });
       } else if (statuses.includes('submitted')) {
         toast.success('Copy order submitted to the selected exchange account');
@@ -67,7 +103,9 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       } else if (statuses.every((status) => status === 'executed')) {
         toast.info('This signal was already copied');
       } else {
-        const failure = result.results?.find((item) => item.status === 'rejected');
+        const failure = result.results?.find((item) =>
+          ['rejected', 'skipped', 'failed'].includes(item.status)
+        );
         toast.warning('The signal was not submitted', {
           description: failure?.errorMessage || failure?.skipReason?.replace(/_/g, ' ') ||
             'Review the reason in Copy Results.',
@@ -270,30 +308,118 @@ export function ProviderSignals({ providerId, onSubscribe }) {
           Copy configurations could not be loaded: {getErrorMessage(configurationsError)}
         </p>
       ) : null}
-      <ConfirmDialog
+      <Modal
         open={Boolean(copyTarget)}
         onOpenChange={(open) => {
           if (!open && !copySignal.isPending) setCopyTarget(null);
         }}
         title={`Copy ${copyTarget?.signal.instrument ?? 'signal'}?`}
-        description={
-          copyTarget
-            ? `This submits a ${copyTarget.signal.direction} ${copyTarget.signal.orderType ?? 'market'} order to the exchange account(s) configured in "${copyTarget.configuration?.name || 'your copy setup'}". Quantity comes from that setup. SyncExc risk checks still apply; an additional approval may be required.`
-            : ''
+        description="Choose one or more authorized destination accounts and enter the quote-currency amount to invest on each."
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={copySignal.isPending}
+              onClick={() => setCopyTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                copySignal.isPending ||
+                copyConfigurationDetailQuery.isLoading ||
+                copyConfigurationDetailQuery.isError ||
+                selectedDestinationAccountIds.length === 0 ||
+                !Number.isFinite(Number(copyAmount)) ||
+                Number(copyAmount) <= 0
+              }
+              onClick={submitCopyTrade}
+            >
+              {copySignal.isPending ? 'Submitting…' : 'Submit copy order'}
+            </Button>
+          </>
         }
-        confirmLabel="Submit copy order"
-        onConfirm={async () => {
-          try {
-            await copySignal.mutateAsync({
-              signalId: copyTarget.signal.id,
-              configurationId: copyTarget.configuration.id,
-            });
-          } catch {
-            // The mutation displays the failure through the toast.
-          }
-        }}
-        isLoading={copySignal.isPending}
-      />
+      >
+        <div className="grid gap-4">
+          {copyConfigurationDetailQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading authorized destination accounts…</p>
+          ) : copyConfigurationDetailQuery.isError ? (
+            <p className="text-sm text-destructive" role="alert">
+              Could not load destination accounts: {getErrorMessage(copyConfigurationDetailQuery.error)}
+            </p>
+          ) : (
+            <>
+              <fieldset className="grid gap-2">
+                <legend className="text-sm font-medium">Destination accounts</legend>
+                {availableCopyDestinations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No accounts are authorized in this copy configuration.</p>
+                ) : (
+                  <div className="grid gap-2 rounded-md border border-border p-3">
+                    {availableCopyDestinations.map((destination) => {
+                      const accountId = destination.account_id;
+                      const isActive = destination.connection_status === 'active' &&
+                        destination.account_status === 'active';
+                      return (
+                        <label key={destination.id} className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selectedDestinationAccountIds.includes(accountId)}
+                            disabled={!isActive || copySignal.isPending}
+                            onChange={(event) => setSelectedDestinationAccountIds((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, accountId])]
+                                : current.filter((id) => id !== accountId)
+                            )}
+                          />
+                          <span>
+                            {(destination.exchange_code || 'Exchange').toUpperCase()}
+                            {destination.account_type ? ` · ${destination.account_type}` : ''}
+                            {!isActive ? ` · unavailable (${destination.connection_status}/${destination.account_status})` : ''}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </fieldset>
+              <div className="grid gap-2">
+                <label htmlFor="copy-trade-amount" className="text-sm font-medium">
+                  Investment per account (quote currency)
+                </label>
+                <Input
+                  id="copy-trade-amount"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={copyAmount}
+                  onChange={(event) => setCopyAmount(event.target.value)}
+                  placeholder="Enter amount"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This amount and your account selection are private. Each destination is checked for pair support, account health, and available balance before submission. Risk controls and any required approval still apply.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
     </Card>
   );
+
+  async function submitCopyTrade() {
+    if (!copyTarget) return;
+    try {
+      await copySignal.mutateAsync({
+        signalId: copyTarget.signal.id,
+        configurationId: copyTarget.configuration.id,
+        destinationAccountIds: selectedDestinationAccountIds,
+        amount: copyAmount,
+      });
+    } catch {
+      // The mutation displays the failure through the toast.
+    }
+  }
 }

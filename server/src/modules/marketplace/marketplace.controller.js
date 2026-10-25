@@ -216,6 +216,14 @@ export function createMarketplaceController(services) {
         validUntil: req.body.validUntil,
         disclosures: req.body.disclosures,
         sourceEvidence: req.body.sourceEvidence,
+        executionAccountIds: req.body.executionAccountIds,
+        executionAmount: req.body.executionAmount,
+        beforePublish: ({ signal, accountIds, amount }) =>
+          services.traderSignalExecutionService.executeSignalForPublication({
+            signal,
+            accountIds,
+            amount,
+          }),
       });
       return created(res, serializePublishedSignal(signal));
     },
@@ -286,6 +294,8 @@ export function createMarketplaceController(services) {
         workspaceId: req.workspace.id,
         signalId: req.params.signalId,
         configId: req.body.configurationId,
+        destinationAccountIds: req.body.destinationAccountIds,
+        amount: req.body.amount,
         canApproveExecution: req.workspace.permissions.includes('trading.approve_execution'),
       });
       return success(res, result);
