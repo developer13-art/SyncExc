@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 
@@ -42,9 +42,12 @@ export function ExecutionStatus({ workspaceId, accountId }) {
 
   const executions = executionsQuery.data?.items ?? [];
 
-  if (executionsQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(executionsQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = executionsQuery.data?.meta?.total;
+    if (total !== undefined) {
+      pagination.setTotal(total);
+    }
+  }, [executionsQuery.data?.meta?.total, pagination.setTotal]);
 
   const handleReconcile = async (executionId) => {
     setReconcilingId(executionId);

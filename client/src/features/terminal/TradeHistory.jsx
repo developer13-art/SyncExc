@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, RefreshCw, Search, Wallet } from 'lucide-react';
 
 import { Card, CardContent } from '../../components/ui/Card.jsx';
@@ -61,9 +61,12 @@ export function TradeHistory({ workspaceId, accountId }) {
   const winners = knownPnlTrades.filter((trade) => Number(trade.realizedPnl) > 0).length;
   const losers = knownPnlTrades.filter((trade) => Number(trade.realizedPnl) < 0).length;
 
-  if (tradesQuery.data?.meta?.total !== undefined) {
-    pagination.setTotal(tradesQuery.data.meta.total);
-  }
+  useEffect(() => {
+    const total = tradesQuery.data?.meta?.total;
+    if (total !== undefined) {
+      pagination.setTotal(total);
+    }
+  }, [tradesQuery.data?.meta?.total, pagination.setTotal]);
 
   const columns = [
     {
