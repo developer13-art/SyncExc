@@ -90,8 +90,8 @@ export function Sidebar() {
       )}
     >
       <div className={cn('flex items-center gap-2 px-3 py-4', collapsed && 'md:justify-center')}>
-        <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Icons.LogoIcon className="h-5 w-5" />
+        <div className="client-brand-mark flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+          <Icons.LogoIcon className="h-8 w-8" />
         </div>
         <span className={cn('flex-1 text-base font-semibold tracking-tight text-foreground', collapsed && 'md:hidden')}>
           SyncExc

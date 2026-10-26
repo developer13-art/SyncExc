@@ -33,8 +33,8 @@ export function PublicLayout() {
       <header className="client-public-header sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link to={ROUTES.public.home} className="flex items-center gap-2">
-            <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Icons.LogoIcon className="h-5 w-5" />
+            <div className="client-brand-mark flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+              <Icons.LogoIcon className="h-8 w-8" />
             </div>
             <span className="text-base font-semibold tracking-tight text-foreground">SyncExc</span>
           </Link>
@@ -168,8 +168,8 @@ export function PublicLayout() {
         <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 md:flex-row md:justify-between md:py-10">
           <div className="max-w-sm">
             <Link to={ROUTES.public.home} className="flex items-center gap-2">
-              <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Icons.LogoIcon className="h-5 w-5" />
+              <div className="client-brand-mark flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+                <Icons.LogoIcon className="h-8 w-8" />
               </div>
               <span className="text-base font-semibold text-foreground">SyncExc</span>
             </Link>

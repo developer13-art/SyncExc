@@ -1,4 +1,4 @@
-export { default as LogoIcon } from './svg/logo.svg?react';
+export { default as LogoIcon } from './LogoIcon.jsx';
 export { default as DashboardIcon } from './svg/dashboard.svg?react';
 export { default as TerminalIcon } from './svg/terminal.svg?react';
 export { default as ConnectionsIcon } from './svg/connections.svg?react';
