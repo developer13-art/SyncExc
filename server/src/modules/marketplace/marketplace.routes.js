@@ -267,6 +267,14 @@ export function createMarketplaceRoutes(services) {
   );
 
   router.post(
+    '/me/signals/preflight',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(PublishSignalRequestSchema),
+    middleware.asyncHandler(controller.preflightSignal)
+  );
+
+  router.post(
     '/me/signals',
     middleware.requireAuth(),
     middleware.requireWorkspace(),

@@ -11,6 +11,8 @@ function createDependencies({
     base_asset: 'BTC',
     quote_asset: 'USDT',
     tick_size: '0.01',
+    quantity_step: '0.001',
+    minimum_quantity: '0.001',
   },
   capabilities = {
     hasSpot: true,
@@ -65,6 +67,7 @@ function createDependencies({
       },
       async getInstrument() { return instrument; },
       async loadCredentials() { return {}; },
+      async requireVerifiedPermission() {},
     },
     terminal: {
       async submitOrder(order) {
@@ -225,7 +228,7 @@ test('executes protected Bybit Spot limit signals with the configured balance al
   assert.equal(submitted[0].takeProfit, '110');
 });
 
-test('executes the trader-sized private plan before publication and skips an underfunded account', async () => {
+test('blocks publication before dispatch when any selected trader account is underfunded', async () => {
   const { service, submitted, records } = createDependencies({
     signal: {
       id: 'private-size-signal',
@@ -279,28 +282,30 @@ test('executes the trader-sized private plan before publication and skips an und
     },
   });
 
-  await service.executeSignalForPublication({
-    signal: {
-      id: 'private-size-signal',
-      user_id: 'trader-1',
-      workspace_id: 'workspace-1',
-      instrument: 'BTCUSDT',
-      market_type: 'spot',
-      direction: 'long',
-      order_type: 'limit',
-      entry: '100',
-      stop_loss: '90',
-      targets: ['110'],
-      status: 'draft',
-    },
-    accountIds: ['account-low', 'account-ready'],
-    amount: '200',
-  });
+  await assert.rejects(
+    service.executeSignalForPublication({
+      signal: {
+        id: 'private-size-signal',
+        user_id: 'trader-1',
+        workspace_id: 'workspace-1',
+        instrument: 'BTCUSDT',
+        market_type: 'spot',
+        direction: 'long',
+        order_type: 'limit',
+        entry: '100',
+        stop_loss: '90',
+        targets: ['110'],
+        status: 'draft',
+      },
+      accountIds: ['account-low', 'account-ready'],
+      amount: '200',
+    }),
+    (error) => error.code === 'SIGNAL_PREFLIGHT_FAILED' &&
+      error.details.accounts.some((account) => account.accountId === 'account-low' && !account.valid),
+  );
 
-  assert.equal(submitted.length, 1);
-  assert.equal(submitted[0].accountId, 'account-ready');
-  assert.equal(submitted[0].quantity, '2');
-  assert.equal(records.find((record) => record.accountId === 'account-low').status, 'skipped_insufficient_balance');
+  assert.equal(submitted.length, 0);
+  assert.equal(records.length, 0);
 });
 
 test('skips Spot market TP/SL when only a Spot limit bracket is declared', async () => {

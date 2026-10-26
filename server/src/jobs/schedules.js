@@ -27,6 +27,14 @@ export async function registerAllSchedules({ scheduler }) {
   });
 
   scheduler.add({
+    name: 'terminal-order-reconcile-tick',
+    type: 'terminal_reconcile',
+    intervalMs: 15 * 1000,
+    payload: async () => ({ limit: 100 }),
+    priority: 40,
+  });
+
+  scheduler.add({
     name: 'outbox-publisher-tick',
     type: 'outbox_publish',
     intervalMs: 30 * 1000,

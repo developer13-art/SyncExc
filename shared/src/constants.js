@@ -386,6 +386,7 @@ export const ORDER_STATUS = Object.freeze({
   CANCEL_REQUESTED: 'cancel_requested',
   CANCELED: 'canceled',
   REJECTED: 'rejected',
+  FAILED: 'failed',
   EXPIRED: 'expired',
   UNKNOWN: 'unknown',
   RECONCILIATION_REQUIRED: 'reconciliation_required',

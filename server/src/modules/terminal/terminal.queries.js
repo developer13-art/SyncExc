@@ -49,6 +49,27 @@ export function createTerminalQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async listOrdersForReconciliation({ limit = 100 } = {}) {
+      const result = await db.query(
+        `
+        SELECT *
+        FROM trading_orders
+        WHERE exchange_order_id IS NOT NULL
+          AND status = ANY($1::text[])
+        ORDER BY updated_at ASC
+        LIMIT $2
+        `,
+        [[
+          'submitted',
+          'acknowledged',
+          'partially_filled',
+          'unknown',
+          'reconciliation_required',
+        ], limit],
+      );
+      return result.rows;
+    },
+
     async updateOrder(orderId, fields) {
       const result = await db.query(
         `

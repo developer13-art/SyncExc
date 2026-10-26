@@ -21,12 +21,23 @@ export function createExecutionService({ db, queries, events, realtime, logger }
     const {
       exchangeOrderId,
       status,
-      filledQuantity,
+      filledQuantity: reportedFilledQuantity,
       remainingQuantity,
-      averageFillPrice,
+      averageFillPrice: reportedAverageFillPrice,
       fills = [],
     } = update;
     if (!exchangeOrderId) return;
+    const fillQuantityFromTrades = Array.isArray(fills)
+      ? fills.reduce((total, fill) => total + (Number(fill.quantity) || 0), 0)
+      : 0;
+    const weightedFillValue = Array.isArray(fills)
+      ? fills.reduce((total, fill) => total + (Number(fill.quantity) || 0) * (Number(fill.price) || 0), 0)
+      : 0;
+    const filledQuantity = reportedFilledQuantity ?? (fillQuantityFromTrades > 0 ? String(fillQuantityFromTrades) : null);
+    const averageFillPrice = reportedAverageFillPrice ??
+      (fillQuantityFromTrades > 0 && weightedFillValue > 0
+        ? String(weightedFillValue / fillQuantityFromTrades)
+        : null);
 
     const result = await db.query(
       `SELECT * FROM trading_orders WHERE connection_id = $1 AND exchange_order_id = $2 LIMIT 1`,
@@ -36,7 +47,23 @@ export function createExecutionService({ db, queries, events, realtime, logger }
     const order = result.rows[0];
 
     const previousStatus = order.status;
-    const newStatus = status || order.status;
+    let newStatus = status || order.status;
+    if ([ORDER_STATUS.FILLED, ORDER_STATUS.PARTIALLY_FILLED].includes(newStatus)) {
+      const fillPrice = Number(averageFillPrice);
+      if (
+        !exchangeOrderId ||
+        !Number.isFinite(fillPrice) ||
+        fillPrice <= 0 ||
+        !Number.isFinite(Number(filledQuantity)) ||
+        Number(filledQuantity) <= 0
+      ) {
+        logger.warn(
+          { orderId: order.id, exchangeOrderId, status: newStatus },
+          'Ignoring unverified fill status without a valid order ID and fill price',
+        );
+        return { applied: false };
+      }
+    }
 
     await db.tx(async (tx) => {
       await queries.updateOrder(order.id, {
@@ -44,6 +71,7 @@ export function createExecutionService({ db, queries, events, realtime, logger }
         filledQuantity: filledQuantity ?? order.filled_quantity,
         remainingQuantity: remainingQuantity ?? order.remaining_quantity,
         averageFillPrice: averageFillPrice ?? order.average_fill_price,
+        rejectionReason: update.errorMessage || update.rejectionReason || null,
       });
 
       if (previousStatus !== newStatus) {
@@ -89,6 +117,56 @@ export function createExecutionService({ db, queries, events, realtime, logger }
           );
         }
       }
+
+      if (previousStatus !== newStatus && newStatus === ORDER_STATUS.FILLED) {
+        await events.publish(
+          tx,
+          'execution.order_filled',
+          {
+            orderId: order.id,
+            exchangeOrderId,
+            filledQuantity: filledQuantity ?? order.filled_quantity,
+            averageFillPrice,
+          },
+          {
+            workspaceId: order.workspace_id,
+            resourceType: 'order',
+            resourceId: order.id,
+          },
+        );
+      } else if (previousStatus !== newStatus && newStatus === ORDER_STATUS.PARTIALLY_FILLED) {
+        await events.publish(
+          tx,
+          'execution.order_partially_filled',
+          {
+            orderId: order.id,
+            exchangeOrderId,
+            filledQuantity: filledQuantity ?? order.filled_quantity,
+            averageFillPrice,
+          },
+          {
+            workspaceId: order.workspace_id,
+            resourceType: 'order',
+            resourceId: order.id,
+          },
+        );
+      } else if (previousStatus !== newStatus && newStatus === ORDER_STATUS.REJECTED) {
+        await events.publish(
+          tx,
+          'execution.order_rejected',
+          {
+            orderId: order.id,
+            exchangeOrderId,
+            errorCode: update.errorCode || update.code || null,
+            errorMessage: update.errorMessage || update.rejectionReason || null,
+          },
+          {
+            workspaceId: order.workspace_id,
+            resourceType: 'order',
+            resourceId: order.id,
+          },
+        );
+      }
     });
 
     // Broadcast over WebSocket
@@ -106,6 +184,7 @@ export function createExecutionService({ db, queries, events, realtime, logger }
         { resourceType: 'order', resourceId: order.id }
       );
     }
+    return { applied: true };
   }
 
   /**

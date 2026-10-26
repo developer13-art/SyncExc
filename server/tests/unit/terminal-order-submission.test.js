@@ -7,6 +7,7 @@ test('normalizes quantity before risk evaluation, persistence, and exchange subm
   let storedOrder;
   let riskQuantity;
   let orderId = 0;
+  const orderUpdates = [];
   const db = {
     async tx(callback) {
       return callback({});
@@ -23,7 +24,7 @@ test('normalizes quantity before risk evaluation, persistence, and exchange subm
     },
     async insertOrderEvent() {},
     async insertExecutionAttempt() {},
-    async updateOrder() {},
+    async updateOrder(_orderId, fields) { orderUpdates.push(fields); },
     async updateExecutionRequest() {},
     async findOrderById(id) { return { id }; },
   };
@@ -39,7 +40,9 @@ test('normalizes quantity before risk evaluation, persistence, and exchange subm
         capabilities: { hasSpot: true },
         async placeOrder({ order }) {
           submitted.quantity = order.quantity;
-          return { exchangeOrderId: 'exchange-order-1', status: 'submitted' };
+          // Placement responses are acknowledgements, even if the adapter
+          // reports a fill; only fetchOrder can confirm a fill.
+          return { exchangeOrderId: 'exchange-order-1', status: 'filled' };
         },
       };
     },
@@ -90,6 +93,8 @@ test('normalizes quantity before risk evaluation, persistence, and exchange subm
   assert.equal(riskQuantity, '0.12');
   assert.equal(storedOrder.quantity, '0.12');
   assert.equal(submitted.quantity, '0.12');
+  assert.equal(orderUpdates[0].status, 'submitted');
+  assert.equal(orderUpdates[0].averageFillPrice, null);
 });
 
 test('rejects Spot market TP/SL before submission when only Spot limit protection is declared', async () => {

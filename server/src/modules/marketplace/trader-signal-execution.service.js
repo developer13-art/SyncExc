@@ -1,5 +1,7 @@
 import { fnv1aHash } from '@syncexc/shared';
 import { resolveBracketProtectionPlan } from '../connections/bracket-protection.policy.js';
+import { AppError } from '../../lib/errors.js';
+import { normalizeOrderQuantity } from '../../lib/order-quantity.js';
 
 function resolveSignalPrice(signal) {
   if (signal.entry != null) return Number(signal.entry);
@@ -149,6 +151,35 @@ export function createTraderSignalExecutionService({
     }
 
     const marketType = signal.market_type === 'spot' ? 'spot' : 'futures';
+    const preflight = await validateSignalExecution({
+      userId: signal.user_id,
+      workspaceId: signal.workspace_id,
+      signal: {
+        instrument: signal.instrument,
+        marketType: signal.market_type,
+        direction: signal.direction,
+        orderType: signal.order_type,
+        entry: signal.entry,
+        stopLoss: signal.stop_loss,
+        targets: signal.targets,
+        leverage: signal.leverage,
+      },
+      accountIds,
+      amount: requestedAmount,
+    });
+    if (!preflight.ready) {
+      throw new AppError(
+        'Signal pre-flight failed. Correct every selected exchange requirement before publishing.',
+        {
+          code: 'SIGNAL_PREFLIGHT_FAILED',
+          status: 409,
+          expose: true,
+          details: { accounts: preflight.accounts },
+        },
+      );
+    }
+
+    const executions = [];
     for (const account of accounts) {
       if (
         account.connection_status !== 'active' ||
@@ -162,6 +193,11 @@ export function createTraderSignalExecutionService({
           accountId: account.account_id,
           status: 'skipped_unhealthy_account',
           errorMessage: `Connection status: ${account.connection_status}; account status: ${account.account_status}.`,
+        });
+        executions.push({
+          accountId: account.account_id,
+          exchangeCode: account.exchange_code,
+          status: 'skipped_unhealthy_account',
         });
         continue;
       }
@@ -178,12 +214,17 @@ export function createTraderSignalExecutionService({
         if (!Number.isFinite(price) || price <= 0) {
           throw new Error('No valid reference price is available for signal sizing');
         }
-        await executeForAccount({
+        const execution = await executeForAccount({
           signal,
           account,
           marketType,
           price,
           requestedAmount,
+        });
+        executions.push({
+          accountId: account.account_id,
+          exchangeCode: account.exchange_code,
+          ...(execution || { status: 'skipped' }),
         });
       } catch (err) {
         await recordExecution({
@@ -195,12 +236,154 @@ export function createTraderSignalExecutionService({
           status: 'failed',
           errorMessage: err.message,
         });
+        executions.push({
+          accountId: account.account_id,
+          exchangeCode: account.exchange_code,
+          status: 'failed',
+          errorMessage: err.message,
+        });
         logger.error(
           { err, signalId: signal.id, accountId: account.account_id },
           'Trader signal execution failed for account',
         );
       }
     }
+
+    const confirmed = executions.filter((execution) =>
+      ['filled', 'partially_filled'].includes(String(execution.status).toLowerCase()) &&
+      execution.order?.exchange_order_id &&
+      Number(execution.order?.average_fill_price) > 0,
+    );
+    if (confirmed.length !== accountIds.length) {
+      throw new AppError(
+        'The signal was not published because every selected trader account must have a confirmed exchange fill and fill price.',
+        {
+          code: 'SIGNAL_EXECUTION_UNCONFIRMED',
+          status: 409,
+          expose: true,
+          details: {
+            executions: executions.map(({ accountId, exchangeCode, status, errorMessage }) =>
+              ({ accountId, exchangeCode, status, errorMessage })),
+          },
+        },
+      );
+    }
+    return { executions };
+  }
+
+  async function validateSignalExecution({
+    userId,
+    workspaceId,
+    signal,
+    accountIds,
+    amount,
+  }) {
+    const requestedAmount = Number(amount);
+    if (!signal?.instrument || !Array.isArray(accountIds) || accountIds.length === 0 ||
+      !Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+      return {
+        ready: false,
+        accounts: [{ valid: false, reason: 'Choose an instrument, at least one account, and a positive trade size.' }],
+      };
+    }
+    const accounts = await queries.listTraderSignalExecutionAccounts(userId, workspaceId, accountIds);
+    const accountsById = new Map(accounts.map((account) => [account.account_id, account]));
+    const results = [];
+    for (const accountId of accountIds) {
+      const account = accountsById.get(accountId);
+      if (!account) {
+        results.push({ accountId, valid: false, reason: 'Account is unavailable in this workspace.' });
+        continue;
+      }
+      const result = {
+        accountId,
+        exchangeCode: account.exchange_code,
+        valid: false,
+        reason: null,
+      };
+      try {
+        if (account.connection_status !== 'active' || account.account_status !== 'active') {
+          throw new Error('Exchange connection or account is not active.');
+        }
+        const marketType = signal.marketType === 'spot' ? 'spot' : 'futures';
+        if (marketType === 'spot' && signal.direction === 'short') {
+          throw new Error('Spot accounts cannot open short positions.');
+        }
+        const adapter = await connections.getAdapter(account.exchange_code);
+        const supportsMarket = marketType === 'spot'
+          ? adapter?.capabilities?.hasSpot
+          : adapter?.capabilities?.hasFutures;
+        if (!supportsMarket) throw new Error(`${account.exchange_code}: ${signal.marketType} market is not supported.`);
+        await connections.requireVerifiedPermission({
+          connectionId: account.connection_id,
+          permissionKey: 'trading',
+        });
+        const orderType = signal.orderType === 'limit' ? 'limit' : 'market';
+        if (
+          Array.isArray(adapter.capabilities?.supportedOrderTypes) &&
+          !adapter.capabilities.supportedOrderTypes.includes(orderType)
+        ) {
+          throw new Error(`${account.exchange_code}: ${orderType} orders are not supported.`);
+        }
+        const stopLoss = signal.stopLoss == null ? null : String(signal.stopLoss);
+        const takeProfit = resolveTakeProfit(signal.targets);
+        const protectionPlan = resolveBracketProtectionPlan({
+          capabilities: adapter.capabilities,
+          marketType,
+          orderType,
+          stopLoss,
+          takeProfit,
+        });
+        if (!protectionPlan.supported) throw new Error(protectionPlan.warning);
+        const instrument = await connections.getInstrument({
+          exchangeCode: account.exchange_code,
+          symbol: signal.instrument,
+          marketType,
+        });
+        if (!instrument || instrument.trading_status !== 'active') {
+          throw new Error(`${account.exchange_code}: ${signal.instrument} is not a supported active asset.`);
+        }
+        const price = orderType === 'limit'
+          ? resolveSignalPrice({ entry: signal.entry })
+          : await fetchReferencePrice(marketData, account.exchange_code, signal.instrument, marketType);
+        if (!Number.isFinite(price) || price <= 0) {
+          throw new Error(`${account.exchange_code}: a valid reference price is unavailable.`);
+        }
+        const quantity = normalizeOrderQuantity(
+          String(requestedAmount / price),
+          instrument.quantity_step,
+          instrument.minimum_quantity,
+        );
+        if (!quantity) throw new Error(`${account.exchange_code}: order quantity is below the exchange minimum.`);
+        const credentials = await connections.loadCredentials(account.connection_id);
+        const accountParams = {
+          ...credentials,
+          accountType: account.account_type,
+          environment: account.environment,
+        };
+        const accountState = adapter.fetchAccountState
+          ? await adapter.fetchAccountState(accountParams)
+          : { balances: await adapter.fetchBalances(accountParams) };
+        const quoteAsset = instrument.quote_asset;
+        const balance = accountState.balances?.find((item) => item.asset === quoteAsset);
+        const equity = Number(accountState.availableEquity);
+        const available = marketType === 'futures' &&
+          accountState.availableEquity != null &&
+          Number.isFinite(equity)
+          ? equity
+          : Number(balance?.free ?? balance?.available ?? 0);
+        const leverage = Math.max(1, Number(signal.leverage) || 1);
+        const required = marketType === 'futures' ? requestedAmount / leverage : requestedAmount;
+        if (!Number.isFinite(available) || available < required) {
+          throw new Error(`${account.exchange_code}: Insufficient ${quoteAsset} balance.`);
+        }
+        result.valid = true;
+      } catch (err) {
+        result.reason = err.message;
+      }
+      results.push(result);
+    }
+    return { ready: results.length === accountIds.length && results.every((item) => item.valid), accounts: results };
   }
 
   async function executeForAccount({
@@ -446,6 +629,7 @@ export function createTraderSignalExecutionService({
     } else {
       logger.info(logFields, 'Trader signal execution submitted');
     }
+    return { status: executionStatus, order: result.order || null, errorMessage: result.order?.rejection_reason || null };
   }
 
   async function handleOrderFilled({ orderId }) {
@@ -512,6 +696,7 @@ export function createTraderSignalExecutionService({
   return {
     executePublishedSignal,
     executeSignalForPublication,
+    validateSignalExecution,
     handleOrderFilled,
     handleOrderStatus,
     handleClosedTrade,

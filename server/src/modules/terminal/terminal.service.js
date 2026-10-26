@@ -309,6 +309,55 @@ export function createTerminalService({
     return queries.listPositions(workspaceId, { accountId });
   }
 
+  async function reconcilePendingOrders({ limit = 100 } = {}) {
+    const orders = await queries.listOrdersForReconciliation({ limit });
+    let nextIndex = 0;
+    const workers = Array.from({ length: Math.min(5, orders.length) }, async () => {
+      while (nextIndex < orders.length) {
+        const order = orders[nextIndex];
+        nextIndex += 1;
+        try {
+          const connection = await connections.getConnection(order.connection_id);
+          if (!connection || connection.status !== 'active') continue;
+          const adapter = await connections.getAdapter(connection.exchange_code);
+          if (typeof adapter?.fetchOrder !== 'function') continue;
+          const account = await connections.requireAccountAccess({
+            accountId: order.account_id,
+            workspaceId: order.workspace_id,
+            operation: 'execute_trades',
+          });
+          const credentials = await connections.loadCredentials(connection.id);
+          const update = await adapter.fetchOrder({
+            ...credentials,
+            accountType: account.account_type,
+            environment: connection.environment,
+            instrument: order.instrument,
+            marketType: order.market_type,
+            exchangeOrderId: order.exchange_order_id,
+          });
+          if (!update?.exchangeOrderId || update.exchangeOrderId !== order.exchange_order_id) {
+            logger.warn(
+              { orderId: order.id, exchangeCode: connection.exchange_code },
+              'Periodic reconciliation received a mismatched exchange order ID',
+            );
+            continue;
+          }
+          await executionService.handleExecutionUpdate({
+            connectionId: connection.id,
+            update,
+          });
+        } catch (err) {
+          logger.warn(
+            { err, orderId: order.id, exchangeOrderId: order.exchange_order_id },
+            'Periodic order reconciliation failed',
+          );
+        }
+      }
+    });
+    await Promise.all(workers);
+    return { checked: orders.length };
+  }
+
   async function getExecutionRequest(executionRequestId, workspaceId) {
     const request = await queries.findExecutionRequestById(executionRequestId);
     if (!request || (workspaceId && request.workspace_id !== workspaceId)) {
@@ -356,6 +405,7 @@ export function createTerminalService({
     listTradesForScope,
     listPositions,
     syncAccountState,
+    reconcilePendingOrders,
     getExecutionRequest,
     getPreferences,
     updatePreferences,

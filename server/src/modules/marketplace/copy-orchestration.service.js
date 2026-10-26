@@ -129,7 +129,7 @@ export function createCopyOrchestrationService({
       await db.tx((tx) =>
         queries.cancelPendingCopyIntentsForSignal(signal.id, config.id, tx)
       );
-      const results = [];
+      const prepared = [];
       for (const destination of selected) {
         let record;
         try {
@@ -152,16 +152,24 @@ export function createCopyOrchestrationService({
             message: `Exchange validation failed; no order was submitted: ${err.message}`,
           });
         }
+        prepared.push({ destination, record });
+      }
+
+      // Validate and persist every destination before any selected account is
+      // submitted. Invalid destinations remain isolated and do not block the
+      // valid accounts in the same batch.
+      const results = [];
+      for (const { destination, record } of prepared) {
         if (!record) {
           results.push({ status: 'already_processed', accountId: destination.account_id });
         } else if (record.outcome === COPY_PROCESSING_OUTCOME.HELD) {
           try {
             results.push({
               ...(await confirmRecord({
-            userId,
-            workspaceId,
-            recordId: record.id,
-            canApproveExecution,
+                userId,
+                workspaceId,
+                recordId: record.id,
+                canApproveExecution,
               })),
               accountId: destination.account_id,
             });
@@ -851,14 +859,32 @@ export function createCopyOrchestrationService({
         };
       }
 
+      const confirmedFill = ['filled', 'partially_filled'].includes(finalOrderStatus) &&
+        result.order?.exchange_order_id &&
+        Number(result.order?.average_fill_price) > 0;
+      if (confirmedFill) {
+        await db.tx(async (tx) => {
+          await queries.updateCopyExecutionIntent(record.copy_intent_id, { status: finalOrderStatus }, tx);
+          await queries.updateCopyProcessingRecord(recordId, {
+            outcome: COPY_PROCESSING_OUTCOME.EXECUTED,
+          }, tx);
+          await queries.updateCopyDestinationResult(recordId, {
+            outcome: COPY_PROCESSING_OUTCOME.EXECUTED,
+            destinationOrderId: result.order.id,
+          }, tx);
+        });
+        return { status: finalOrderStatus, orderId: result.order.id };
+      }
+
       await db.tx(async (tx) => {
         await queries.updateCopyExecutionIntent(record.copy_intent_id, { status: 'submitted' }, tx);
         await queries.updateCopyProcessingRecord(recordId, {
-          outcome: COPY_PROCESSING_OUTCOME.EXECUTED,
+          outcome: COPY_PROCESSING_OUTCOME.PENDING,
         }, tx);
         await queries.updateCopyDestinationResult(recordId, {
-          outcome: COPY_PROCESSING_OUTCOME.EXECUTED,
+          outcome: COPY_PROCESSING_OUTCOME.PENDING,
           destinationOrderId: result.order?.id || null,
+          errorMessage: 'Exchange accepted the order; waiting for verified fill status.',
         }, tx);
       });
       return { status: 'submitted', orderId: result.order?.id || null };

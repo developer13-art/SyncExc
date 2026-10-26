@@ -412,41 +412,113 @@ export function createOrderSubmissionService({
       });
 
       if (adapterResponse) {
-        await queries.updateOrder(order.id, {
-          exchangeOrderId: adapterResponse.exchangeOrderId,
-          status: adapterResponse.status || ORDER_STATUS.SUBMITTED,
-          filledQuantity: adapterResponse.filledQuantity || '0',
-          averageFillPrice: adapterResponse.averageFillPrice || null,
-        });
+        if (!adapterResponse.exchangeOrderId) {
+          adapterError = Object.assign(
+            new Error('Exchange acknowledged the request without returning an order ID'),
+            { code: 'EXCHANGE_ORDER_ID_MISSING', exchangeResponse: adapterResponse },
+          );
+          await queries.updateOrder(order.id, {
+            status: ORDER_STATUS.RECONCILIATION_REQUIRED,
+            metadata: {
+              providerErrorCode: adapterError.code,
+              lastError: adapterError.message,
+            },
+          });
+          await queries.updateExecutionRequest(executionRequest.id, {
+            state: 'reconciliation_required',
+          });
+        } else {
+          const responseStatus = String(adapterResponse.status || '').toLowerCase();
+          if (['rejected', 'failed'].includes(responseStatus)) {
+            const providerErrorCode =
+              adapterResponse.errorCode ??
+              adapterResponse.code ??
+              adapterResponse.retCode ??
+              null;
+            const rejectionReason =
+              adapterResponse.errorMessage ||
+              adapterResponse.rejectionReason ||
+              adapterResponse.message ||
+              'The exchange rejected the order.';
+            await queries.updateOrder(order.id, {
+              exchangeOrderId: adapterResponse.exchangeOrderId,
+              status: ORDER_STATUS.FAILED,
+              rejectionReason,
+              metadata: {
+                providerErrorCode: providerErrorCode == null ? null : String(providerErrorCode),
+                providerError: adapterResponse,
+                lastError: rejectionReason,
+              },
+            });
+            await queries.insertOrderEvent(tx, {
+              orderId: order.id,
+              eventType: 'rejected',
+              previousStatus: ORDER_STATUS.PENDING_SUBMISSION,
+              newStatus: ORDER_STATUS.FAILED,
+              payload: { error: rejectionReason, errorCode: providerErrorCode },
+            });
+            await queries.updateExecutionRequest(executionRequest.id, {
+              state: 'rejected',
+              completedAt: new Date(),
+            });
+            await events.publish(
+              tx,
+              'execution.order_rejected',
+              {
+                orderId: order.id,
+                instrument: instrumentId,
+                side,
+                status: ORDER_STATUS.FAILED,
+                reason: rejectionReason,
+                errorCode: providerErrorCode,
+              },
+              {
+                actorId: userId,
+                workspaceId,
+                resourceType: 'order',
+                resourceId: order.id,
+              },
+            );
+          } else {
+            // A placement response is only an acknowledgement. Never trust
+            // its fill status until fetchOrder confirms current exchange state.
+            await queries.updateOrder(order.id, {
+              exchangeOrderId: adapterResponse.exchangeOrderId,
+              status: ORDER_STATUS.SUBMITTED,
+              filledQuantity: '0',
+              averageFillPrice: null,
+            });
 
-        await queries.insertOrderEvent(tx, {
-          orderId: order.id,
-          eventType: 'acknowledged',
-          previousStatus: ORDER_STATUS.PENDING_SUBMISSION,
-          newStatus: adapterResponse.status || ORDER_STATUS.SUBMITTED,
-          payload: adapterResponse,
-        });
+            await queries.insertOrderEvent(tx, {
+              orderId: order.id,
+              eventType: 'acknowledged',
+              previousStatus: ORDER_STATUS.PENDING_SUBMISSION,
+              newStatus: ORDER_STATUS.SUBMITTED,
+              payload: adapterResponse,
+            });
 
-        await queries.updateExecutionRequest(executionRequest.id, {
-          state: 'acknowledged',
-          completedAt: new Date(),
-        });
+            await queries.updateExecutionRequest(executionRequest.id, {
+              state: 'acknowledged',
+              completedAt: new Date(),
+            });
 
-        await events.publish(
-          tx,
-          'execution.order_acknowledged',
-          {
-            orderId: order.id,
-            exchangeOrderId: adapterResponse.exchangeOrderId,
-            status: adapterResponse.status,
-          },
-          {
-            actorId: userId,
-            workspaceId,
-            resourceType: 'order',
-            resourceId: order.id,
+            await events.publish(
+              tx,
+              'execution.order_acknowledged',
+              {
+                orderId: order.id,
+                exchangeOrderId: adapterResponse.exchangeOrderId,
+                status: ORDER_STATUS.SUBMITTED,
+              },
+              {
+                actorId: userId,
+                workspaceId,
+                resourceType: 'order',
+                resourceId: order.id,
+              },
+            );
           }
-        );
+        }
       } else if (adapterError) {
         const isAmbiguous = isAmbiguousError(adapterError);
 
@@ -476,18 +548,30 @@ export function createOrderSubmissionService({
             }
           );
         } else {
-          // Clear failure — mark rejected
+          // A definite exchange/API error is a terminal failure, not a fill.
+          const providerErrorCode =
+            adapterError.exchangeResponse?.code ??
+            adapterError.exchangeResponse?.retCode ??
+            adapterError.exchangeResponse?.errorCode ??
+            adapterError.code ??
+            adapterError.statusCode ??
+            null;
           await queries.updateOrder(order.id, {
-            status: ORDER_STATUS.REJECTED,
+            status: ORDER_STATUS.FAILED,
             rejectionReason: adapterError.message,
+            metadata: {
+              providerErrorCode: providerErrorCode == null ? null : String(providerErrorCode),
+              providerError: adapterError.exchangeResponse || null,
+              lastError: adapterError.message,
+            },
           });
 
           await queries.insertOrderEvent(tx, {
             orderId: order.id,
             eventType: 'rejected',
             previousStatus: ORDER_STATUS.PENDING_SUBMISSION,
-            newStatus: ORDER_STATUS.REJECTED,
-            payload: { error: adapterError.message },
+            newStatus: ORDER_STATUS.FAILED,
+            payload: { error: adapterError.message, errorCode: providerErrorCode },
           });
 
           await queries.updateExecutionRequest(executionRequest.id, {
@@ -502,7 +586,9 @@ export function createOrderSubmissionService({
               orderId: order.id,
               instrument: instrumentId,
               side,
+              status: ORDER_STATUS.FAILED,
               reason: adapterError.message,
+              errorCode: providerErrorCode,
             },
             {
               actorId: userId,
@@ -515,7 +601,21 @@ export function createOrderSubmissionService({
       }
     });
 
-    const finalOrder = await queries.findOrderById(order.id);
+    let finalOrder = await queries.findOrderById(order.id);
+    if (
+      adapterResponse?.exchangeOrderId &&
+      finalOrder?.status !== ORDER_STATUS.RECONCILIATION_REQUIRED &&
+      typeof adapter.fetchOrder === 'function'
+    ) {
+      finalOrder = await reconcileAfterSubmission({
+        adapter,
+        credentials,
+        accountType: tradingAccount.account_type,
+        environment: connection.environment,
+        order: finalOrder,
+        exchangeCode: connection.exchange_code,
+      }) || finalOrder;
+    }
 
     return {
       executionRequest,
@@ -524,6 +624,52 @@ export function createOrderSubmissionService({
       durationMs,
       ambiguous: isAmbiguousError(adapterError),
     };
+  }
+
+  async function reconcileAfterSubmission({
+    adapter,
+    credentials,
+    accountType,
+    environment,
+    order,
+    exchangeCode,
+  }) {
+    let currentOrder = order;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 300));
+      try {
+        const update = await adapter.fetchOrder({
+          ...credentials,
+          accountType,
+          environment,
+          instrument: currentOrder.instrument,
+          marketType: currentOrder.market_type,
+          exchangeOrderId: currentOrder.exchange_order_id,
+        });
+        if (!update?.exchangeOrderId || update.exchangeOrderId !== currentOrder.exchange_order_id) {
+          logger.warn(
+            { orderId: currentOrder.id, exchangeCode },
+            'Exchange status response did not confirm the submitted order ID',
+          );
+          continue;
+        }
+        await executionService.handleExecutionUpdate({
+          connectionId: currentOrder.connection_id,
+          update,
+        });
+        currentOrder = await queries.findOrderById(currentOrder.id) || currentOrder;
+        if (
+          [ORDER_STATUS.FILLED, ORDER_STATUS.REJECTED, ORDER_STATUS.FAILED, ORDER_STATUS.CANCELED,
+            ORDER_STATUS.EXPIRED].includes(currentOrder.status)
+        ) return currentOrder;
+      } catch (err) {
+        logger.warn(
+          { err, orderId: currentOrder.id, exchangeCode, attempt: attempt + 1 },
+          'Exchange order state reconciliation attempt failed',
+        );
+      }
+    }
+    return currentOrder;
   }
 
   function isAmbiguousError(err) {

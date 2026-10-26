@@ -227,7 +227,7 @@ export default function TerminalOverview() {
         return;
       }
 
-      if (result?.order?.status === 'rejected') {
+      if (result?.order?.status === 'rejected' || result?.order?.status === 'failed') {
         setConfirmOpen(false);
         setPendingOrder(null);
         setApprovalRequestId(null);

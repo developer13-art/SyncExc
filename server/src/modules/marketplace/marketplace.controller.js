@@ -27,6 +27,7 @@ export function createMarketplaceController(services) {
     moderationService,
     signalDiscussionService,
     stripeMarketplaceService,
+    traderSignalExecutionService,
   } = services;
 
   return {
@@ -190,6 +191,25 @@ export function createMarketplaceController(services) {
     },
 
     /* Publications */
+    async preflightSignal(req, res) {
+      const preflight = await traderSignalExecutionService.validateSignalExecution({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        signal: {
+          instrument: req.body.instrument,
+          marketType: req.body.marketType,
+          direction: req.body.direction,
+          orderType: req.body.orderType,
+          entry: req.body.entry,
+          stopLoss: req.body.stopLoss,
+          targets: req.body.targets,
+        },
+        accountIds: req.body.executionAccountIds,
+        amount: req.body.executionAmount,
+      });
+      return success(res, preflight);
+    },
+
     async publishSignal(req, res) {
       const provider = await providerService.getProviderForUser(req.auth.userId, req.workspace.id);
       if (!provider) return res.status(404).json({ error: { code: 'NOT_PROVIDER', message: 'Not a provider' } });

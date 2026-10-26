@@ -97,6 +97,10 @@ export async function registerAllHandlers({ registry, services }) {
     );
   });
 
+  register('terminal_reconcile', async ({ payload, services: s }) => {
+    await s.terminal.service.reconcilePendingOrders({ limit: payload.limit || 100 });
+  });
+
   register('sync_reconcile', async ({ payload, services: s }) => {
     const reconciliation = s.synchronization.reconciliation;
 

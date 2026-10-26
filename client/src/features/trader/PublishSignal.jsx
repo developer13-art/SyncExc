@@ -45,6 +45,37 @@ export default function PublishSignal() {
     .map(({ account }) => account.id)
     .sort()
     .join('|');
+  const canRunPreflight = Boolean(
+    form.instrument.trim() &&
+    selectedAccountIds.length > 0 &&
+    Number(executionAmount) > 0 &&
+    Number(form.stopLoss) > 0 &&
+    Number(form.takeProfit) > 0 &&
+    (form.orderType !== 'limit' || Number(form.entry) > 0),
+  );
+  const preflightPayload = {
+    instrument: form.instrument.trim().toUpperCase(),
+    marketType: form.marketType,
+    direction: form.direction,
+    orderType: form.orderType,
+    ...(form.orderType === 'limit' ? { entry: form.entry.trim() } : {}),
+    stopLoss: form.stopLoss.trim(),
+    targets: [form.takeProfit.trim()],
+    executionAccountIds: selectedAccountIds,
+    executionAmount: executionAmount.trim(),
+  };
+  const preflightQuery = useQuery({
+    queryKey: ['marketplace', 'signal-preflight', activeWorkspaceId, preflightPayload],
+    queryFn: () => marketplaceApi.preflightSignal(preflightPayload),
+    enabled: canRunPreflight,
+    staleTime: 0,
+    refetchInterval: canRunPreflight ? 15_000 : false,
+  });
+  const selectedAccountsReady = canRunPreflight &&
+    preflightQuery.data?.ready === true &&
+    Array.isArray(preflightQuery.data?.accounts) &&
+    preflightQuery.data.accounts.length === selectedAccountIds.length &&
+    preflightQuery.data.accounts.every((account) => account.valid);
   const profileQuery = useQuery({
     queryKey: profileKey(activeWorkspaceId),
     queryFn: () => marketplaceApi.getMyProvider(),
@@ -119,17 +150,7 @@ export default function PublishSignal() {
     }
 
     setValidationError('');
-    publishMutation.mutate({
-      instrument: form.instrument.trim().toUpperCase(),
-      marketType: form.marketType,
-      direction: form.direction,
-      orderType: form.orderType,
-      ...(form.orderType === 'limit' ? { entry: form.entry.trim() } : {}),
-      stopLoss: form.stopLoss.trim(),
-      targets: [form.takeProfit.trim()],
-      executionAccountIds: selectedAccountIds,
-      executionAmount: executionAmount.trim(),
-    });
+    publishMutation.mutate(preflightPayload);
   };
 
   if (profileQuery.isLoading) return <LoadingState label="Checking Trader profile" />;
@@ -246,11 +267,11 @@ export default function PublishSignal() {
             </div>
             <fieldset className="grid gap-2">
               <legend className="text-sm font-medium text-foreground">Trader execution accounts *</legend>
-              {executionReadiness.compatibleAccounts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No active account currently supports this market and protected order type.</p>
+              {executionReadiness.activeAccounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active exchange accounts are available in this workspace.</p>
               ) : (
                 <div className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-2">
-                  {executionReadiness.compatibleAccounts.map(({ connection, account }) => (
+                  {executionReadiness.activeAccounts.map(({ connection, account }) => (
                     <label key={account.id} className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -267,7 +288,7 @@ export default function PublishSignal() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground">
-                The amount and account selection stay private. Each selected account is checked independently; unsupported pairs, unhealthy accounts, or insufficient balances are skipped.
+                Trade size and selected accounts remain private. Every selected account must pass the exchange, asset, protection, and balance checks before publishing is enabled.
               </p>
             </fieldset>
             <TraderSignalExecutionReadiness
@@ -277,11 +298,33 @@ export default function PublishSignal() {
               orderType={form.orderType}
               selectedAccountCount={selectedAccountIds.length}
             />
+            {canRunPreflight ? (
+              <div className="grid gap-2" aria-live="polite">
+                {preflightQuery.isFetching ? (
+                  <p className="text-sm text-muted-foreground">Checking each selected exchange’s asset support, account health, protection requirements, and available balance…</p>
+                ) : null}
+                {preflightQuery.isError ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    Pre-flight validation failed: {getErrorMessage(preflightQuery.error)}. Publishing is disabled until validation succeeds.
+                  </p>
+                ) : null}
+                {preflightQuery.data?.accounts?.filter((account) => !account.valid).map((account) => (
+                  <p key={account.accountId} className="text-sm text-destructive" role="alert">
+                    {account.exchangeCode || 'Exchange'}: {account.reason || 'This account did not pass pre-flight validation.'}
+                  </p>
+                ))}
+                {selectedAccountsReady ? (
+                  <p className="text-sm text-emerald-700" role="status">All selected accounts passed pre-flight validation. Balances and market conditions will be checked again immediately before execution.</p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex justify-end">
               <Button
                 type="submit"
                 disabled={
                   publishMutation.isPending ||
+                  preflightQuery.isFetching ||
+                  !selectedAccountsReady ||
                   !executionReadiness.canPublish ||
                   selectedAccountIds.length === 0 ||
                   !Number.isFinite(Number(executionAmount)) ||

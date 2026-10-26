@@ -102,6 +102,8 @@ export const marketplaceApi = {
 
   publishSignal: (payload) => api.post(endpoints.marketplace.mySignals, payload),
 
+  preflightSignal: (payload) => api.post('/marketplace/me/signals/preflight', payload),
+
   updateSignal: (signalId, payload) =>
     api.patch(endpoints.marketplace.signal(signalId), payload),
 

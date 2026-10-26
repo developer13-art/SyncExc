@@ -36,6 +36,7 @@ export function createMarketplaceListeners({
 
       try {
         await traderSignalExecution.handleOrderFilled({ orderId });
+        await queries.updateCopyExecutionByOrder?.(orderId, 'filled');
         const existingSignal = await queries.findPublishedSignalBySourceOrderId(orderId);
         if (existingSignal) return;
 
@@ -72,7 +73,13 @@ export function createMarketplaceListeners({
         const { orderId } = envelope.payload || {};
         if (!orderId) return;
         try {
-          await traderSignalExecution.handleOrderStatus({ orderId, status });
+          const reconciledStatus = envelope.payload?.status || status;
+          await traderSignalExecution.handleOrderStatus({ orderId, status: reconciledStatus });
+          await queries.updateCopyExecutionByOrder?.(
+            orderId,
+            reconciledStatus,
+            envelope.payload?.errorMessage || envelope.payload?.reason || null,
+          );
         } catch (err) {
           logger.error({ err, orderId, status }, 'Could not update trader signal execution status');
         }

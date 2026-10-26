@@ -188,6 +188,43 @@ export function createMarketplaceQueries({ db }) {
       return result.rows;
     },
 
+    async updateCopyExecutionByOrder(orderId, status, errorMessage = null) {
+      const settled = ['filled', 'partially_filled'].includes(status);
+      const failed = ['rejected', 'failed', 'canceled', 'cancelled', 'expired'].includes(status);
+      const outcome = settled ? 'executed' : failed ? 'failed' : 'pending';
+      const intentStatus = settled ? status : failed ? status : 'submitted';
+      return db.tx(async (tx) => {
+        const destinations = await tx.query(
+          `
+          UPDATE copy_signal_destination_results
+          SET outcome = $2,
+              error_message = COALESCE($3, error_message)
+          WHERE destination_order_id = $1
+          RETURNING processing_record_id
+          `,
+          [orderId, outcome, errorMessage],
+        );
+        if (destinations.rowCount === 0) return [];
+        const recordIds = destinations.rows.map((row) => row.processing_record_id);
+        await tx.query(
+          `UPDATE copy_signal_processing_records SET outcome = $2
+           WHERE id = ANY($1::uuid[])`,
+          [recordIds, outcome],
+        );
+        await tx.query(
+          `
+          UPDATE copy_execution_intents intent
+          SET status = $2
+          FROM copy_signal_processing_records record
+          WHERE record.execution_intent_id = intent.id
+            AND record.id = ANY($1::uuid[])
+          `,
+          [recordIds, intentStatus],
+        );
+        return recordIds;
+      });
+    },
+
     async findSignalExecutionForClosedTrade({ accountId, exchangeOrderId, instrument }) {
       if (!exchangeOrderId) return null;
       const result = await db.query(
