@@ -123,7 +123,7 @@ describe('Trader Studio API', () => {
     assert.deepEqual(finalResult, { status: 'submitted', orderId: 'order-1' });
     assert.equal(submitCalls, 1);
     assert.equal(terminalConfirmationCalls, 1);
-    assert.equal(record.outcome, 'executed');
+    assert.equal(record.outcome, 'pending');
     assert.equal(record.intent_status, 'submitted');
   });
 

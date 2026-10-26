@@ -51,12 +51,15 @@ export function useTerminalOrders(workspaceId, params = {}) {
 
   const syncAccountState = useMutation({
     mutationFn: (accountId) => terminalApi.syncAccountState(workspaceId, accountId),
-    onSuccess: () => {
+    onSuccess: (_data, accountId) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.terminal.orders(workspaceId, {}),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.terminal.positions(workspaceId, {}),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.connections.balances(accountId),
       });
     },
   });
@@ -84,12 +87,15 @@ export function useTerminalPositions(workspaceId, params = {}) {
   });
   const syncAccountState = useMutation({
     mutationFn: (accountId) => terminalApi.syncAccountState(workspaceId, accountId),
-    onSuccess: () => {
+    onSuccess: (_data, accountId) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.terminal.positions(workspaceId, {}),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.terminal.orders(workspaceId, {}),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.connections.balances(accountId),
       });
     },
   });
@@ -119,6 +125,9 @@ export function useTerminalAccountSync(workspaceId, accountId) {
         }),
         queryClient.invalidateQueries({
           queryKey: queryKeys.terminal.overview(workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.connections.balances(accountId),
         }),
       ]);
       return result;

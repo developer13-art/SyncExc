@@ -67,3 +67,24 @@ test('publishes a fill event only after confirmed exchange ID, quantity, and pri
   assert.equal(updates[0].fields.status, 'filled');
   assert.equal(published.filter((event) => event.eventType === 'execution.order_filled').length, 1);
 });
+
+test('derives an exchange-confirmed fill price when the average price is blank', async () => {
+  const { service, updates } = createService();
+  const result = await service.handleExecutionUpdate({
+    connectionId: 'connection-1',
+    update: {
+      exchangeOrderId: 'exchange-order-1',
+      status: 'filled',
+      filledQuantity: ' ',
+      averageFillPrice: '',
+      fills: [
+        { quantity: '1', price: '100' },
+        { quantity: '1', price: '102' },
+      ],
+    },
+  });
+
+  assert.deepEqual(result, { applied: true });
+  assert.equal(updates[0].fields.filledQuantity, '2');
+  assert.equal(updates[0].fields.averageFillPrice, '101');
+});

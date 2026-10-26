@@ -43,11 +43,21 @@ export function TradingDashboardMetrics({ overview, positions = [], isLoading, e
       tone: unrealizedPnl > 0 ? 'success' : unrealizedPnl < 0 ? 'destructive' : 'default',
     },
     {
-      label: 'Realized today',
-      value: overview?.realizedPnlToday == null ? '—' : formatCurrency(overview.realizedPnlToday, currency),
-      hint: overview?.startingEquityToday ? 'Today’s closed trade results' : 'Closed trade results',
+      label: 'Realized P&L · all time',
+      value: overview?.closedTrades?.totalRealizedPnl == null
+        ? '—'
+        : formatCurrency(overview.closedTrades.totalRealizedPnl, currency),
+      hint: `Closed trades · ${overview?.closedTrades?.count ?? 0} · Today ${
+        overview?.realizedPnlToday == null
+          ? '—'
+          : formatCurrency(overview.realizedPnlToday, currency)
+      }`,
       icon: Activity,
-      tone: Number(overview?.realizedPnlToday) > 0 ? 'success' : Number(overview?.realizedPnlToday) < 0 ? 'destructive' : 'default',
+      tone: Number(overview?.closedTrades?.totalRealizedPnl) > 0
+        ? 'success'
+        : Number(overview?.closedTrades?.totalRealizedPnl) < 0
+          ? 'destructive'
+          : 'default',
     },
     {
       label: 'Open positions',

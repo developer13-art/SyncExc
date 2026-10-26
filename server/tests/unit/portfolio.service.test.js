@@ -14,10 +14,7 @@ test('includes workspace exchange accounts and latest asset balances in overview
             rows: [{ position_count: 0, total_unrealized_pnl: '0' }],
           };
         }
-        if (sql.includes('FROM trading_fills')) {
-          return { rows: [{ fill_count: 0, total_notional: '0' }] };
-        }
-        if (sql.includes('FROM trading_closed_trades')) {
+        if (sql.includes('WITH realized_trades')) {
           return {
             rows: [{
               closed_trade_count: 2,
@@ -25,6 +22,9 @@ test('includes workspace exchange accounts and latest asset balances in overview
               realized_pnl_today: '2.5',
             }],
           };
+        }
+        if (sql.includes('FROM trading_fills')) {
+          return { rows: [{ fill_count: 0, total_notional: '0' }] };
         }
         if (sql.includes('FROM trading_execution_requests')) return { rows: [] };
         if (sql.includes('FROM exchange_accounts a')) {

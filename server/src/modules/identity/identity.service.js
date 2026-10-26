@@ -94,20 +94,6 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     };
   }
 
-  async function requireVerifiedEmail(user, { ip, userAgent } = {}) {
-    if (user.email_verified_at) return;
-
-    await recordSecurityEvent({
-      userId: user.id,
-      eventType: 'login_failure',
-      outcome: 'blocked',
-      ipAddress: ip,
-      deviceMetadata: { userAgent },
-      metadata: { reason: 'email_not_verified' },
-    });
-    throw new AuthenticationError('Verify your email address before signing in.', 'EMAIL_NOT_VERIFIED');
-  }
-
   /* ===========================================================================
    * REGISTRATION
    * ======================================================================== */
@@ -168,12 +154,9 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     });
 
     // Send verification email outside the transaction
-    let verificationEmailSent = false;
-    try {
-      verificationEmailSent = await sendVerificationEmail(result.user, result.verificationToken);
-    } catch (err) {
+    await sendVerificationEmail(result.user, result.verificationToken).catch((err) => {
       logger.error({ err, userId: result.user.id }, 'Failed to send verification email');
-    }
+    });
 
     await recordSecurityEvent({
       userId: result.user.id,
@@ -197,22 +180,21 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       }
     }
 
-    return { user: result.user, verificationEmailSent };
+    return result.user;
   }
 
   async function sendVerificationEmail(user, token) {
     if (!mailer) {
       logger.warn({ userId: user.id }, 'Mailer not configured; skipping verification email');
-      return false;
+      return;
     }
-    const url = `${process.env.APP_URL || 'http://localhost:5173'}/verify-email?token=${token}`;
-    const result = await mailer.send({
+    const url = `${process.env.APP_URL || 'https://syncexc.com'}/verify-email?token=${token}`;
+    await mailer.send({
       to: user.email,
       subject: 'Verify your SyncExc account',
       text: `Verify your email address by visiting: ${url}`,
       html: `<p>Verify your email address by clicking <a href="${url}">this link</a>.</p>`,
     });
-    return !result?.suppressed;
   }
 
   /* ===========================================================================
@@ -319,8 +301,6 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       });
       throw new AuthenticationError('Invalid credentials', 'INVALID_CREDENTIALS');
     }
-
-    await requireVerifiedEmail(user, { ip, userAgent });
 
     if (user.status === 'suspended' || user.status === 'deleted') {
       await recordSecurityEvent({
@@ -439,7 +419,6 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
 
     const user = await queries.findUserById(challenge.user_id);
     if (!user) throw new AuthenticationError('Account not found');
-    await requireVerifiedEmail(user, { ip, userAgent });
 
     const security = await queries.getSecuritySettings(user.id);
     if (!security?.mfa_secret_encrypted) {
@@ -809,7 +788,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     });
 
     if (mailer) {
-      const url = `${process.env.APP_URL || 'http://localhost:5173'}/reset-password?token=${token}`;
+      const url = `${process.env.APP_URL || 'https://syncexc.com'}/reset-password?token=${token}`;
       await mailer.send({
         to: user.email,
         subject: 'Reset your SyncExc password',
@@ -1015,7 +994,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     });
 
     if (mailer) {
-      const url = `${process.env.APP_URL || 'http://localhost:5173'}/verify-email-change?token=${token}`;
+      const url = `${process.env.APP_URL || 'https://syncexc.com'}/verify-email-change?token=${token}`;
       await mailer.send({
         to: newEmail,
         subject: 'Confirm your new SyncExc email',

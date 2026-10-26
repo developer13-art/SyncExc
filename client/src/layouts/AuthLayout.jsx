@@ -1,14 +1,16 @@
 import { Link, Outlet } from 'react-router-dom';
 
 import { ROUTES } from '../config/routes.config.js';
-import { BrandLogo } from '../components/brand/BrandLogo.jsx';
+import * as Icons from '../assets/icons/index.js';
 
 export function AuthLayout() {
   return (
     <div className="client-auth-shell flex min-h-screen bg-background text-foreground">
       <div className="client-auth-panel hidden w-1/2 flex-col justify-between border-r border-border bg-card p-10 lg:flex">
         <Link to={ROUTES.public.home} className="flex items-center gap-2">
-          <BrandLogo className="client-brand-mark h-8 w-8" />
+          <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Icons.LogoIcon className="h-5 w-5" />
+          </div>
           <span className="text-base font-semibold text-foreground">SyncExc</span>
         </Link>
 
@@ -36,7 +38,9 @@ export function AuthLayout() {
       <div className="flex w-full flex-1 items-center justify-center p-6 lg:w-1/2">
         <div className="w-full max-w-sm">
           <div className="mb-6 flex items-center gap-2 lg:hidden">
-            <BrandLogo className="client-brand-mark h-8 w-8" />
+            <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Icons.LogoIcon className="h-5 w-5" />
+            </div>
             <span className="text-base font-semibold text-foreground">SyncExc</span>
           </div>
           <Outlet />

@@ -645,6 +645,7 @@ export function createOrderSubmissionService({
           instrument: currentOrder.instrument,
           marketType: currentOrder.market_type,
           exchangeOrderId: currentOrder.exchange_order_id,
+          includeFills: true,
         });
         if (!update?.exchangeOrderId || update.exchangeOrderId !== currentOrder.exchange_order_id) {
           logger.warn(

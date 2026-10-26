@@ -35,13 +35,10 @@ describe('identity referral attribution', () => {
         async register(details) {
           registrationInput = details;
           return {
-            user: {
-              id: 'user-1',
-              email: details.email,
-              username: details.username,
-              display_name: details.displayName,
-            },
-            verificationEmailSent: true,
+            id: 'user-1',
+            email: details.email,
+            username: details.username,
+            display_name: details.displayName,
           };
         },
       },
@@ -51,7 +48,6 @@ describe('identity referral attribution', () => {
 
     assert.equal(res.statusCode, 201);
     assert.equal(registrationInput.referralCode, 'ABC123');
-    assert.equal(res.body.data.verificationEmailSent, true);
   });
 
   it('attributes a new account using the normalized referral code', async () => {

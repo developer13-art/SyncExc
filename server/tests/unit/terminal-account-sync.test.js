@@ -53,6 +53,13 @@ test('syncs exchange positions and refreshes active order status', async () => {
           calls.push(['fetchPositions', context]);
           return [currentPosition];
         },
+        async fetchAccountState(context) {
+          calls.push(['fetchAccountState', context]);
+          return {
+            balances: [{ asset: 'DOGE', free: '10', used: '0', total: '10' }],
+            equity: '100',
+          };
+        },
         async fetchOrder(params) {
           calls.push(['fetchOrder', params]);
           return {
@@ -71,7 +78,13 @@ test('syncs exchange positions and refreshes active order status', async () => {
   };
   const db = {
     async tx(callback) {
-      return callback({ query: async () => ({ rows: [] }) });
+      return callback({
+        query: async (sql) => ({
+          rows: sql.includes('INSERT INTO exchange_balance_snapshots')
+            ? [{ id: 'balance-snapshot-id' }]
+            : [],
+        }),
+      });
     },
   };
   const executionService = {
@@ -97,6 +110,7 @@ test('syncs exchange positions and refreshes active order status', async () => {
 
   assert.deepEqual(positions, [currentPosition]);
   assert.ok(calls.some(([name, value]) => name === 'upsertPosition' && value.quantity === '100'));
+  assert.ok(calls.some(([name, value]) => name === 'fetchAccountState' && value.accountType === 'unified'));
   assert.ok(calls.some(([name]) => name === 'clearMissingPositions'));
   assert.ok(calls.some(([name, value]) => name === 'handleExecutionUpdate' && value.update.status === 'filled'));
 });

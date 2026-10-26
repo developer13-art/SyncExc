@@ -27,14 +27,17 @@ export function createExecutionService({ db, queries, events, realtime, logger }
       fills = [],
     } = update;
     if (!exchangeOrderId) return;
+    const normalizeOptionalNumeric = (value) =>
+      typeof value === 'string' && value.trim() === '' ? null : value;
     const fillQuantityFromTrades = Array.isArray(fills)
       ? fills.reduce((total, fill) => total + (Number(fill.quantity) || 0), 0)
       : 0;
     const weightedFillValue = Array.isArray(fills)
       ? fills.reduce((total, fill) => total + (Number(fill.quantity) || 0) * (Number(fill.price) || 0), 0)
       : 0;
-    const filledQuantity = reportedFilledQuantity ?? (fillQuantityFromTrades > 0 ? String(fillQuantityFromTrades) : null);
-    const averageFillPrice = reportedAverageFillPrice ??
+    const filledQuantity = normalizeOptionalNumeric(reportedFilledQuantity) ??
+      (fillQuantityFromTrades > 0 ? String(fillQuantityFromTrades) : null);
+    const averageFillPrice = normalizeOptionalNumeric(reportedAverageFillPrice) ??
       (fillQuantityFromTrades > 0 && weightedFillValue > 0
         ? String(weightedFillValue / fillQuantityFromTrades)
         : null);
@@ -98,6 +101,13 @@ export function createExecutionService({ db, queries, events, realtime, logger }
         });
 
         if (inserted) {
+          if (order.market_type === 'spot') {
+            await queries.recordSpotFillFifo(tx, {
+              fillId: inserted.id,
+              order,
+              fill,
+            });
+          }
           await events.publish(
             tx,
             newStatus === ORDER_STATUS.FILLED

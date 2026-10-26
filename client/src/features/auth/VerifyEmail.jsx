@@ -20,7 +20,6 @@ export default function VerifyEmail() {
 
   const tokenFromUrl = searchParams.get('token');
   const initialEmail = location.state?.email ?? '';
-  const verificationEmailSent = location.state?.verificationEmailSent;
 
   const [status, setStatus] = useState(tokenFromUrl ? 'verifying' : 'pending');
   const [error, setError] = useState(null);
@@ -149,9 +148,8 @@ export default function VerifyEmail() {
           Verify your email
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          {verificationEmailSent === false
-            ? 'Your account was created, but we could not send the verification email. Request a new link below.'
-            : 'We sent a verification link to your email address. Click the link to activate your account.'}
+          We sent a verification link to your email address. Click the link to activate your
+          account.
         </p>
       </div>
 

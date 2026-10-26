@@ -6,6 +6,37 @@ function normalizeOptionalNumeric(value) {
   return typeof value === 'string' && value.trim() === '' ? null : value;
 }
 
+const DECIMAL_FACTOR = 10n ** 12n;
+
+function toScaledDecimal(value) {
+  const text = String(value).trim();
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
+  if (!match) throw new Error(`Invalid decimal value: ${text}`);
+
+  const fraction = match[3] || '';
+  let scaled = BigInt(match[2]) * DECIMAL_FACTOR +
+    BigInt(fraction.slice(0, 12).padEnd(12, '0') || '0');
+  if (fraction.length > 12 && fraction[12] >= '5') scaled += 1n;
+  return match[1] ? -scaled : scaled;
+}
+
+function fromScaledDecimal(value) {
+  const negative = value < 0n;
+  const absolute = negative ? -value : value;
+  const whole = absolute / DECIMAL_FACTOR;
+  const fraction = (absolute % DECIMAL_FACTOR).toString().padStart(12, '0').replace(/0+$/, '');
+  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+function multiplyScaled(left, right) {
+  return (left * right) / DECIMAL_FACTOR;
+}
+
+function divideScaled(dividend, divisor) {
+  if (divisor === 0n) throw new Error('Cannot divide by zero');
+  return (dividend * DECIMAL_FACTOR) / divisor;
+}
+
 export function createTerminalQueries({ db }) {
   return {
     /* =========================================================================
@@ -140,6 +171,26 @@ export function createTerminalQueries({ db }) {
       };
     },
 
+    async listFilledOrdersMissingFills(accountId, { limit = 50 } = {}) {
+      const result = await db.query(
+        `
+        SELECT o.*
+        FROM trading_orders o
+        WHERE o.account_id = $1
+          AND o.exchange_order_id IS NOT NULL
+          AND o.status IN ('filled', 'partially_filled')
+          AND o.updated_at >= now() - interval '30 days'
+          AND NOT EXISTS (
+            SELECT 1 FROM trading_fills f WHERE f.order_id = o.id
+          )
+        ORDER BY o.updated_at ASC, o.id ASC
+        LIMIT $2
+        `,
+        [accountId, limit],
+      );
+      return result.rows;
+    },
+
     async insertOrderEvent(client, data) {
       const result = await client.query(
         `
@@ -197,6 +248,127 @@ export function createTerminalQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async recordSpotFillFifo(client, { fillId, order, fill }) {
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+        [`${order.account_id}:${order.instrument}`],
+      );
+      const instrumentResult = await client.query(
+        `
+        SELECT i.base_asset, i.quote_asset
+        FROM trading_orders o
+        JOIN exchange_connections c ON c.id = o.connection_id
+        LEFT JOIN exchange_instruments i
+          ON i.exchange_code = c.exchange_code
+          AND i.exchange_symbol = o.instrument
+          AND i.market_type = 'spot'
+        WHERE o.id = $1
+        LIMIT 1
+        `,
+        [order.id],
+      );
+      const { base_asset: baseAsset, quote_asset: quoteAsset } = instrumentResult.rows[0] || {};
+      const quantity = toScaledDecimal(fill.quantity);
+      const price = toScaledDecimal(fill.price);
+      const fee = fill.feeAmount == null || String(fill.feeAmount).trim() === ''
+        ? 0n
+        : toScaledDecimal(fill.feeAmount);
+      if (quantity <= 0n || price <= 0n || fee < 0n) {
+        throw new Error('Spot execution must include positive quantity and price and a non-negative fee');
+      }
+      const feeAsset = String(fill.feeAsset || '').toUpperCase();
+      const normalizedBaseAsset = String(baseAsset || '').toUpperCase();
+      const normalizedQuoteAsset = String(quoteAsset || '').toUpperCase();
+      const feeInBase = fee > 0n && feeAsset === normalizedBaseAsset;
+      const feeInQuote = fee > 0n && feeAsset === normalizedQuoteAsset;
+      const feeKnown = fee === 0n || feeInBase || feeInQuote;
+
+      if (order.side === 'buy') {
+        const lotQuantity = quantity - (feeInBase ? fee : 0n);
+        if (lotQuantity <= 0n) {
+          throw new Error('Spot buy fee exceeds the acquired quantity');
+        }
+        const totalCost = multiplyScaled(quantity, price) + (feeInQuote ? fee : 0n);
+        await client.query(
+          `
+          INSERT INTO trading_spot_lots (
+            workspace_id, connection_id, account_id, instrument, fill_id,
+            acquired_at, original_quantity, remaining_quantity,
+            cost_basis_per_unit, cost_basis_known
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9)
+          ON CONFLICT (fill_id) DO NOTHING
+          `,
+          [
+            order.workspace_id,
+            order.connection_id,
+            order.account_id,
+            order.instrument,
+            fillId,
+            fill.executedAt || new Date(),
+            fromScaledDecimal(lotQuantity),
+            fromScaledDecimal(divideScaled(totalCost, lotQuantity)),
+            feeKnown,
+          ],
+        );
+        return { entryPrice: null, realizedPnl: null };
+      }
+
+      const quantityToConsume = quantity + (feeInBase ? fee : 0n);
+      const proceeds = multiplyScaled(quantity, price) - (feeInQuote ? fee : 0n);
+      const lotsResult = await client.query(
+        `
+        SELECT id, remaining_quantity::text, cost_basis_per_unit::text, cost_basis_known
+        FROM trading_spot_lots
+        WHERE account_id = $1
+          AND instrument = $2
+          AND remaining_quantity > 0
+        ORDER BY acquired_at ASC, id ASC
+        FOR UPDATE
+        `,
+        [order.account_id, order.instrument],
+      );
+
+      let remaining = quantityToConsume;
+      let matchedQuantity = 0n;
+      let matchedCost = 0n;
+      let costBasisKnown = feeKnown;
+      for (const lot of lotsResult.rows) {
+        if (remaining <= 0n) break;
+        const available = toScaledDecimal(lot.remaining_quantity);
+        const matched = available < remaining ? available : remaining;
+        if (matched <= 0n) continue;
+        await client.query(
+          `UPDATE trading_spot_lots SET remaining_quantity = remaining_quantity - $2::numeric WHERE id = $1`,
+          [lot.id, fromScaledDecimal(matched)],
+        );
+        matchedQuantity += matched;
+        matchedCost += multiplyScaled(matched, toScaledDecimal(lot.cost_basis_per_unit));
+        costBasisKnown = costBasisKnown && lot.cost_basis_known;
+        remaining -= matched;
+      }
+
+      if (remaining > 0n || !costBasisKnown) {
+        await client.query(
+          `UPDATE trading_fills SET entry_price = NULL, realized_pnl = NULL WHERE id = $1`,
+          [fillId],
+        );
+        return { entryPrice: null, realizedPnl: null, matchedQuantity: fromScaledDecimal(matchedQuantity) };
+      }
+
+      const entryPrice = divideScaled(matchedCost, quantity);
+      const realizedPnl = proceeds - matchedCost;
+      await client.query(
+        `UPDATE trading_fills SET entry_price = $2, realized_pnl = $3 WHERE id = $1`,
+        [fillId, fromScaledDecimal(entryPrice), fromScaledDecimal(realizedPnl)],
+      );
+      return {
+        entryPrice: fromScaledDecimal(entryPrice),
+        realizedPnl: fromScaledDecimal(realizedPnl),
+        matchedQuantity: fromScaledDecimal(matchedQuantity),
+      };
+    },
+
     async listFillsForOrder(orderId) {
       const result = await db.query(
         `SELECT * FROM trading_fills WHERE order_id = $1 ORDER BY executed_at ASC`,
@@ -207,7 +379,14 @@ export function createTerminalQueries({ db }) {
 
     async listTradesForScope(
       workspaceId,
-      { limit = 50, cursor = null, accountId = null, instrument = null } = {},
+      {
+        limit = 50,
+        cursor = null,
+        accountId = null,
+        instrument = null,
+        page = 1,
+        pageSize = limit,
+      } = {},
     ) {
       const params = [workspaceId];
       const conditions = ['t.workspace_id = $1'];
@@ -223,14 +402,11 @@ export function createTerminalQueries({ db }) {
         params.push(cursor);
         conditions.push(`t.executed_at < $${params.length}`);
       }
-      params.push(limit + 1);
-      const result = await db.query(
-        `
-        SELECT t.* FROM (
+      const tradeRowsSql = `
           SELECT f.id, f.order_id, f.exchange_trade_id, f.instrument, f.side,
-                 f.quantity, f.price, NULL::numeric AS entry_price,
+                 f.quantity, f.price, f.entry_price,
                  f.fee_amount, f.fee_asset, f.executed_at,
-                 NULL::numeric AS realized_pnl, o.account_id, f.workspace_id
+                 f.realized_pnl, o.account_id, f.workspace_id
           FROM trading_fills f
           JOIN trading_orders o ON o.id = f.order_id
           WHERE NOT EXISTS (
@@ -247,19 +423,34 @@ export function createTerminalQueries({ db }) {
                  ct.closed_at AS executed_at, ct.realized_pnl, ct.account_id, ct.workspace_id
           FROM trading_closed_trades ct
           WHERE ct.workspace_id = $1
-        ) t
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY t.executed_at DESC
-        LIMIT $${params.length}
+      `;
+      const filterSql = conditions.join(' AND ');
+      const countResult = await db.query(
+        `
+        SELECT count(*)::int AS total
+        FROM (${tradeRowsSql}) t
+        WHERE ${filterSql}
         `,
-        params
+        params,
       );
-      const hasMore = result.rows.length > limit;
-      const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+      const queryParams = [...params, pageSize + 1, (Math.max(1, page) - 1) * pageSize];
+      const result = await db.query(
+        `
+        SELECT t.* FROM (${tradeRowsSql}) t
+        WHERE ${filterSql}
+        ORDER BY t.executed_at DESC, t.id DESC
+        LIMIT $${queryParams.length - 1}
+        OFFSET $${queryParams.length}
+        `,
+        queryParams,
+      );
+      const hasMore = result.rows.length > pageSize;
+      const rows = hasMore ? result.rows.slice(0, pageSize) : result.rows;
       const last = rows[rows.length - 1];
       return {
         rows,
         nextCursor: hasMore && last ? last.executed_at.toISOString() : null,
+        total: countResult.rows[0]?.total ?? 0,
       };
     },
 

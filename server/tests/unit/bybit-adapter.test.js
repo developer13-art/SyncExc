@@ -630,6 +630,62 @@ test('falls back to Bybit order history when a closed order is absent from realt
   }
 });
 
+test('uses execution records to confirm a filled Bybit order with a blank average price', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedPaths = [];
+  globalThis.fetch = async (url) => {
+    const path = new URL(String(url)).pathname;
+    requestedPaths.push(path);
+    const result = path === '/v5/order/realtime'
+      ? {
+          list: [{
+            orderId: 'exchange-order-id',
+            orderStatus: 'Filled',
+            cumExecQty: '2',
+            leavesQty: '0',
+            avgPrice: '',
+          }],
+        }
+      : {
+          list: [{
+            execId: 'trade-1',
+            orderId: 'exchange-order-id',
+            symbol: 'BTCUSDT',
+            side: 'Buy',
+            execQty: '2',
+            execPrice: '100',
+            execFee: '0.1',
+            feeCurrency: 'USDT',
+            execTime: '1793000000000',
+          }],
+        };
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ retCode: 0, result }),
+    };
+  };
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    const update = await adapter.fetchOrder({
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      environment: 'demo',
+      instrument: 'BTCUSDT',
+      exchangeOrderId: 'exchange-order-id',
+      marketType: 'spot',
+    });
+
+    assert.deepEqual(requestedPaths, ['/v5/order/realtime', '/v5/execution/list']);
+    assert.equal(update.status, 'filled');
+    assert.equal(update.averageFillPrice, '100');
+    assert.equal(update.fills[0].exchangeTradeId, 'trade-1');
+    assert.equal(update.fills[0].feeAsset, 'USDT');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('returns Bybit wallet equity with the account balances', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => ({

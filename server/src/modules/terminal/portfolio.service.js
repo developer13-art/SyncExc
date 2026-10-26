@@ -69,14 +69,25 @@ export function createPortfolioService({ db, queries, marketData, logger }) {
 
     const closedTradesResult = await db.query(
       `
+      WITH realized_trades AS (
+        SELECT realized_pnl, closed_at
+        FROM trading_closed_trades
+        WHERE workspace_id = $1
+        UNION ALL
+        SELECT f.realized_pnl, f.executed_at AS closed_at
+        FROM trading_fills f
+        JOIN trading_orders o ON o.id = f.order_id
+        WHERE f.workspace_id = $1
+          AND o.market_type = 'spot'
+          AND f.realized_pnl IS NOT NULL
+      )
       SELECT
         count(*)::int AS closed_trade_count,
         COALESCE(sum(realized_pnl), 0)::text AS total_realized_pnl,
         COALESCE(sum(realized_pnl) FILTER (
           WHERE closed_at >= now() - interval '24 hours'
         ), 0)::text AS realized_pnl_today
-      FROM trading_closed_trades
-      WHERE workspace_id = $1
+      FROM realized_trades
       `,
       [workspaceId]
     );

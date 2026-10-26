@@ -611,7 +611,14 @@ export default function TerminalOverview() {
           </TabsList>
         </div>
         <TabsContent value="positions" className="mt-3">
-          <Positions workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
+          <Positions
+            workspaceId={activeWorkspaceId}
+            accountId={selectedAccountId}
+            accountType={accounts.find((account) => account.id === selectedAccountId)?.type}
+            marketType={selectedInstrument?.marketType ?? 'spot'}
+            balances={connectionDetailQuery.balances}
+            isBalancesLoading={connectionDetailQuery.isBalancesLoading}
+          />
         </TabsContent>
         <TabsContent value="orders" className="mt-3">
           <OpenOrders workspaceId={activeWorkspaceId} accountId={selectedAccountId} />

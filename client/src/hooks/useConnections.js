@@ -159,6 +159,7 @@ export function useConnection(connectionId, accountId = null) {
     health: healthQuery.data ?? null,
     permissions: permissionsQuery.data ?? null,
     isLoading: detailQuery.isLoading,
+    isBalancesLoading: balancesQuery.isLoading,
     error: detailQuery.error,
     refetch: detailQuery.refetch,
   };

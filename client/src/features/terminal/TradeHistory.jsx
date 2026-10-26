@@ -246,7 +246,7 @@ export function TradeHistory({ workspaceId, accountId }) {
         </CardContent>
       </Card>
       <p className="text-xs text-muted-foreground">
-        Performance metrics summarize the currently loaded page. P&L is shown only when reported by the exchange.
+        Performance metrics summarize the currently loaded page. P&L uses exchange-reported results or FIFO spot cost basis when matching buy fills are available.
       </p>
     </div>
   );

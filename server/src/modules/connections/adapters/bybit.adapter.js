@@ -294,6 +294,54 @@ export function createBybitAdapter({ config, logger }) {
       return { status: 'canceled' };
     },
 
+    async fetchExecutionHistory({
+      apiKey,
+      apiSecret,
+      environment,
+      instrument,
+      exchangeOrderId,
+      marketType,
+    }) {
+      const params = {
+        category: marketType === 'spot' ? 'spot' : 'linear',
+        symbol: instrument,
+        orderId: exchangeOrderId,
+        limit: '100',
+      };
+      const fills = [];
+      let cursor = null;
+      do {
+        if (cursor) params.cursor = cursor;
+        const query = new URLSearchParams(params).toString();
+        const headers = signedHeaders({ apiKey, apiSecret, params: query });
+        const data = await this.fetchSigned({
+          url: `${getBaseUrl(environment)}/v5/execution/list?${query}`,
+          method: 'GET',
+          headers,
+        });
+        if (data.retCode !== 0) {
+          throw new Error(`Bybit execution fetch error: ${data.retMsg}`);
+        }
+        const result = data.result || {};
+        for (const execution of result.list || []) {
+          fills.push({
+            exchangeTradeId: execution.execId,
+            instrument: execution.symbol,
+            side: String(execution.side || '').toLowerCase(),
+            quantity: execution.execQty,
+            price: execution.execPrice,
+            feeAmount: execution.execFee || null,
+            feeAsset: execution.feeCurrency || null,
+            executedAt: execution.execTime ? new Date(Number(execution.execTime)) : new Date(),
+          });
+        }
+        const nextCursor = result.nextPageCursor || null;
+        cursor = nextCursor && nextCursor !== cursor ? nextCursor : null;
+        delete params.cursor;
+      } while (cursor);
+      return fills.sort((left, right) => left.executedAt - right.executedAt);
+    },
+
     async fetchOrder({
       apiKey,
       apiSecret,
@@ -302,6 +350,7 @@ export function createBybitAdapter({ config, logger }) {
       instrument,
       exchangeOrderId,
       marketType,
+      includeFills = false,
     }) {
       const params = {
         category: marketType === 'spot' ? 'spot' : 'linear',
@@ -333,13 +382,41 @@ export function createBybitAdapter({ config, logger }) {
         order = historyData.result?.list?.[0];
       }
       if (!order) return null;
-      return {
+      const update = {
         exchangeOrderId: order.orderId,
         status: this._mapStatus(order.orderStatus),
         filledQuantity: order.cumExecQty,
         remainingQuantity: order.leavesQty,
         averageFillPrice: order.avgPrice,
       };
+      if (
+        ['filled', 'partially_filled'].includes(update.status) &&
+        (includeFills || !(Number(update.averageFillPrice) > 0))
+      ) {
+        const fills = await this.fetchExecutionHistory({
+          apiKey,
+          apiSecret,
+          environment,
+          instrument,
+          exchangeOrderId,
+          marketType,
+        });
+        if (fills.length > 0) {
+          const filledQuantity = fills.reduce((total, fill) => total + (Number(fill.quantity) || 0), 0);
+          const weightedFillValue = fills.reduce(
+            (total, fill) => total + (Number(fill.quantity) || 0) * (Number(fill.price) || 0),
+            0,
+          );
+          update.fills = fills;
+          if (!(Number(update.averageFillPrice) > 0) && filledQuantity > 0 && weightedFillValue > 0) {
+            update.averageFillPrice = String(weightedFillValue / filledQuantity);
+          }
+          if (!(Number(update.filledQuantity) > 0) && filledQuantity > 0) {
+            update.filledQuantity = String(filledQuantity);
+          }
+        }
+      }
+      return update;
     },
 
     async fetchOpenOrders({ apiKey, apiSecret, accountType = 'unified', environment, instrument }) {

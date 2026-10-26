@@ -118,16 +118,20 @@ export function createTerminalController({ service, orderSubmissionService, port
     },
 
     async listTrades(req, res) {
-      const { rows, nextCursor } = await service.listTradesForScope({
+      const pageSize = Number(req.query.pageSize) || Number(req.query.limit) || 50;
+      const { rows, nextCursor, total } = await service.listTradesForScope({
         workspaceId: req.workspace.id,
-        limit: Number(req.query.limit) || 50,
+        limit: pageSize,
+        page: Number(req.query.page) || 1,
+        pageSize,
         cursor: req.query.cursor || null,
         accountId: req.query.accountId || null,
         instrument: req.query.instrument || null,
       });
       return paginated(res, rows.map(serializeFill), {
         nextCursor,
-        limit: Number(req.query.limit) || 50,
+        limit: pageSize,
+        total,
       });
     },
 

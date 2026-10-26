@@ -134,7 +134,7 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      const result = await register({
+      await register({
         displayName: form.displayName.trim(),
         username: form.username.trim().toLowerCase(),
         email: normalizeEmail(form.email),
@@ -145,19 +145,11 @@ export default function Register() {
       });
       storage.remove(REFERRAL_CODE_STORAGE_KEY);
 
-      toast[result.verificationEmailSent ? 'success' : 'error'](
-        result.verificationEmailSent ? 'Account created' : 'Account created, email not sent',
-        {
-          description: result.verificationEmailSent
-            ? 'Please check your email to verify your address.'
-            : 'Your account is saved but unverified. Request a verification link below.',
-        },
-      );
+      toast.success('Account created', {
+        description: 'Please check your email to verify your address.',
+      });
       navigate(ROUTES.auth.verifyEmail, {
-        state: {
-          email: normalizeEmail(form.email),
-          verificationEmailSent: result.verificationEmailSent,
-        },
+        state: { email: normalizeEmail(form.email) },
         replace: true,
       });
     } catch (error) {

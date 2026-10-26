@@ -156,6 +156,28 @@ export function createTerminalService({
       throw new Error(`The ${connection.exchange_code} adapter returned invalid position data`);
     }
 
+    let balanceState = null;
+    if (typeof adapter.fetchAccountState === 'function') {
+      balanceState = await fetchFromExchange({
+        exchangeCode: connection.exchange_code,
+        accountId,
+        stage: 'account balance sync',
+        fetch: () => adapter.fetchAccountState(adapterContext),
+      });
+    } else if (typeof adapter.fetchBalances === 'function') {
+      balanceState = {
+        balances: await fetchFromExchange({
+          exchangeCode: connection.exchange_code,
+          accountId,
+          stage: 'account balance sync',
+          fetch: () => adapter.fetchBalances(adapterContext),
+        }),
+      };
+    }
+    if (balanceState && !Array.isArray(balanceState.balances)) {
+      throw new Error(`${connection.exchange_code} adapter returned invalid balance data`);
+    }
+
     await db.tx(async (tx) => {
       for (const position of positions) {
         const stored = await queries.upsertPosition(tx, {
@@ -182,6 +204,47 @@ export function createTerminalService({
         });
       }
       await queries.clearMissingPositions(tx, accountId, positions);
+
+      if (balanceState) {
+        const observedAt = new Date();
+        const snapshot = await tx.query(
+          `
+          INSERT INTO exchange_balance_snapshots (account_id, observed_at)
+          VALUES ($1, $2)
+          RETURNING id
+          `,
+          [accountId, observedAt],
+        );
+        for (const balance of balanceState.balances) {
+          await tx.query(
+            `
+            INSERT INTO exchange_balance_items (snapshot_id, asset, free, used, total)
+            VALUES ($1, $2, $3, $4, $5)
+            `,
+            [
+              snapshot.rows[0].id,
+              balance.asset,
+              balance.free ?? 0,
+              balance.used ?? 0,
+              balance.total ?? 0,
+            ],
+          );
+        }
+        if (
+          balanceState.equity !== null &&
+          balanceState.equity !== undefined &&
+          balanceState.equity !== '' &&
+          Number.isFinite(Number(balanceState.equity))
+        ) {
+          await tx.query(
+            `
+            INSERT INTO exchange_account_snapshots (account_id, equity, available_margin, observed_at)
+            VALUES ($1, $2, $3, $4)
+            `,
+            [accountId, balanceState.equity, balanceState.availableEquity ?? null, observedAt],
+          );
+        }
+      }
     });
 
     if (typeof adapter.fetchClosedPnl === 'function') {
@@ -304,6 +367,45 @@ export function createTerminalService({
         connectionId: connection.id,
         update: exchangeOrder,
       });
+    }
+
+    if (typeof adapter.fetchExecutionHistory === 'function') {
+      const ordersMissingFills = await queries.listFilledOrdersMissingFills(accountId, { limit: 50 });
+      for (const order of ordersMissingFills) {
+        let fills;
+        try {
+          fills = await fetchFromExchange({
+            exchangeCode: connection.exchange_code,
+            accountId,
+            stage: 'spot fill history sync',
+            fetch: () => adapter.fetchExecutionHistory({
+              ...adapterContext,
+              instrument: order.instrument,
+              marketType: order.market_type,
+              exchangeOrderId: order.exchange_order_id,
+              includeFills: true,
+            }),
+          });
+          if (!Array.isArray(fills)) {
+            throw new Error(`${connection.exchange_code} adapter returned invalid execution history`);
+          }
+        } catch (err) {
+          logger.warn(
+            { err, orderId: order.id, exchangeOrderId: order.exchange_order_id },
+            'Historical order fill synchronization failed',
+          );
+          continue;
+        }
+        if (fills.length === 0) continue;
+        await executionService.handleExecutionUpdate({
+          connectionId: connection.id,
+          update: {
+            exchangeOrderId: order.exchange_order_id,
+            status: order.status,
+            fills,
+          },
+        });
+      }
     }
 
     return queries.listPositions(workspaceId, { accountId });

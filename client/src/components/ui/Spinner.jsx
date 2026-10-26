@@ -1,12 +1,12 @@
 import { cn } from '../../lib/utils/cn.util.js';
-import { BrandLogo } from '../brand/BrandLogo.jsx';
+import { LogoIcon } from '../../assets/icons/index.js';
 
 const sizes = {
-  xs: 'h-3 w-3',
-  sm: 'h-4 w-4',
-  md: 'h-5 w-5',
-  lg: 'h-8 w-8',
-  xl: 'h-12 w-12',
+  xs: 'h-3 w-3 border',
+  sm: 'h-4 w-4 border-2',
+  md: 'h-5 w-5 border-2',
+  lg: 'h-8 w-8 border-2',
+  xl: 'h-12 w-12 border-3',
 };
 
 export function Spinner({ size = 'md', className, label = 'Loading' }) {
@@ -20,7 +20,7 @@ export function Spinner({ size = 'md', className, label = 'Loading' }) {
         className,
       )}
     >
-      <BrandLogo className="h-full w-full" />
+      <LogoIcon aria-hidden="true" className="h-full w-full" />
     </span>
   );
 }
