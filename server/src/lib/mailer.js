@@ -1,18 +1,106 @@
 /**
  * SyncExc Server — Mailer
  *
- * Nodemailer-based SMTP sender. When SMTP is not configured the mailer logs
- * the email instead of sending it (dev / test behaviour).
+ * Uses Resend when configured, with SMTP as a fallback.
  */
 
 import config from '../config.js';
 import { createLogger } from './logger.js';
+import { ExternalProviderError } from './errors.js';
 
 const logger = createLogger({ component: 'mailer' });
 
+export function createResendMailer({
+  apiKey,
+  fromEmail,
+  fromName = 'SyncExc',
+  fetchImpl = globalThis.fetch,
+}) {
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('A fetch implementation is required for Resend email delivery');
+  }
+
+  const defaultFrom = `${fromName} <${fromEmail}>`;
+
+  return {
+    async send({ to, subject, html, text, attachments, from }) {
+      const payload = {
+        from: from || defaultFrom,
+        to: Array.isArray(to) ? to : [to],
+        subject,
+        ...(html ? { html } : {}),
+        ...(text ? { text } : {}),
+        ...(attachments?.length
+          ? {
+              attachments: attachments.map((attachment) => ({
+                ...(attachment.filename ? { filename: attachment.filename } : {}),
+                ...(attachment.content
+                  ? {
+                      content: Buffer.isBuffer(attachment.content)
+                        ? attachment.content.toString('base64')
+                        : attachment.content,
+                    }
+                  : {}),
+                ...(attachment.path ? { path: attachment.path } : {}),
+                ...(attachment.contentType ? { content_type: attachment.contentType } : {}),
+                ...(attachment.contentId ? { content_id: attachment.contentId } : {}),
+              })),
+            }
+          : {}),
+      };
+      const response = await fetchImpl('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      let responseBody;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = null;
+      }
+
+      if (!response.ok || !responseBody?.id) {
+        logger.error(
+          { providerStatus: response.status, hasResponseId: Boolean(responseBody?.id) },
+          'Resend email delivery failed',
+        );
+        throw new ExternalProviderError('Email delivery failed. Please try again later.', {
+          provider: 'resend',
+          status: 502,
+          retryable: response.status >= 500,
+          details: { providerStatus: response.status },
+        });
+      }
+
+      logger.debug({ messageId: responseBody.id }, 'Email sent through Resend');
+      return { messageId: responseBody.id, accepted: payload.to, rejected: [] };
+    },
+
+    async verify() {
+      return { ok: Boolean(apiKey), provider: 'resend' };
+    },
+
+    close() {},
+  };
+}
+
 export async function initMailer() {
+  if (config.resend.enabled) {
+    logger.info('Resend email provider configured');
+    return createResendMailer({
+      apiKey: config.resend.apiKey,
+      fromEmail: config.resend.fromEmail,
+      fromName: config.resend.fromName,
+    });
+  }
+
   if (!config.smtp.enabled) {
-    logger.warn('SMTP not configured; emails will be logged, not sent');
+    logger.warn('No email provider configured; emails will be logged, not sent');
 
     return {
       async send({ to, subject, html, text, attachments }) {
@@ -23,7 +111,7 @@ export async function initMailer() {
         return { suppressed: true };
       },
       async verify() {
-        return { ok: false, reason: 'smtp_not_configured' };
+        return { ok: false, reason: 'email_provider_not_configured' };
       },
     };
   }

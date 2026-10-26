@@ -53,7 +53,7 @@ after(async () => {
 
 test('register creates a user with hashed password', async () => {
   const email = uniqueEmail('reg');
-  const user = await identityService.register({
+  const { user } = await identityService.register({
     email,
     password: 'TestPassword123!',
     username: `user_${Date.now()}`,
@@ -70,7 +70,7 @@ test('register creates a user with hashed password', async () => {
 
 test('login returns session for active verified user', async () => {
   const email = uniqueEmail('login');
-  const registered = await identityService.register({
+  const { user: registered } = await identityService.register({
     email,
     password: 'TestPassword123!',
     username: `user_${Date.now()}_2`,

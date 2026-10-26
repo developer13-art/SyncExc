@@ -50,7 +50,7 @@ export function createIdentityController({ service }) {
 
     async register(req, res) {
       const { ip, userAgent } = clientContext(req);
-      const user = await service.register(
+      const result = await service.register(
         {
           email: req.body.email,
           password: req.body.password,
@@ -68,7 +68,8 @@ export function createIdentityController({ service }) {
       );
 
       return created(res, {
-        user: serializeUser(user),
+        user: serializeUser(result.user),
+        verificationEmailSent: Boolean(result.verificationEmailSent),
         next: 'verify_email',
       });
     },

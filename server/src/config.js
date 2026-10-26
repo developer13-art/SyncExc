@@ -72,6 +72,8 @@ const envSchema = Joi.object({
   SMTP_PASSWORD: Joi.string().allow('').optional(),
   SMTP_FROM_NAME: Joi.string().default('SyncExc'),
   SMTP_FROM_EMAIL: Joi.string().email().default('noreply@syncexc.com'),
+  RESEND_API_KEY: Joi.string().allow('').optional(),
+  RESEND_FROM_EMAIL: Joi.string().email().default('noreply@noreply.syncexc.com'),
 
   // IMAP
   IMAP_HOST: Joi.string().allow('').optional(),
@@ -306,6 +308,13 @@ const config = {
     fromName: env.SMTP_FROM_NAME,
     fromEmail: env.SMTP_FROM_EMAIL,
     enabled: Boolean(env.SMTP_HOST && env.SMTP_USER),
+  },
+
+  resend: {
+    apiKey: env.RESEND_API_KEY || undefined,
+    fromEmail: env.RESEND_FROM_EMAIL,
+    fromName: env.SMTP_FROM_NAME,
+    enabled: Boolean(env.RESEND_API_KEY),
   },
 
   imap: {
