@@ -95,12 +95,6 @@ export default function PublishSignal() {
       navigate(ROUTES.app.trader.signalHistory);
     },
   });
-  const autoPublishMutation = useMutation({
-    mutationFn: (autoPublishTrades) =>
-      marketplaceApi.updateProvider(provider.id, { autoPublishTrades }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: profileKey(activeWorkspaceId) }),
-  });
-
   const updateField = (field) => (event) => {
     setForm((current) => ({ ...current, [field]: event.target.value }));
   };
@@ -185,24 +179,12 @@ export default function PublishSignal() {
 
       <Card>
         <CardContent className="flex flex-col gap-2 p-4 pt-4">
-          <label className="flex items-start gap-3 text-sm font-medium text-foreground">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={Boolean(provider.autoPublishTrades)}
-              disabled={autoPublishMutation.isPending}
-              onChange={(event) => autoPublishMutation.mutate(event.target.checked)}
-            />
-            Automatically publish SyncExc terminal fills
-          </label>
-          <p className="pl-6 text-xs text-muted-foreground">
-            Only filled orders placed through this Trader workspace are captured. External exchange-app activity is not connected yet; take-profit and stop-loss orders are not inferred.
+          <p className="text-sm font-medium text-foreground">
+            Confirmed SyncExc trades publish automatically
           </p>
-          {autoPublishMutation.isError ? (
-            <p className="pl-6 text-xs text-destructive" role="alert">
-              {getErrorMessage(autoPublishMutation.error)}
-            </p>
-          ) : null}
+          <p className="text-xs text-muted-foreground">
+            Confirmed fills routed through SyncExc are shared with subscribers when this Trader profile is public and approved. Trade size and account details are not included in the marketplace signal.
+          </p>
         </CardContent>
       </Card>
 

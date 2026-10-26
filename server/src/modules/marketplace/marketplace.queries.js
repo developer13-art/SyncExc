@@ -62,8 +62,7 @@ export function createMarketplaceQueries({ db }) {
           orders.average_fill_price,
           orders.created_at,
           provider.id AS provider_id,
-          provider.user_id,
-          provider.auto_publish_trades
+          provider.user_id
         FROM trading_orders orders
         JOIN marketplace_provider_profiles provider
           ON provider.workspace_id = orders.workspace_id
@@ -74,7 +73,6 @@ export function createMarketplaceQueries({ db }) {
             FROM marketplace_trader_signal_executions signal_execution
             WHERE signal_execution.order_id = orders.id
           )
-          AND provider.auto_publish_trades = true
           AND provider.visibility = 'public'
           AND provider.moderation_state = 'approved'
         `,

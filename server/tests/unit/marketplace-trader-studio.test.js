@@ -1079,7 +1079,7 @@ describe('Trader Studio API', () => {
     }]);
   });
 
-  it('publishes an opted-in terminal fill once as a limit signal', async () => {
+  it('publishes a confirmed terminal fill once as a limit signal', async () => {
     const handlers = new Map();
     let publishedSignal;
     createMarketplaceListeners({
@@ -1129,6 +1129,25 @@ describe('Trader Studio API', () => {
     assert.equal(publishedSignal.entry, '60000');
     assert.equal(publishedSignal.direction, 'long');
     assert.equal(publishedSignal.sourceOrderId, 'order-1');
+  });
+
+  it('auto-publication is enabled for every public, approved provider', async () => {
+    let queryText;
+    const queries = createMarketplaceQueries({
+      db: {
+        async query(query) {
+          queryText = query;
+          return { rows: [] };
+        },
+      },
+    });
+
+    await queries.findOrderForAutoPublication('order-1');
+
+    assert.match(queryText, /orders\.status = 'filled'/);
+    assert.match(queryText, /provider\.visibility = 'public'/);
+    assert.match(queryText, /provider\.moderation_state = 'approved'/);
+    assert.doesNotMatch(queryText, /auto_publish_trades/);
   });
 
   it('requires signal access before returning comments', async () => {
