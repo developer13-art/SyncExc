@@ -9,7 +9,16 @@
  */
 
 import { NotFoundError } from '../../lib/errors.js';
-import { ORDER_STATUS } from '@syncexc/shared';
+import { compareDecimals, ORDER_STATUS } from '@syncexc/shared';
+
+const VALID_ORDER_STATUSES = new Set(Object.values(ORDER_STATUS));
+const TERMINAL_ORDER_STATUSES = new Set([
+  ORDER_STATUS.FILLED,
+  ORDER_STATUS.REJECTED,
+  ORDER_STATUS.FAILED,
+  ORDER_STATUS.CANCELED,
+  ORDER_STATUS.EXPIRED,
+]);
 
 export function createExecutionService({ db, queries, events, realtime, logger }) {
   /**
@@ -20,13 +29,17 @@ export function createExecutionService({ db, queries, events, realtime, logger }
   async function handleExecutionUpdate({ connectionId, update }) {
     const {
       exchangeOrderId,
+      clientOrderId,
       status,
       filledQuantity: reportedFilledQuantity,
       remainingQuantity,
       averageFillPrice: reportedAverageFillPrice,
       fills = [],
     } = update;
-    if (!exchangeOrderId) return;
+    if (!exchangeOrderId && !clientOrderId) {
+      logger.warn({ status }, 'Ignoring exchange order update without an order identifier');
+      return { applied: false };
+    }
     const normalizeOptionalNumeric = (value) =>
       typeof value === 'string' && value.trim() === '' ? null : value;
     const fillQuantityFromTrades = Array.isArray(fills)
@@ -43,25 +56,92 @@ export function createExecutionService({ db, queries, events, realtime, logger }
         : null);
 
     const result = await db.query(
-      `SELECT * FROM trading_orders WHERE connection_id = $1 AND exchange_order_id = $2 LIMIT 1`,
-      [connectionId, exchangeOrderId]
+      `SELECT *
+       FROM trading_orders
+       WHERE connection_id = $1
+         AND (
+           ($2::text IS NOT NULL AND exchange_order_id = $2)
+           OR ($3::text IS NOT NULL AND client_order_id = $3)
+         )
+       ORDER BY CASE WHEN exchange_order_id = $2 THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [connectionId, exchangeOrderId || null, clientOrderId || null]
     );
     if (result.rows.length === 0) return;
     const order = result.rows[0];
+    if (
+      (order.exchange_order_id && exchangeOrderId && order.exchange_order_id !== exchangeOrderId) ||
+      (order.client_order_id && clientOrderId && order.client_order_id !== clientOrderId)
+    ) {
+      logger.warn(
+        {
+          orderId: order.id,
+          expectedExchangeOrderId: order.exchange_order_id,
+          actualExchangeOrderId: exchangeOrderId,
+          expectedClientOrderId: order.client_order_id,
+          actualClientOrderId: clientOrderId,
+        },
+        'Ignoring exchange update with mismatched order identity',
+      );
+      return { applied: false };
+    }
 
     const previousStatus = order.status;
-    let newStatus = status || order.status;
+    const normalizedStatus = String(status || order.status).toLowerCase()
+      .replace('cancelled', ORDER_STATUS.CANCELED);
+    if (!VALID_ORDER_STATUSES.has(normalizedStatus)) {
+      logger.warn(
+        { orderId: order.id, exchangeOrderId, clientOrderId, status },
+        'Ignoring unrecognized exchange order status',
+      );
+      return { applied: false };
+    }
+    let newStatus = normalizedStatus;
+    if (
+      previousStatus === ORDER_STATUS.FILLED &&
+      normalizedStatus !== ORDER_STATUS.FILLED
+    ) {
+      newStatus = ORDER_STATUS.FILLED;
+    } else if (
+      TERMINAL_ORDER_STATUSES.has(previousStatus) &&
+      normalizedStatus !== previousStatus &&
+      normalizedStatus !== ORDER_STATUS.FILLED
+    ) {
+      newStatus = previousStatus;
+    } else if (
+      previousStatus === ORDER_STATUS.PARTIALLY_FILLED &&
+      [ORDER_STATUS.PENDING_SUBMISSION, ORDER_STATUS.SUBMITTED, ORDER_STATUS.ACKNOWLEDGED]
+        .includes(normalizedStatus)
+    ) {
+      newStatus = ORDER_STATUS.PARTIALLY_FILLED;
+    }
+
+    let effectiveFilledQuantity = filledQuantity ?? order.filled_quantity;
+    if (
+      effectiveFilledQuantity != null &&
+      order.filled_quantity != null &&
+      compareDecimals(String(effectiveFilledQuantity), String(order.filled_quantity)) < 0
+    ) {
+      effectiveFilledQuantity = order.filled_quantity;
+    }
+    const quantityDidNotAdvance = effectiveFilledQuantity != null &&
+      order.filled_quantity != null &&
+      compareDecimals(String(effectiveFilledQuantity), String(order.filled_quantity)) <= 0;
+    const effectiveAverageFillPrice = quantityDidNotAdvance
+      ? order.average_fill_price ?? averageFillPrice
+      : averageFillPrice ?? order.average_fill_price;
+
     if ([ORDER_STATUS.FILLED, ORDER_STATUS.PARTIALLY_FILLED].includes(newStatus)) {
-      const fillPrice = Number(averageFillPrice);
+      const fillPrice = Number(effectiveAverageFillPrice);
       if (
-        !exchangeOrderId ||
+        !(exchangeOrderId || order.exchange_order_id) ||
         !Number.isFinite(fillPrice) ||
         fillPrice <= 0 ||
-        !Number.isFinite(Number(filledQuantity)) ||
-        Number(filledQuantity) <= 0
+        !Number.isFinite(Number(effectiveFilledQuantity)) ||
+        Number(effectiveFilledQuantity) <= 0
       ) {
         logger.warn(
-          { orderId: order.id, exchangeOrderId, status: newStatus },
+          { orderId: order.id, exchangeOrderId, clientOrderId, status: newStatus },
           'Ignoring unverified fill status without a valid order ID and fill price',
         );
         return { applied: false };
@@ -70,11 +150,23 @@ export function createExecutionService({ db, queries, events, realtime, logger }
 
     await db.tx(async (tx) => {
       await queries.updateOrder(order.id, {
+        exchangeOrderId: exchangeOrderId || order.exchange_order_id,
         status: newStatus,
-        filledQuantity: filledQuantity ?? order.filled_quantity,
+        filledQuantity: effectiveFilledQuantity,
         remainingQuantity: remainingQuantity ?? order.remaining_quantity,
-        averageFillPrice: averageFillPrice ?? order.average_fill_price,
+        averageFillPrice: effectiveAverageFillPrice,
         rejectionReason: update.errorMessage || update.rejectionReason || null,
+        metadata: newStatus === ORDER_STATUS.REJECTED || newStatus === ORDER_STATUS.FAILED
+          ? {
+              ...(order.metadata || {}),
+              ...(update.errorCode || update.code
+                ? { providerErrorCode: String(update.errorCode || update.code) }
+                : {}),
+              ...(update.errorMessage || update.rejectionReason
+                ? { lastError: update.errorMessage || update.rejectionReason }
+                : {}),
+            }
+          : undefined,
       });
 
       if (previousStatus !== newStatus) {
@@ -134,9 +226,9 @@ export function createExecutionService({ db, queries, events, realtime, logger }
           'execution.order_filled',
           {
             orderId: order.id,
-            exchangeOrderId,
-            filledQuantity: filledQuantity ?? order.filled_quantity,
-            averageFillPrice,
+            exchangeOrderId: exchangeOrderId || order.exchange_order_id,
+            filledQuantity: effectiveFilledQuantity,
+            averageFillPrice: effectiveAverageFillPrice,
           },
           {
             workspaceId: order.workspace_id,
@@ -150,9 +242,9 @@ export function createExecutionService({ db, queries, events, realtime, logger }
           'execution.order_partially_filled',
           {
             orderId: order.id,
-            exchangeOrderId,
-            filledQuantity: filledQuantity ?? order.filled_quantity,
-            averageFillPrice,
+            exchangeOrderId: exchangeOrderId || order.exchange_order_id,
+            filledQuantity: effectiveFilledQuantity,
+            averageFillPrice: effectiveAverageFillPrice,
           },
           {
             workspaceId: order.workspace_id,
@@ -160,13 +252,16 @@ export function createExecutionService({ db, queries, events, realtime, logger }
             resourceId: order.id,
           },
         );
-      } else if (previousStatus !== newStatus && newStatus === ORDER_STATUS.REJECTED) {
+      } else if (
+        previousStatus !== newStatus &&
+        [ORDER_STATUS.REJECTED, ORDER_STATUS.FAILED].includes(newStatus)
+      ) {
         await events.publish(
           tx,
           'execution.order_rejected',
           {
             orderId: order.id,
-            exchangeOrderId,
+            exchangeOrderId: exchangeOrderId || order.exchange_order_id,
             errorCode: update.errorCode || update.code || null,
             errorMessage: update.errorMessage || update.rejectionReason || null,
           },
@@ -187,7 +282,7 @@ export function createExecutionService({ db, queries, events, realtime, logger }
         {
           orderId: order.id,
           status: newStatus,
-          filledQuantity,
+          filledQuantity: effectiveFilledQuantity,
           remainingQuantity,
           averageFillPrice,
         },

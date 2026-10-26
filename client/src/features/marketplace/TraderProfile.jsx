@@ -21,23 +21,9 @@ import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { apiConfig } from '../../config/api.config.js';
 import { resolveProfileImageUrl } from '../../lib/profile-image-url.js';
-import {
-  TraderSignalExecutionReadiness,
-  useTraderSignalExecutionReadiness,
-} from '../trader/TraderSignalExecutionReadiness.jsx';
 
 const profileKey = (workspaceId) => ['marketplace', 'my-provider', workspaceId];
 const signalsKey = (workspaceId) => ['marketplace', 'my-signals', workspaceId];
-
-const EMPTY_SIGNAL = {
-  instrument: '',
-  marketType: 'spot',
-  direction: 'long',
-  orderType: 'market',
-  entry: '',
-  stopLoss: '',
-  takeProfit: '',
-};
 
 export default function TraderProfile() {
   const dispatch = useDispatch();
@@ -45,8 +31,6 @@ export default function TraderProfile() {
   const queryClient = useQueryClient();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const [activeTab, setActiveTab] = useState('overview');
-  const [signalForm, setSignalForm] = useState(EMPTY_SIGNAL);
-  const [publishingSignal, setPublishingSignal] = useState(false);
   const [form, setForm] = useState({
     handle: '',
     displayName: '',
@@ -79,12 +63,6 @@ export default function TraderProfile() {
     enabled: activeWorkspace?.type === 'trader' && Boolean(provider),
   });
   const signals = signalsQuery.data?.items ?? [];
-  const executionReadiness = useTraderSignalExecutionReadiness({
-    marketType: signalForm.marketType,
-    direction: signalForm.direction,
-    orderType: signalForm.orderType,
-  });
-
   useEffect(() => {
     if (!provider) return;
     setForm({
@@ -199,85 +177,6 @@ export default function TraderProfile() {
     }
   };
 
-  const updateSignalField = (key) => (event) => {
-    setSignalForm((current) => ({ ...current, [key]: event.target.value }));
-  };
-
-  const publishSignal = async (event) => {
-    event.preventDefault();
-    if (!executionReadiness.canPublish) {
-      toast.error('Signal cannot be published until trader-account execution is ready');
-      return;
-    }
-    const entry = signalForm.entry.trim() ? Number(signalForm.entry) : null;
-    const stopLoss = Number(signalForm.stopLoss);
-    const takeProfit = Number(signalForm.takeProfit);
-    if (!signalForm.instrument.trim()) {
-      toast.error('Instrument is required');
-      return;
-    }
-    if (signalForm.orderType === 'limit' && (!Number.isFinite(entry) || entry <= 0)) {
-      toast.error('A limit order requires an entry price greater than zero');
-      return;
-    }
-    if (!Number.isFinite(stopLoss) || stopLoss <= 0) {
-      toast.error('Stop loss must be greater than zero');
-      return;
-    }
-    if (!Number.isFinite(takeProfit) || takeProfit <= 0) {
-      toast.error('Take profit must be greater than zero');
-      return;
-    }
-    if (
-      (signalForm.direction === 'long' && stopLoss >= takeProfit) ||
-      (signalForm.direction === 'short' && stopLoss <= takeProfit)
-    ) {
-      toast.error('Take profit must be above stop loss for a long, and below it for a short');
-      return;
-    }
-    if (
-      entry !== null &&
-      ((signalForm.direction === 'long' && !(stopLoss < entry && entry < takeProfit)) ||
-        (signalForm.direction === 'short' && !(stopLoss > entry && entry > takeProfit)))
-    ) {
-      toast.error('For a limit order, entry must be between stop loss and take profit');
-      return;
-    }
-    if (!provider || provider.visibility !== 'public' || provider.moderationState !== 'approved') {
-      toast.error('An approved, public profile is required to publish signals');
-      return;
-    }
-
-    const targets = signalForm.targets
-      .split(',')
-      .map((target) => target.trim())
-      .filter(Boolean);
-    if (targets.length > 10) {
-      toast.error('Add no more than 10 take-profit targets');
-      return;
-    }
-
-    setPublishingSignal(true);
-    try {
-      await marketplaceApi.publishSignal({
-        instrument: signalForm.instrument.trim().toUpperCase(),
-        marketType: signalForm.marketType,
-        direction: signalForm.direction,
-        orderType: signalForm.orderType,
-        ...(signalForm.orderType === 'limit' ? { entry: signalForm.entry.trim() } : {}),
-        stopLoss: signalForm.stopLoss.trim(),
-        targets: [signalForm.takeProfit.trim()],
-      });
-      setSignalForm(EMPTY_SIGNAL);
-      await queryClient.invalidateQueries({ queryKey: signalsKey(activeWorkspaceId) });
-      toast.success('Signal published to your marketplace subscribers');
-    } catch (err) {
-      toast.error('Signal could not be published', { description: getErrorMessage(err) });
-    } finally {
-      setPublishingSignal(false);
-    }
-  };
-
   const cancelSignal = async (signal) => {
     const reason = window.prompt('Why are you cancelling this signal?', 'Cancelled by trader');
     if (!reason?.trim()) return;
@@ -355,7 +254,7 @@ export default function TraderProfile() {
               Publish and manage signals
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Published signals are information for your marketplace subscribers. Publishing does not place trades or authorize copying.
+              Publishing first verifies and executes the trade on your selected exchange accounts. The marketplace signal is shared only after confirmed fills.
             </p>
           </header>
           {!provider ? (
@@ -384,67 +283,18 @@ export default function TraderProfile() {
               <CardHeader>
                 <CardTitle>New signal</CardTitle>
                 <CardDescription>
-                  Add the required trade details. Limit orders also require an entry price.
+                  Select your exchange accounts, set the trade size, and pass live pre-flight checks before publishing.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <form className="grid gap-4" onSubmit={publishSignal}>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <SignalField label="Instrument" id="signal-instrument" required>
-                      <Input id="signal-instrument" value={signalForm.instrument} onChange={updateSignalField('instrument')} placeholder="BTCUSDT" required />
-                    </SignalField>
-                    <SignalField label="Market" id="signal-market" required>
-                      <select id="signal-market" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={signalForm.marketType} onChange={updateSignalField('marketType')}>
-                        <option value="spot">Spot</option><option value="futures">Futures</option><option value="perpetual">Perpetual</option>
-                      </select>
-                    </SignalField>
-                    <SignalField label="Direction" id="signal-direction" required>
-                      <select id="signal-direction" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={signalForm.direction} onChange={updateSignalField('direction')}>
-                        <option value="long">Long</option><option value="short">Short</option>
-                      </select>
-                    </SignalField>
-                    <SignalField label="Order type" id="signal-order-type" required>
-                      <select id="signal-order-type" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={signalForm.orderType} onChange={updateSignalField('orderType')}>
-                        <option value="market">Market</option><option value="limit">Limit</option>
-                      </select>
-                    </SignalField>
-                    {signalForm.orderType === 'limit' ? (
-                      <SignalField label="Entry price" id="signal-entry">
-                        <Input id="signal-entry" type="number" min="0" step="any" value={signalForm.entry} onChange={updateSignalField('entry')} placeholder="Required for limit orders" required />
-                      </SignalField>
-                    ) : null}
-                    <SignalField label="Stop loss" id="signal-stop-loss" required>
-                      <Input id="signal-stop-loss" type="number" min="0" step="any" value={signalForm.stopLoss} onChange={updateSignalField('stopLoss')} placeholder="Required" required />
-                    </SignalField>
-                    <SignalField label="Take profit" id="signal-take-profit" required>
-                      <Input id="signal-take-profit" type="number" min="0" step="any" value={signalForm.takeProfit} onChange={updateSignalField('takeProfit')} placeholder="Required" required />
-                    </SignalField>
-                  </div>
-                  <TraderSignalExecutionReadiness
-                    readiness={executionReadiness}
-                    marketType={signalForm.marketType}
-                    direction={signalForm.direction}
-                    orderType={signalForm.orderType}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Manage the balance allocation in{' '}
-                    <Link className="text-primary underline" to={ROUTES.app.settings.trading}>
-                      Trading preferences
-                    </Link>
-                    .
-                  </p>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="max-w-xl text-xs text-muted-foreground">
-                      Publishing sends the signal to your subscribers and attempts the protected trader-account order described above.
-                    </p>
-                    <Button
-                      type="submit"
-                      disabled={publishingSignal || !executionReadiness.canPublish}
-                    >
-                      <Send className="h-4 w-4" /> {publishingSignal ? 'Publishing…' : 'Publish signal'}
-                    </Button>
-                  </div>
-                </form>
+              <CardContent className="flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-xl text-sm text-muted-foreground">
+                  All selected accounts must pass exchange, market, asset, protection, and balance checks. Your order size and account allocations remain private.
+                </p>
+                <Button asChild>
+                  <Link to={ROUTES.app.trader.publishSignal}>
+                    <Send className="h-4 w-4" /> Open signal publisher
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           ) : null}
@@ -665,7 +515,7 @@ function TraderOverview({ provider, signals, signalsLoading, onEditProfile, onMa
       <Card>
         <CardHeader><CardTitle>Keep trading controls separate</CardTitle></CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Marketplace signal publication shares information with subscribers only. It does not submit orders, enable copy trading, or bypass each user’s separate execution permissions and risk settings.
+          Publishing verifies and executes the trader’s selected personal exchange accounts before sharing a signal. Subscriber copy orders remain separate and respect each subscriber’s own account permissions, pre-trade validation, and risk settings.
         </CardContent>
       </Card>
     </div>
@@ -683,14 +533,5 @@ function OverviewCard({ icon: Icon, label, value }) {
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function SignalField({ label, id, required = false, children }) {
-  return (
-    <div className="grid min-w-0 gap-2">
-      <Label htmlFor={id}>{label}{required ? ' *' : ''}</Label>
-      {children}
-    </div>
   );
 }

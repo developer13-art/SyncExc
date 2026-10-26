@@ -77,3 +77,79 @@ test('Binance testnet credentials use the Spot testnet endpoint', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('exchange adapters look up uncertain orders by client order ID', async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url));
+    const address = new URL(String(url));
+    let body;
+    if (address.hostname.includes('binance')) {
+      body = {
+        orderId: 123,
+        clientOrderId: 'sync-client-order',
+        status: 'NEW',
+        executedQty: '0',
+        origQty: '1',
+        avgPrice: '',
+      };
+    } else if (address.hostname.includes('okx')) {
+      body = {
+        code: '0',
+        data: [{
+          ordId: 'okx-order',
+          clOrdId: 'sync-client-order',
+          state: 'live',
+          accFillSz: '0',
+          avgPx: '',
+        }],
+      };
+    } else {
+      body = {
+        code: '00000',
+        data: {
+          orderId: 'bitget-order',
+          clientOid: 'sync-client-order',
+          status: 'live',
+          baseVolume: '0',
+          priceAvg: '',
+        },
+      };
+    }
+    return { ok: true, text: async () => JSON.stringify(body) };
+  };
+
+  try {
+    const binance = createBinanceAdapter({ config: {}, logger: {} });
+    const okx = createOkxAdapter({ config: {}, logger: {} });
+    const bitget = createBitgetAdapter({ config: {}, logger: {} });
+    const credentials = {
+      apiKey: 'test-api-key',
+      apiSecret: 'test-api-secret',
+      passphrase: 'test-passphrase',
+      environment: 'testnet',
+      instrument: 'BTCUSDT',
+      clientOrderId: 'sync-client-order',
+    };
+
+    const binanceUpdate = await binance.fetchOrder({
+      ...credentials,
+      accountType: 'spot',
+    });
+    const okxUpdate = await okx.fetchOrder(credentials);
+    const bitgetUpdate = await bitget.fetchOrder({
+      ...credentials,
+      accountType: 'spot',
+    });
+
+    assert.equal(new URL(requestedUrls[0]).searchParams.get('origClientOrderId'), 'sync-client-order');
+    assert.equal(new URL(requestedUrls[1]).searchParams.get('clOrdId'), 'sync-client-order');
+    assert.equal(new URL(requestedUrls[2]).searchParams.get('clientOid'), 'sync-client-order');
+    assert.equal(binanceUpdate.clientOrderId, 'sync-client-order');
+    assert.equal(okxUpdate.clientOrderId, 'sync-client-order');
+    assert.equal(bitgetUpdate.clientOrderId, 'sync-client-order');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

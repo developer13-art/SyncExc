@@ -72,6 +72,8 @@ export default function PublishSignal() {
     refetchInterval: canRunPreflight ? 15_000 : false,
   });
   const selectedAccountsReady = canRunPreflight &&
+    !preflightQuery.isError &&
+    preflightQuery.isSuccess &&
     preflightQuery.data?.ready === true &&
     Array.isArray(preflightQuery.data?.accounts) &&
     preflightQuery.data.accounts.length === selectedAccountIds.length &&

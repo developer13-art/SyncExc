@@ -177,6 +177,7 @@ export function createBitgetAdapter({ config, logger }) {
       environment,
       instrument,
       exchangeOrderId,
+      clientOrderId,
     }) {
       const path =
         accountType === 'spot' ? '/api/v2/spot/trade/cancel-order' : '/api/v2/mix/order/cancel-order';
@@ -208,10 +209,19 @@ export function createBitgetAdapter({ config, logger }) {
       environment,
       instrument,
       exchangeOrderId,
+      clientOrderId,
     }) {
       const path =
         accountType === 'spot' ? '/api/v2/spot/trade/orderInfo' : '/api/v2/mix/order/detail';
-      const query = new URLSearchParams({ symbol: instrument, orderId: exchangeOrderId }).toString();
+      const orderIdentifier = exchangeOrderId
+        ? { orderId: exchangeOrderId }
+        : clientOrderId
+          ? { clientOid: clientOrderId }
+          : null;
+      if (!orderIdentifier) {
+        throw new Error('Bitget order lookup requires an exchange or client order ID');
+      }
+      const query = new URLSearchParams({ symbol: instrument, ...orderIdentifier }).toString();
       const fullPath = `${path}?${query}`;
       const headers = signedHeaders({
         apiKey,
@@ -232,6 +242,7 @@ export function createBitgetAdapter({ config, logger }) {
       if (!order) return null;
       return {
         exchangeOrderId: order.orderId,
+        clientOrderId: order.clientOid || null,
         status: this._mapStatus(order.status),
         filledQuantity: order.baseVolume || order.fillSize || '0',
         remainingQuantity: order.quoteVolume || null,

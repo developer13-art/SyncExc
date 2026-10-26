@@ -67,6 +67,7 @@ export function createOrderSubmissionService({
       triggerPrice,
       timeInForce,
       reduceOnly,
+      leverage,
       clientOrderId,
       idempotencyKey,
     } = params;
@@ -209,6 +210,22 @@ export function createOrderSubmissionService({
       }
     }
 
+    await validateAvailableBalance({
+      adapter,
+      credentials,
+      accountType: tradingAccount.account_type,
+      environment: connection.environment,
+      exchangeCode: connection.exchange_code,
+      instrument,
+      instrumentId,
+      marketType,
+      side,
+      quantity,
+      price,
+      reduceOnly,
+      leverage,
+    });
+
     // 4. Pre-trade risk evaluation
     const riskDecision = await risk.evaluation.evaluate({
       workspaceId,
@@ -223,6 +240,7 @@ export function createOrderSubmissionService({
         type,
         quantity,
         price,
+        leverage,
         stopLoss,
         takeProfit,
       },
@@ -265,6 +283,7 @@ export function createOrderSubmissionService({
             type,
             quantity,
             price,
+            leverage,
             stopLoss,
             takeProfit,
             triggerPrice,
@@ -329,7 +348,7 @@ export function createOrderSubmissionService({
         workspaceId,
         connectionId,
         accountId,
-        clientOrderId: clientOrderId || executionRequest.id,
+        clientOrderId: clientOrderId || normalizeClientOrderId(executionRequest.id),
         instrument: instrumentId,
         marketType,
         side,
@@ -681,6 +700,86 @@ export function createOrderSubmissionService({
     if (err.statusCode >= 500 && err.statusCode < 600) return true;
     if (err.statusCode === 408) return true;
     return false;
+  }
+
+  async function validateAvailableBalance({
+    adapter,
+    credentials,
+    accountType,
+    environment,
+    exchangeCode,
+    instrument,
+    instrumentId,
+    marketType,
+    side,
+    quantity,
+    price,
+    reduceOnly,
+    leverage,
+  }) {
+    if (reduceOnly) return;
+    if (typeof adapter.fetchAccountState !== 'function' &&
+      typeof adapter.fetchBalances !== 'function') {
+      throw new ConflictError(
+        'Exchange balance validation is unavailable; no order was submitted.',
+        'BALANCE_VALIDATION_UNAVAILABLE',
+      );
+    }
+
+    const accountState = typeof adapter.fetchAccountState === 'function'
+      ? await adapter.fetchAccountState({ ...credentials, accountType, environment })
+      : { balances: await adapter.fetchBalances({ ...credentials, accountType, environment }) };
+    const balances = Array.isArray(accountState?.balances) ? accountState.balances : [];
+    const normalizedMarketType = marketType === 'spot' ? 'spot' : 'futures';
+    const isSpotSell = normalizedMarketType === 'spot' && side === 'sell';
+    const requiredAsset = isSpotSell ? instrument.base_asset : instrument.quote_asset;
+    const balance = balances.find(
+      (item) => String(item.asset || '').toUpperCase() === String(requiredAsset || '').toUpperCase(),
+    );
+    const rawAvailableEquity = accountState?.availableEquity ?? accountState?.availableMargin;
+    let available = normalizedMarketType === 'futures' && rawAvailableEquity != null
+      ? Number(rawAvailableEquity)
+      : Number(balance?.free ?? balance?.available ?? balance?.availableBalance ?? 0);
+
+    let required;
+    if (isSpotSell) {
+      required = Number(quantity);
+    } else {
+      let referencePrice = Number(price);
+      if (!Number.isFinite(referencePrice) || referencePrice <= 0) {
+        const marketData = connections.marketData;
+        referencePrice = normalizedMarketType === 'spot'
+          ? Number(await marketData?.getSpotPrice?.({ exchangeCode, symbol: instrumentId }))
+          : Number((await marketData?.getMarketData?.({
+              exchangeCode,
+              symbol: instrumentId,
+              marketType: normalizedMarketType,
+              limit: 25,
+            }))?.overview?.lastPrice);
+      }
+      if (!Number.isFinite(referencePrice) || referencePrice <= 0) {
+        throw new ConflictError(
+          `A valid reference price is unavailable to verify ${requiredAsset} funds; no order was submitted.`,
+          'BALANCE_VALIDATION_PRICE_UNAVAILABLE',
+        );
+      }
+      required = Number(quantity) * referencePrice;
+      if (normalizedMarketType === 'futures') {
+        required /= Math.max(1, Number(leverage) || 1);
+      }
+    }
+
+    if (!Number.isFinite(available) || !Number.isFinite(required) || available < required) {
+      throw new ConflictError(
+        `Insufficient ${requiredAsset} balance: available ${Number.isFinite(available) ? available : 0}, required ${Number.isFinite(required) ? required : 'unknown'}.`,
+        'INSUFFICIENT_BALANCE',
+      );
+    }
+  }
+
+  function normalizeClientOrderId(value) {
+    const normalized = String(value || '').replaceAll('-', '');
+    return normalized.slice(0, 32) || null;
   }
 
   /**

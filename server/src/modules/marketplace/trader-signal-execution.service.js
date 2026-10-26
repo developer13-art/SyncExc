@@ -586,6 +586,7 @@ export function createTraderSignalExecutionService({
       side: signal.direction === 'long' ? 'buy' : 'sell',
       type: orderType,
       quantity: formattedQuantity,
+      leverage: signal.leverage,
       stopLoss,
       takeProfit,
       ...(orderType === 'limit' ? { price: orderPrice } : {}),

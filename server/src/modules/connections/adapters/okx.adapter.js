@@ -191,8 +191,22 @@ export function createOkxAdapter({ config, logger }) {
       return { status: 'canceled' };
     },
 
-    async fetchOrder({ apiKey, apiSecret, passphrase, environment, instrument, exchangeOrderId }) {
-      const query = new URLSearchParams({ instId: instrument, ordId: exchangeOrderId }).toString();
+    async fetchOrder({
+      apiKey,
+      apiSecret,
+      passphrase,
+      environment,
+      instrument,
+      exchangeOrderId,
+      clientOrderId,
+    }) {
+      const orderIdentifier = exchangeOrderId
+        ? { ordId: exchangeOrderId }
+        : clientOrderId
+          ? { clOrdId: clientOrderId }
+          : null;
+      if (!orderIdentifier) throw new Error('OKX order lookup requires an exchange or client order ID');
+      const query = new URLSearchParams({ instId: instrument, ...orderIdentifier }).toString();
       const path = `/api/v5/trade/order?${query}`;
       const headers = signedHeaders({
         apiKey,
@@ -215,6 +229,7 @@ export function createOkxAdapter({ config, logger }) {
 
       return {
         exchangeOrderId: order.ordId,
+        clientOrderId: order.clOrdId || null,
         status: this._mapStatus(order.state),
         filledQuantity: order.accFillSz,
         remainingQuantity: null,

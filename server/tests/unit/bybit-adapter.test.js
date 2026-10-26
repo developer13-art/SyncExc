@@ -556,6 +556,7 @@ test('fetches Bybit order status from the matching market category', async () =>
               cumExecQty: '1',
               leavesQty: '0',
               avgPrice: '100',
+              orderLinkId: 'client-order-id',
             }],
           },
         }),
@@ -573,9 +574,19 @@ test('fetches Bybit order status from the matching market category', async () =>
     };
     await adapter.fetchOrder({ ...credentials, marketType: 'spot' });
     await adapter.fetchOrder({ ...credentials, marketType: 'futures' });
+    const recovered = await adapter.fetchOrder({
+      apiKey: credentials.apiKey,
+      apiSecret: credentials.apiSecret,
+      environment: credentials.environment,
+      instrument: credentials.instrument,
+      clientOrderId: 'client-order-id',
+      marketType: 'spot',
+    });
 
     assert.equal(new URL(requestedUrls[0]).searchParams.get('category'), 'spot');
     assert.equal(new URL(requestedUrls[1]).searchParams.get('category'), 'linear');
+    assert.equal(new URL(requestedUrls[2]).searchParams.get('orderLinkId'), 'client-order-id');
+    assert.equal(recovered.clientOrderId, 'client-order-id');
   } finally {
     globalThis.fetch = originalFetch;
   }

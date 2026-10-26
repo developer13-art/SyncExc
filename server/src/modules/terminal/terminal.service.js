@@ -436,17 +436,33 @@ export function createTerminalService({
             instrument: order.instrument,
             marketType: order.market_type,
             exchangeOrderId: order.exchange_order_id,
+            clientOrderId: order.client_order_id,
           });
-          if (!update?.exchangeOrderId || update.exchangeOrderId !== order.exchange_order_id) {
+          const matchesExchangeOrderId = order.exchange_order_id
+            ? update?.exchangeOrderId === order.exchange_order_id
+            : Boolean(update?.exchangeOrderId);
+          const matchesClientOrderId = !update?.clientOrderId ||
+            update.clientOrderId === order.client_order_id;
+          if (!matchesExchangeOrderId || !matchesClientOrderId) {
             logger.warn(
-              { orderId: order.id, exchangeCode: connection.exchange_code },
-              'Periodic reconciliation received a mismatched exchange order ID',
+              {
+                orderId: order.id,
+                exchangeCode: connection.exchange_code,
+                expectedExchangeOrderId: order.exchange_order_id,
+                actualExchangeOrderId: update?.exchangeOrderId,
+                expectedClientOrderId: order.client_order_id,
+                actualClientOrderId: update?.clientOrderId,
+              },
+              'Periodic reconciliation received a mismatched exchange order identity',
             );
             continue;
           }
           await executionService.handleExecutionUpdate({
             connectionId: connection.id,
-            update,
+            update: {
+              ...update,
+              clientOrderId: update.clientOrderId || order.client_order_id,
+            },
           });
         } catch (err) {
           logger.warn(

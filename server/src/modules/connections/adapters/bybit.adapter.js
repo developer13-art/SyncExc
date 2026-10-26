@@ -349,14 +349,17 @@ export function createBybitAdapter({ config, logger }) {
       environment,
       instrument,
       exchangeOrderId,
+      clientOrderId,
       marketType,
       includeFills = false,
     }) {
       const params = {
         category: marketType === 'spot' ? 'spot' : 'linear',
         symbol: instrument,
-        orderId: exchangeOrderId,
       };
+      if (exchangeOrderId) params.orderId = exchangeOrderId;
+      else if (clientOrderId) params.orderLinkId = clientOrderId;
+      else throw new Error('Bybit order lookup requires an exchange or client order ID');
       const query = new URLSearchParams(params).toString();
       const headers = signedHeaders({ apiKey, apiSecret, params: query });
       const realtimeData = await this.fetchSigned({
@@ -384,6 +387,7 @@ export function createBybitAdapter({ config, logger }) {
       if (!order) return null;
       const update = {
         exchangeOrderId: order.orderId,
+        clientOrderId: order.orderLinkId || null,
         status: this._mapStatus(order.orderStatus),
         filledQuantity: order.cumExecQty,
         remainingQuantity: order.leavesQty,

@@ -89,15 +89,26 @@ export function createTerminalQueries({ db }) {
         `
         SELECT *
         FROM trading_orders
-        WHERE exchange_order_id IS NOT NULL
-          AND status = ANY($1::text[])
+        WHERE (
+            exchange_order_id IS NOT NULL
+            AND status = ANY($1::text[])
+          )
+          OR (
+            exchange_order_id IS NULL
+            AND client_order_id IS NOT NULL
+            AND status = ANY($2::text[])
+          )
         ORDER BY updated_at ASC
-        LIMIT $2
+        LIMIT $3
         `,
         [[
           'submitted',
           'acknowledged',
           'partially_filled',
+          'unknown',
+          'reconciliation_required',
+        ], [
+          'pending_submission',
           'unknown',
           'reconciliation_required',
         ], limit],

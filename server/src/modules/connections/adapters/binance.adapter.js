@@ -214,13 +214,29 @@ export function createBinanceAdapter({ config, logger }) {
       return { status: this._mapOrderStatus(data.status) };
     },
 
-    async fetchOrder({ apiKey, apiSecret, accountType, environment, instrument, exchangeOrderId }) {
+    async fetchOrder({
+      apiKey,
+      apiSecret,
+      accountType,
+      environment,
+      instrument,
+      exchangeOrderId,
+      clientOrderId,
+    }) {
       const path = accountType === 'usd_m_futures' ? '/fapi/v1/order' : '/api/v3/order';
       const baseUrl = getBaseUrl(accountType, environment);
+      const orderIdentifier = exchangeOrderId
+        ? { orderId: exchangeOrderId }
+        : clientOrderId
+          ? { origClientOrderId: clientOrderId }
+          : null;
+      if (!orderIdentifier) {
+        throw new Error('Binance order lookup requires an exchange or client order ID');
+      }
       const url = buildSignedUrl(
         baseUrl,
         path,
-        { symbol: instrument, orderId: exchangeOrderId },
+        { symbol: instrument, ...orderIdentifier },
         apiKey,
         apiSecret
       );
@@ -231,6 +247,7 @@ export function createBinanceAdapter({ config, logger }) {
       });
       return {
         exchangeOrderId: String(data.orderId),
+        clientOrderId: data.clientOrderId || null,
         status: this._mapOrderStatus(data.status),
         filledQuantity: data.executedQty,
         remainingQuantity: String(Number(data.origQty) - Number(data.executedQty)),
