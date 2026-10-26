@@ -536,6 +536,8 @@ export function createBybitAdapter({ config, logger }) {
 
     _mapStatus(status) {
       const map = {
+        Untriggered: 'submitted',
+        Triggered: 'submitted',
         New: 'submitted',
         PartiallyFilled: 'partially_filled',
         Filled: 'filled',

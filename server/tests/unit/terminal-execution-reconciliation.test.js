@@ -8,6 +8,8 @@ function createService(orderOverrides = {}) {
   const order = {
     id: 'local-order-1',
     workspace_id: 'workspace-1',
+    instrument: 'BTCUSDT',
+    side: 'buy',
     status: 'submitted',
     filled_quantity: '0',
     average_fill_price: null,
@@ -83,7 +85,11 @@ test('resolves uncertain orders by client ID and attaches the confirmed exchange
   assert.deepEqual(result, { applied: true });
   assert.equal(updates[0].fields.exchangeOrderId, 'exchange-order-recovered');
   assert.equal(updates[0].fields.status, 'filled');
-  assert.equal(published.some((event) => event.eventType === 'execution.order_filled'), true);
+  const fillEvent = published.find((event) => event.eventType === 'execution.order_filled');
+  assert.ok(fillEvent);
+  assert.equal(fillEvent.payload.instrument, 'BTCUSDT');
+  assert.equal(fillEvent.payload.side, 'buy');
+  assert.equal(fillEvent.payload.averageFillPrice, '125');
 });
 
 test('does not downgrade a filled order after a stale exchange response', async () => {

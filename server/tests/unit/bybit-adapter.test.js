@@ -592,6 +592,13 @@ test('fetches Bybit order status from the matching market category', async () =>
   }
 });
 
+test('keeps Bybit conditional orders pending until their trigger executes', () => {
+  const adapter = createBybitAdapter({ config: {}, logger: {} });
+
+  assert.equal(adapter._mapStatus('Untriggered'), 'submitted');
+  assert.equal(adapter._mapStatus('Triggered'), 'submitted');
+});
+
 test('falls back to Bybit order history when a closed order is absent from realtime orders', async () => {
   const originalFetch = globalThis.fetch;
   const requestedUrls = [];

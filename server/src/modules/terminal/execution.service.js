@@ -208,8 +208,12 @@ export function createExecutionService({ db, queries, events, realtime, logger }
             {
               orderId: order.id,
               fillId: inserted.id,
+              instrument: order.instrument,
+              side: order.side,
               quantity: inserted.quantity,
               price: inserted.price,
+              filledQuantity: effectiveFilledQuantity,
+              averageFillPrice: effectiveAverageFillPrice,
             },
             {
               workspaceId: order.workspace_id,
@@ -227,6 +231,8 @@ export function createExecutionService({ db, queries, events, realtime, logger }
           {
             orderId: order.id,
             exchangeOrderId: exchangeOrderId || order.exchange_order_id,
+            instrument: order.instrument,
+            side: order.side,
             filledQuantity: effectiveFilledQuantity,
             averageFillPrice: effectiveAverageFillPrice,
           },
@@ -243,6 +249,8 @@ export function createExecutionService({ db, queries, events, realtime, logger }
           {
             orderId: order.id,
             exchangeOrderId: exchangeOrderId || order.exchange_order_id,
+            instrument: order.instrument,
+            side: order.side,
             filledQuantity: effectiveFilledQuantity,
             averageFillPrice: effectiveAverageFillPrice,
           },

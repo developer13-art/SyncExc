@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createTemplateService } from '../../src/modules/notifications/templates.js';
 import { createEventRegistry } from '../../src/modules/notifications/event-registry.service.js';
+import { createOrchestratorService } from '../../src/modules/notifications/orchestrator.service.js';
 
 test('default notification event types persist within a database transaction', async () => {
   const calls = [];
@@ -75,4 +76,57 @@ test('default rejected-order template can be registered and rendered', async () 
   assert.equal(rendered.title, 'Order rejected: 0GUSDT');
   assert.match(rendered.body, /buy order on 0GUSDT was rejected/);
   assert.match(rendered.body, /Bybit rejected the API key/);
+});
+
+test('order acknowledgements and partial fills do not use the filled notification', async () => {
+  const templateKeys = [];
+  const service = createOrchestratorService({
+    db: { async tx(callback) { return callback({}); } },
+    queries: {
+      async insertNotificationEvent() { return { id: 'event-1' }; },
+    },
+    eventRegistry: {
+      get: () => ({ category: 'trading', defaultPriority: 'normal', defaultChannels: ['in_app'] }),
+    },
+    templateService: {
+      async getTemplate({ key }) {
+        templateKeys.push(key);
+        return { version: {} };
+      },
+      render() { return { title: 'status', body: 'status', action: null }; },
+    },
+    preferencesService: {
+      async shouldDeliver() { return { allowed: true }; },
+    },
+    deduplicationService: {
+      buildKey: ({ eventType }) => eventType,
+      async check() { return { duplicate: false }; },
+      async record() {},
+    },
+    priorityService: { determine: () => 'normal' },
+    notificationService: {
+      async create() { return { id: 'notification-1' }; },
+    },
+    deliveryService: { async enqueue() {} },
+    escalationService: {},
+    usageService: { async record() {} },
+    events: { async emitNow() {} },
+    logger: { debug() {}, warn() {}, error() {} },
+  });
+
+  await service.processEvent({
+    eventType: 'execution.order_acknowledged',
+    payload: { orderId: 'order-1' },
+    actorId: 'user-1',
+  });
+  await service.processEvent({
+    eventType: 'execution.order_partially_filled',
+    payload: { orderId: 'order-2' },
+    actorId: 'user-1',
+  });
+
+  assert.deepEqual(templateKeys, [
+    'trading.order_acknowledged',
+    'trading.order_partially_filled',
+  ]);
 });

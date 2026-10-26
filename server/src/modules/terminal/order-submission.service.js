@@ -527,6 +527,8 @@ export function createOrderSubmissionService({
               {
                 orderId: order.id,
                 exchangeOrderId: adapterResponse.exchangeOrderId,
+                instrument: instrumentId,
+                side,
                 status: ORDER_STATUS.SUBMITTED,
               },
               {
