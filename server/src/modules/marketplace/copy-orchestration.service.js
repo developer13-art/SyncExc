@@ -298,6 +298,36 @@ export function createCopyOrchestrationService({
         });
       }
     }
+
+    if (config.execution_mode === 'authorized_automation') {
+      const records = await queries.listCopyRecordsForSignalConfiguration(
+        signal.id,
+        config.id,
+        config.workspace_id,
+      );
+      for (const record of records) {
+        if (
+          record.subscriber_user_id !== config.subscriber_user_id ||
+          record.outcome !== COPY_PROCESSING_OUTCOME.HELD ||
+          record.intent_status !== 'awaiting_confirmation'
+        ) {
+          continue;
+        }
+
+        try {
+          await confirmRecord({
+            userId: config.subscriber_user_id,
+            workspaceId: config.workspace_id,
+            recordId: record.id,
+          });
+        } catch (err) {
+          logger.error(
+            { err, configId: config.id, signalId: signal.id, recordId: record.id },
+            'Authorized copy order submission failed',
+          );
+        }
+      }
+    }
   }
 
   async function processDestination({ config, signal, destination, manualCopy = false }) {

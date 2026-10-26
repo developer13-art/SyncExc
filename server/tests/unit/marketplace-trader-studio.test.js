@@ -127,6 +127,144 @@ describe('Trader Studio API', () => {
     assert.equal(record.intent_status, 'submitted');
   });
 
+  it('submits authorized automatic copies after validating each destination', async () => {
+    const signal = {
+      id: 'signal-auto',
+      provider_id: 'provider-1',
+      status: 'published',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'market',
+      entry: '100',
+    };
+    const config = {
+      id: 'config-auto',
+      workspace_id: 'workspace-1',
+      subscriber_user_id: 'subscriber-1',
+      provider_id: 'provider-1',
+      current_version: 1,
+      execution_mode: 'authorized_automation',
+      sizing_rule: { type: 'fixed_amount', config: { amount: '0.01' } },
+      market_types: ['spot'],
+    };
+    const destination = {
+      id: 'destination-1',
+      account_id: 'account-1',
+      connection_id: 'connection-1',
+      exchange_code: 'binance',
+      connection_status: 'active',
+      account_status: 'active',
+      account_type: 'spot',
+      environment: 'testnet',
+    };
+    const records = new Map();
+    const intents = new Map();
+    let submittedOrder;
+    const queries = {
+      async findPublishedSignalById() { return signal; },
+      async listActiveCopyConfigurationsForProvider() { return [config]; },
+      async listCopyDestinations() { return [destination]; },
+      async insertCopyProcessingRecord(_tx, data) {
+        const record = {
+          id: 'record-auto',
+          ...data,
+          subscriber_user_id: data.subscriberUserId,
+        };
+        records.set(record.id, record);
+        return record;
+      },
+      async insertCopyDestinationResult() {},
+      async insertCopyExecutionIntent(_tx, data) {
+        const intent = {
+          id: 'intent-auto',
+          intent_payload: data.payload,
+          status: 'awaiting_confirmation',
+        };
+        intents.set(intent.id, intent);
+        return intent;
+      },
+      async updateCopyProcessingRecord(recordId, changes) {
+        Object.assign(records.get(recordId), changes);
+      },
+      async listCopyRecordsForSignalConfiguration() {
+        return [...records.values()].map((record) => {
+          const intent = intents.get(record.executionIntentId);
+          return {
+            ...record,
+            intent_status: intent?.status,
+            intent_payload: intent?.intent_payload,
+          };
+        });
+      },
+      async findCopyRecordForConfirmation(recordId) {
+        const record = records.get(recordId);
+        const intent = intents.get(record.executionIntentId);
+        return {
+          ...record,
+          workspace_id: config.workspace_id,
+          copy_intent_id: intent.id,
+          intent_status: intent.status,
+          intent_payload: intent.intent_payload,
+        };
+      },
+      async claimCopyExecutionIntent(intentId, expectedStatus) {
+        const intent = intents.get(intentId);
+        if (intent.status !== expectedStatus) return null;
+        intent.status = 'confirming';
+        return intent;
+      },
+      async updateCopyExecutionIntent(intentId, { status }) {
+        intents.get(intentId).status = status;
+      },
+      async updateCopyDestinationResult() {},
+    };
+    const service = createCopyOrchestrationService({
+      db: { async tx(callback) { return callback({}); } },
+      queries,
+      connections: {
+        async getAdapter() {
+          return {
+            capabilities: { hasSpot: true, supportedOrderTypes: ['market'] },
+            async fetchAccountState() {
+              return { status: 'healthy', balances: [{ asset: 'USDT', free: '1000' }] };
+            },
+          };
+        },
+        async getInstrument() {
+          return {
+            trading_status: 'active',
+            market_type: 'spot',
+            base_asset: 'BTC',
+            quote_asset: 'USDT',
+          };
+        },
+        async loadCredentials() { return {}; },
+      },
+      risk: {
+        evaluation: {
+          async evaluate() { return { outcome: 'allowed', id: 'risk-1' }; },
+        },
+      },
+      terminal: {
+        async submitOrder(order) {
+          submittedOrder = order;
+          return { order: { id: 'order-auto', status: 'submitted' } };
+        },
+      },
+      events: { async publish() {} },
+      logger: { error() {}, warn() {}, info() {} },
+    });
+
+    await service.processPublishedSignal({ publishedSignalId: signal.id });
+
+    assert.equal(submittedOrder.accountId, destination.account_id);
+    assert.equal(submittedOrder.instrumentId, signal.instrument);
+    assert.equal(submittedOrder.quantity, '0.01');
+    assert.equal(records.get('record-auto').outcome, 'pending');
+    assert.equal(intents.get('intent-auto').status, 'submitted');
+  });
+
   it('submits a user-confirmed signal to the active selected copy configuration', async () => {
     const record = {
       id: 'record-1',
