@@ -2,6 +2,10 @@
  * SyncExc Server — Terminal queries
  */
 
+function normalizeOptionalNumeric(value) {
+  return typeof value === 'string' && value.trim() === '' ? null : value;
+}
+
 export function createTerminalQueries({ db }) {
   return {
     /* =========================================================================
@@ -89,9 +93,9 @@ export function createTerminalQueries({ db }) {
           orderId,
           fields.exchangeOrderId ?? null,
           fields.status ?? null,
-          fields.filledQuantity ?? null,
-          fields.remainingQuantity ?? null,
-          fields.averageFillPrice ?? null,
+          normalizeOptionalNumeric(fields.filledQuantity) ?? null,
+          normalizeOptionalNumeric(fields.remainingQuantity) ?? null,
+          normalizeOptionalNumeric(fields.averageFillPrice) ?? null,
           fields.rejectionReason ?? null,
           fields.metadata ? JSON.stringify(fields.metadata) : null,
         ]

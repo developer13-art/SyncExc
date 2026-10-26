@@ -41,3 +41,32 @@ test('filters trade history by the selected account', async () => {
   assert.equal(result.rows.length, 1);
   assert.equal(result.nextCursor, null);
 });
+
+test('treats blank optional order numerics as absent', async () => {
+  let queryParams;
+  const queries = createTerminalQueries({
+    db: {
+      async query(_text, params) {
+        queryParams = params;
+        return { rows: [] };
+      },
+    },
+  });
+
+  await queries.updateOrder('order-id', {
+    filledQuantity: ' ',
+    remainingQuantity: '',
+    averageFillPrice: '\t',
+  });
+
+  assert.deepEqual(queryParams, [
+    'order-id',
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
+});
