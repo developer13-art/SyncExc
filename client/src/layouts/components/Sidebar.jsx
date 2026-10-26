@@ -16,6 +16,7 @@ import {
 } from '../../app/slices/uiSlice.js';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher.jsx';
 import * as Icons from '../../assets/icons/index.js';
+import { BrandLogo } from '../../components/brand/BrandLogo.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 
 function IconByName({ name, className }) {
@@ -90,9 +91,7 @@ export function Sidebar() {
       )}
     >
       <div className={cn('flex items-center gap-2 px-3 py-4', collapsed && 'md:justify-center')}>
-        <div className="client-brand-mark flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <Icons.LogoIcon className="h-5 w-5" />
-        </div>
+        <BrandLogo className="client-brand-mark h-8 w-8" />
         <span className={cn('flex-1 text-base font-semibold tracking-tight text-foreground', collapsed && 'md:hidden')}>
           SyncExc
         </span>
