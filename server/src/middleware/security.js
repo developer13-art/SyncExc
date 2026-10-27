@@ -15,16 +15,34 @@ import cors from 'cors';
 import compression from 'compression';
 import config from '../config.js';
 
+
 export function getAllowedOrigins(serverConfig) {
   const origins = new Set(serverConfig.server.corsOrigins);
-  if (!serverConfig.isProduction) return origins;
 
-  const domain = serverConfig.app.domain.toLowerCase().replace(/\.$/, '');
-  for (const hostname of [domain, `www.${domain}`, `app.${domain}`, `admin.${domain}`]) {
-    origins.add(`https://${hostname}`);
+  if (serverConfig.isProduction) {
+    const domain = serverConfig.app.domain
+      .toLowerCase()
+      .replace(/\.$/, '');
+
+    for (const hostname of [
+      domain,
+      `www.${domain}`,
+      `app.${domain}`,
+      `admin.${domain}`,
+    ]) {
+      origins.add(`https://${hostname}`);
+    }
   }
+
+  // Capacitor Android WebView origins.
+  // These are exact origins, not wildcard permissions.
+  origins.add('https://localhost');
+  origins.add('http://localhost');
+  origins.add('capacitor://localhost');
+
   return origins;
 }
+
 
 export function applySecurityMiddleware(app) {
   /* -------------------------------------------------------------------------
