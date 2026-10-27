@@ -31,7 +31,7 @@ export function Topbar({ className }) {
         >
           <Menu className="h-4 w-4" />
         </button>
-        <Breadcrumbs className="min-w-0" />
+        <Breadcrumbs className="hidden min-w-0 md:flex" />
       </div>
 
       <div className="flex items-center gap-2">
