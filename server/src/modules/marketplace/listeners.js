@@ -62,6 +62,39 @@ export function createMarketplaceListeners({
     { name: 'marketplace:auto-publish-terminal-fills' }
   );
 
+  events.subscribe(
+    'execution.position_opened',
+    async (envelope) => {
+      const position = envelope.payload || {};
+      if (!position.positionSnapshotId || !position.workspaceId) return;
+      try {
+        const provider = await queries.findProviderForPositionPublication(position.workspaceId);
+        if (!provider) return;
+        if (await queries.findPublishedSignalBySourcePositionSnapshotId(position.positionSnapshotId)) {
+          return;
+        }
+        await publicationService.publishSignal({
+          userId: provider.user_id,
+          workspaceId: provider.workspace_id,
+          providerId: provider.id,
+          instrument: position.instrument,
+          marketType: position.marketType,
+          direction: position.direction,
+          entryTime: envelope.createdAt || new Date(),
+          entry: String(position.entry),
+          leverage: position.leverage,
+          sourcePositionSnapshotId: position.positionSnapshotId,
+        });
+      } catch (err) {
+        logger.error(
+          { err, positionSnapshotId: position.positionSnapshotId },
+          'Automatic marketplace publication failed for exchange position',
+        );
+      }
+    },
+    { name: 'marketplace:auto-publish-exchange-positions' },
+  );
+
   for (const [eventType, status] of [
     ['execution.order_rejected', 'rejected'],
     ['execution.order_canceled', 'canceled'],

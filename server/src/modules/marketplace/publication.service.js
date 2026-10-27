@@ -24,6 +24,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
     disclosures,
     sourceEvidence,
     sourceOrderId,
+    sourcePositionSnapshotId,
     executionAccountIds,
     executionAmount,
     beforePublish,
@@ -47,14 +48,15 @@ export function createPublicationService({ db, queries, events, disclosureServic
     if (!['market', 'limit'].includes(orderType)) {
       throw new ValidationError('orderType must be market or limit');
     }
-    if (!sourceOrderId && beforePublish && (!Array.isArray(executionAccountIds) ||
+    const exchangeSourced = sourceOrderId || sourcePositionSnapshotId;
+    if (!exchangeSourced && beforePublish && (!Array.isArray(executionAccountIds) ||
       executionAccountIds.length === 0 ||
       !Number.isFinite(Number(executionAmount)) ||
       Number(executionAmount) <= 0)) {
       throw new ValidationError('Select at least one trader account and enter a positive execution amount');
     }
 
-    if (!sourceOrderId) {
+    if (!exchangeSourced) {
       const stop = Number(stopLoss);
       const takeProfits = Array.isArray(targets) ? targets.map(Number) : [];
       if (!Number.isFinite(stop) || stop <= 0) {
@@ -102,6 +104,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
         leverage,
         validUntil,
         sourceOrderId,
+        sourcePositionSnapshotId,
         metadata: { sourceEvidence, disclosures },
       });
 
@@ -134,7 +137,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
 
     // Manual publications execute the trader's selected accounts before their
     // signal becomes visible to subscribers or enters the copy-trading fanout.
-    if (beforePublish && !sourceOrderId) {
+    if (beforePublish && !exchangeSourced) {
       await beforePublish({
         signal,
         accountIds: executionAccountIds,

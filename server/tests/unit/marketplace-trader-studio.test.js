@@ -1269,6 +1269,64 @@ describe('Trader Studio API', () => {
     assert.equal(publishedSignal.sourceOrderId, 'order-1');
   });
 
+  it('publishes newly synced exchange positions for public approved trader profiles', async () => {
+    const handlers = new Map();
+    let publishedSignal;
+    createMarketplaceListeners({
+      events: {
+        subscribe(topic, handler) {
+          handlers.set(topic, handler);
+        },
+      },
+      copyOrchestration: { async processPublishedSignal() {} },
+      traderSignalExecution: {
+        async executePublishedSignal() {},
+        async handleOrderFilled() {},
+        async handleOrderStatus() {},
+        async handleClosedTrade() {},
+      },
+      publicationService: {
+        async publishSignal(signal) {
+          publishedSignal = signal;
+        },
+      },
+      queries: {
+        async findProviderForPositionPublication(workspaceId) {
+          assert.equal(workspaceId, 'workspace-1');
+          return {
+            id: 'provider-1',
+            user_id: 'user-1',
+            workspace_id: workspaceId,
+          };
+        },
+        async findPublishedSignalBySourcePositionSnapshotId(snapshotId) {
+          assert.equal(snapshotId, 'position-snapshot-1');
+          return null;
+        },
+      },
+      logger: { debug() {}, error() {} },
+    });
+
+    await handlers.get('execution.position_opened')({
+      payload: {
+        positionSnapshotId: 'position-snapshot-1',
+        workspaceId: 'workspace-1',
+        instrument: 'BTCUSDT',
+        marketType: 'futures',
+        direction: 'long',
+        entry: '60000',
+        leverage: '5',
+      },
+    });
+
+    assert.equal(publishedSignal.userId, 'user-1');
+    assert.equal(publishedSignal.providerId, 'provider-1');
+    assert.equal(publishedSignal.instrument, 'BTCUSDT');
+    assert.equal(publishedSignal.direction, 'long');
+    assert.equal(publishedSignal.orderType, undefined);
+    assert.equal(publishedSignal.sourcePositionSnapshotId, 'position-snapshot-1');
+  });
+
   it('auto-publication is enabled for every public, approved provider', async () => {
     let queryText;
     const queries = createMarketplaceQueries({

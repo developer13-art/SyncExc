@@ -49,6 +49,28 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findPublishedSignalBySourcePositionSnapshotId(snapshotId) {
+      const result = await db.query(
+        `SELECT id FROM marketplace_published_signals WHERE source_position_snapshot_id = $1`,
+        [snapshotId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findProviderForPositionPublication(workspaceId) {
+      const result = await db.query(
+        `
+        SELECT id, user_id, workspace_id
+        FROM marketplace_provider_profiles
+        WHERE workspace_id = $1
+          AND visibility = 'public'
+          AND moderation_state = 'approved'
+        `,
+        [workspaceId]
+      );
+      return result.rows[0] || null;
+    },
+
     async findOrderForAutoPublication(orderId) {
       const result = await db.query(
         `
@@ -513,9 +535,9 @@ export function createMarketplaceQueries({ db }) {
         INSERT INTO marketplace_published_signals (
           provider_id, source_signal_id, instrument, market_type, direction, order_type,
           entry_time, entry, entry_range, stop_loss, leverage, status, valid_until, metadata,
-          source_order_id
+          source_order_id, source_position_snapshot_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8, $9, $10, $11, 'draft', $12, $13, $14)
+        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8, $9, $10, $11, 'draft', $12, $13, $14, $15)
         RETURNING *
         `,
         [
@@ -533,6 +555,7 @@ export function createMarketplaceQueries({ db }) {
           data.validUntil || null,
           data.metadata ? JSON.stringify(data.metadata) : null,
           data.sourceOrderId || null,
+          data.sourcePositionSnapshotId || null,
         ]
       );
       return result.rows[0];

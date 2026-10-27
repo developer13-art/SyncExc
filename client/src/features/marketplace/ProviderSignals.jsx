@@ -79,7 +79,9 @@ export function ProviderSignals({ providerId, onSubscribe }) {
         queryClient.invalidateQueries({ queryKey: queryKeys.marketplace.providerSignals(providerId, {}) }),
       ]);
       const statuses = result.results?.map((item) => item.status) ?? [];
-      const submittedCount = statuses.filter((status) => status === 'submitted').length;
+      const successfulCount = statuses.filter((status) =>
+        ['submitted', 'filled', 'partially_filled'].includes(status)
+      ).length;
       const skippedResults = result.results?.filter((item) =>
         ['skipped', 'failed', 'reconciliation_required'].includes(item.status)
       ) ?? [];
@@ -87,15 +89,15 @@ export function ProviderSignals({ providerId, onSubscribe }) {
         toast.warning('Additional terminal risk approval is required', {
           description: 'Review and approve the exchange execution in Copy Results.',
         });
-      } else if (submittedCount > 0 && skippedResults.length > 0) {
+      } else if (successfulCount > 0 && skippedResults.length > 0) {
         const firstSkip = skippedResults[0];
         toast.warning('Copy order submitted with skipped destinations', {
-          description: `${submittedCount} submitted, ${skippedResults.length} skipped. ${
+          description: `${successfulCount} orders accepted, ${skippedResults.length} skipped. ${
             firstSkip.errorMessage || firstSkip.skipReason?.replace(/_/g, ' ') || ''
           }`.trim(),
         });
-      } else if (statuses.includes('submitted')) {
-        toast.success('Copy order submitted to the selected exchange account');
+      } else if (successfulCount > 0) {
+        toast.success('Copy order accepted by the selected exchange account');
       } else if (statuses.includes('reconciliation_required')) {
         toast.error('The order outcome needs reconciliation', {
           description: 'Check Copy Results before attempting another order.',

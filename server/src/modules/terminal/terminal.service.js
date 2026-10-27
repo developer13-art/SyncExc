@@ -180,6 +180,11 @@ export function createTerminalService({
 
     await db.tx(async (tx) => {
       for (const position of positions) {
+        const previous = await queries.findPositionForSync(tx, {
+          accountId,
+          instrument: position.instrument,
+          side: position.side,
+        });
         const stored = await queries.upsertPosition(tx, {
           workspaceId,
           connectionId: connection.id,
@@ -195,13 +200,40 @@ export function createTerminalService({
           marginMode: position.marginMode,
           positionMode: position.positionMode,
         });
-        await queries.insertPositionSnapshot(tx, {
+        const snapshot = await queries.insertPositionSnapshot(tx, {
           positionId: stored.id,
           quantity: position.quantity,
           entryPrice: position.entryPrice,
           markPrice: position.markPrice,
           unrealizedPnl: position.unrealizedPnl,
         });
+        if (
+          Number(position.quantity) > 0 &&
+          Number(previous?.quantity || 0) <= 0 &&
+          ['long', 'short'].includes(position.side)
+        ) {
+          await events.publish(
+            tx,
+            'execution.position_opened',
+            {
+              positionSnapshotId: snapshot.id,
+              workspaceId,
+              accountId,
+              instrument: position.instrument,
+              marketType: position.marketType || (
+                account.account_type === 'spot' ? 'spot' : 'futures'
+              ),
+              direction: position.side,
+              entry: String(position.entryPrice),
+              leverage: position.leverage || null,
+            },
+            {
+              workspaceId,
+              resourceType: 'trading_position',
+              resourceId: stored.id,
+            },
+          );
+        }
       }
       await queries.clearMissingPositions(tx, accountId, positions);
 

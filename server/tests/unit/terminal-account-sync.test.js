@@ -29,8 +29,12 @@ test('syncs exchange positions and refreshes active order status', async () => {
       calls.push(['upsertPosition', position]);
       return { id: 'position-id' };
     },
+    async findPositionForSync() {
+      return null;
+    },
     async insertPositionSnapshot(_tx, snapshot) {
       calls.push(['insertPositionSnapshot', snapshot]);
+      return { id: 'position-snapshot-id' };
     },
     async clearMissingPositions(_tx, accountId, positions) {
       calls.push(['clearMissingPositions', accountId, positions]);
@@ -98,7 +102,11 @@ test('syncs exchange positions and refreshes active order status', async () => {
     connections,
     executionService,
     marketData: {},
-    events: {},
+    events: {
+      async publish(_tx, eventName, payload) {
+        calls.push(['event', eventName, payload]);
+      },
+    },
     audit: {},
     logger: {},
   });
@@ -112,5 +120,12 @@ test('syncs exchange positions and refreshes active order status', async () => {
   assert.ok(calls.some(([name, value]) => name === 'upsertPosition' && value.quantity === '100'));
   assert.ok(calls.some(([name, value]) => name === 'fetchAccountState' && value.accountType === 'unified'));
   assert.ok(calls.some(([name]) => name === 'clearMissingPositions'));
+  assert.ok(calls.some(([name, eventName, payload]) =>
+    name === 'event' &&
+    eventName === 'execution.position_opened' &&
+    payload.positionSnapshotId === 'position-snapshot-id' &&
+    payload.direction === 'long' &&
+    payload.marketType === 'futures'
+  ));
   assert.ok(calls.some(([name, value]) => name === 'handleExecutionUpdate' && value.update.status === 'filled'));
 });

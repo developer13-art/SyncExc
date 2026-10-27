@@ -590,6 +590,19 @@ export function createTerminalQueries({ db }) {
       return result.rows[0];
     },
 
+    async findPositionForSync(client, { accountId, instrument, side }) {
+      const result = await client.query(
+        `
+        SELECT id, quantity
+        FROM trading_positions
+        WHERE account_id = $1 AND instrument = $2 AND side = $3
+        FOR UPDATE
+        `,
+        [accountId, instrument, side],
+      );
+      return result.rows[0] || null;
+    },
+
     async clearMissingPositions(client, accountId, positions) {
       const instruments = positions.map((position) => position.instrument);
       const sides = positions.map((position) => position.side);
@@ -632,15 +645,17 @@ export function createTerminalQueries({ db }) {
     },
 
     async insertPositionSnapshot(client, data) {
-      await client.query(
+      const result = await client.query(
         `
         INSERT INTO trading_position_snapshots (
           position_id, quantity, entry_price, mark_price, unrealized_pnl
         )
         VALUES ($1, $2, $3, $4, $5)
+        RETURNING id
         `,
         [data.positionId, data.quantity, data.entryPrice, data.markPrice, data.unrealizedPnl]
       );
+      return result.rows[0];
     },
 
     /* =========================================================================
