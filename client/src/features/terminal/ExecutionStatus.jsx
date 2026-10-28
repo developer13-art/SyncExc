@@ -24,7 +24,6 @@ const STATUS_MAP = {
   completed: { label: 'Completed', variant: 'success' },
   rejected: { label: 'Rejected', variant: 'destructive' },
   failed: { label: 'Failed', variant: 'destructive' },
-  failed: { label: 'Failed', variant: 'destructive' },
   cancelled: { label: 'Cancelled', variant: 'muted' },
   reconciliation_required: { label: 'Reconciliation', variant: 'destructive' },
 };
