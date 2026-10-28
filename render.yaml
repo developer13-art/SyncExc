@@ -6,9 +6,10 @@ services:
     name: syncexc-server
     runtime: node
     plan: free
+    region: frankfurt # EU region avoids Binance/Bybit US restrictions
     rootDir: .
     buildCommand: npm install && npm run build --workspace=server
-    startCommand: npm run migrate --workspace=server && npm run start --workspace=server
+    startCommand: npm run start --workspace=server
     envVars:
       - key: NODE_VERSION
         value: 22.11.0
@@ -17,21 +18,19 @@ services:
       - key: PORT
         value: 10000
       
-      # URLs & CORS
+      # URLs & CORS (Update these if you change your custom domains)
       - key: APP_URL
-        value: https://syncexc.com
+        value: https://app.syncexc.com
       - key: ADMIN_URL
         value: https://admin.syncexc.com
       - key: API_URL
         value: https://syncexc-server.onrender.com
-      - key: SERVER_BASE_URL
-        value: https://syncexc-server.onrender.com
-      - key: SERVER_CORS_ORIGINS
-        value: https://syncexc.com,https://www.syncexc.com,https://app.syncexc.com,https://admin.syncexc.com
+      - key: CORS_ORIGINS
+        value: https://app.syncexc.com,https://admin.syncexc.com
 
       # Database (Neon)
       - key: DATABASE_URL
-        sync: false # Render will prompt you for this
+        sync: false # You will paste your Neon connection string
       - key: DATABASE_SSL
         value: "true"
       - key: DATABASE_POOL_MIN
@@ -49,6 +48,10 @@ services:
       - key: HASH_PEPPER
         generateValue: true
 
+      # Email (Resend API - replaces SMTP)
+      - key: RESEND_API_KEY
+        sync: false # You will paste your re_xxxxx key
+
       # AI Providers
       - key: AI_PROVIDER
         value: openai
@@ -57,18 +60,6 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: GOOGLE_AI_API_KEY
-        sync: false
-
-      # Email (Note: Render blocks SMTP. Use HTTP API like SendGrid/Mailgun)
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_SECURE
-        value: "false"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
         sync: false
 
       # Payments
@@ -82,7 +73,132 @@ services:
         sync: false
 
       # Signal Sources
-      # Telegram user login requires app credentials from https://my.telegram.org.
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+
+      # Observability & Features
+      - key: LOG_LEVEL
+        value: info
+      - key: REDIS_ENABLED
+        value: "false"
+
+  # ==============================================================================
+  # 2. Client (User Frontend Static Site)
+  # ==============================================================================
+  - type: web
+    runtime: static
+    name: syncexc-client
+    rootDir: .
+    buildCommand: npm install && npm run build --workspace=client
+    staticPublishPath: ./client/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://syncexc-server.onrender.com/api/v1
+      - key: VITE_WS_URL
+        value: wss://syncexc-server.onrender.com/ws
+      - key: VITE_APP_ENV
+        value: production
+
+  # ==============================================================================
+  # 3. Admin (Administrator Console Static Site)
+  # ==============================================================================
+  - type: web
+    runtime: static
+    name: syncexc-admin
+    rootDir: .
+    buildCommand: npm install && npm run build --workspace=admin
+    staticPublishPath: ./admin/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://syncexc-server.onrender.com/api/v1
+      - key: VITE_WS_URL
+        value: wss://syncexc-server.onrender.com/ws
+      - key: VITE_APP_ENV
+        value: productionservices:
+  # ==============================================================================
+  # 1. Backend API (Node.js Web Service)
+  # ==============================================================================
+  - type: web
+    name: syncexc-server
+    runtime: node
+    plan: free
+    region: frankfurt # EU region avoids Binance/Bybit US restrictions
+    rootDir: .
+    buildCommand: npm install && npm run build --workspace=server
+    startCommand: npm run start --workspace=server
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      
+      # URLs & CORS (Update these if you change your custom domains)
+      - key: APP_URL
+        value: https://app.syncexc.com
+      - key: ADMIN_URL
+        value: https://admin.syncexc.com
+      - key: API_URL
+        value: https://syncexc-server.onrender.com
+      - key: CORS_ORIGINS
+        value: https://app.syncexc.com,https://admin.syncexc.com
+
+      # Database (Neon)
+      - key: DATABASE_URL
+        sync: false # You will paste your Neon connection string
+      - key: DATABASE_SSL
+        value: "true"
+      - key: DATABASE_POOL_MIN
+        value: "2"
+      - key: DATABASE_POOL_MAX
+        value: "20"
+
+      # Security Keys (Render will auto-generate strong values)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: HASH_PEPPER
+        generateValue: true
+
+      # Email (Resend API - replaces SMTP)
+      - key: RESEND_API_KEY
+        sync: false # You will paste your re_xxxxx key
+
+      # AI Providers
+      - key: AI_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_AI_API_KEY
+        sync: false
+
+      # Payments
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: FLUTTERWAVE_SECRET_KEY
+        sync: false
+
+      # Signal Sources
       - key: TELEGRAM_API_ID
         sync: false
       - key: TELEGRAM_API_HASH
