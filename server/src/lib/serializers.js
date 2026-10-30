@@ -617,6 +617,55 @@ export function serializeProviderPlan(row) {
   };
 }
 
+export function serializeStrategy(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+    providerName: row.provider_name || null,
+    providerHandle: row.provider_handle || null,
+    providerAvatarUrl: row.provider_avatar_url || null,
+    workflowId: row.workflow_id,
+    workflowVersionId: row.workflow_version_id,
+    providerPlanId: row.provider_plan_id || null,
+    planName: row.plan_name || null,
+    pricing: row.plan_pricing || null,
+    name: row.name,
+    category: row.category,
+    description: row.description,
+    supportedMarkets: row.supported_markets || [],
+    status: row.status,
+    followerCount: Number(row.follower_count || 0),
+    deploymentCount: Number(row.deployment_count || 0),
+    viewerIsFollowing: Boolean(row.viewer_is_following),
+    followedAt: row.followed_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function serializeStrategyDeployment(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    strategyId: row.strategy_id,
+    strategyName: row.strategy_name || null,
+    workspaceId: row.workspace_id,
+    workflowId: row.workflow_id,
+    connectionId: row.connection_id,
+    exchangeCode: row.exchange_code || null,
+    accountId: row.account_id,
+    accountName: row.account_name || null,
+    allocationAmount: Number(row.allocation_amount),
+    maxOpenPositions: Number(row.max_open_positions),
+    maxDrawdownPercent: Number(row.max_drawdown_percent),
+    dailyLossLimitPercent: Number(row.daily_loss_limit_percent),
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export function serializeProviderSubscriber(row) {
   if (!row) return null;
   return {

@@ -4,6 +4,237 @@
 
 export function createMarketplaceQueries({ db }) {
   return {
+    async listStrategies({ search, category, market, userId, providerId, limit = 50 }) {
+      const params = [];
+      const conditions = [
+        `strategy.status = 'published'`,
+        `provider.visibility = 'public'`,
+        `provider.moderation_state = 'approved'`,
+      ];
+      if (search) {
+        params.push(`%${search}%`);
+        conditions.push(`(strategy.name ILIKE $${params.length} OR strategy.description ILIKE $${params.length} OR provider.display_name ILIKE $${params.length})`);
+      }
+      if (category) {
+        params.push(category);
+        conditions.push(`strategy.category = $${params.length}`);
+      }
+      if (market) {
+        params.push(market);
+        conditions.push(`$${params.length} = ANY(strategy.supported_markets)`);
+      }
+      if (providerId) {
+        params.push(providerId);
+        conditions.push(`strategy.provider_id = $${params.length}`);
+      }
+      params.push(userId || null);
+      const userParam = params.length;
+      params.push(limit);
+      const result = await db.query(
+        `
+        SELECT strategy.*,
+               provider.handle AS provider_handle,
+               provider.display_name AS provider_name,
+               provider.avatar_url AS provider_avatar_url,
+               plan.name AS plan_name,
+               plan.pricing AS plan_pricing,
+               (SELECT count(*)::int FROM marketplace_strategy_follows follow
+                WHERE follow.strategy_id = strategy.id) AS follower_count,
+               (SELECT count(*)::int FROM marketplace_strategy_deployments deployment
+                WHERE deployment.strategy_id = strategy.id AND deployment.status IN ('active', 'paused')) AS deployment_count,
+               CASE WHEN $${userParam}::uuid IS NULL THEN false ELSE EXISTS (
+                 SELECT 1 FROM marketplace_strategy_follows follow
+                 WHERE follow.strategy_id = strategy.id AND follow.user_id = $${userParam}
+               ) END AS viewer_is_following
+        FROM marketplace_strategies strategy
+        JOIN marketplace_provider_profiles provider ON provider.id = strategy.provider_id
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = strategy.provider_plan_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY strategy.created_at DESC
+        LIMIT $${params.length}
+        `,
+        params,
+      );
+      return result.rows;
+    },
+
+    async findStrategyById(strategyId, userId = null) {
+      const result = await db.query(
+        `
+        SELECT strategy.*,
+               provider.handle AS provider_handle,
+               provider.display_name AS provider_name,
+               provider.avatar_url AS provider_avatar_url,
+               provider.biography AS provider_biography,
+               plan.name AS plan_name,
+               plan.pricing AS plan_pricing,
+               (SELECT count(*)::int FROM marketplace_strategy_follows follow
+                WHERE follow.strategy_id = strategy.id) AS follower_count,
+               (SELECT count(*)::int FROM marketplace_strategy_deployments deployment
+                WHERE deployment.strategy_id = strategy.id AND deployment.status IN ('active', 'paused')) AS deployment_count,
+               CASE WHEN $2::uuid IS NULL THEN false ELSE EXISTS (
+                 SELECT 1 FROM marketplace_strategy_follows follow
+                 WHERE follow.strategy_id = strategy.id AND follow.user_id = $2
+               ) END AS viewer_is_following
+        FROM marketplace_strategies strategy
+        JOIN marketplace_provider_profiles provider ON provider.id = strategy.provider_id
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = strategy.provider_plan_id
+        WHERE strategy.id = $1
+        `,
+        [strategyId, userId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async listStrategiesForProvider(providerId) {
+      const result = await db.query(
+        `
+        SELECT strategy.*,
+               plan.name AS plan_name,
+               plan.pricing AS plan_pricing,
+               (SELECT count(*)::int FROM marketplace_strategy_follows follow
+                WHERE follow.strategy_id = strategy.id) AS follower_count,
+               (SELECT count(*)::int FROM marketplace_strategy_deployments deployment
+                WHERE deployment.strategy_id = strategy.id) AS deployment_count
+        FROM marketplace_strategies strategy
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = strategy.provider_plan_id
+        WHERE strategy.provider_id = $1
+        ORDER BY strategy.created_at DESC
+        `,
+        [providerId],
+      );
+      return result.rows;
+    },
+
+    async insertStrategy(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_strategies (
+          provider_id, workflow_id, workflow_version_id, provider_plan_id,
+          name, category, description, supported_markets, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING *
+        `,
+        [
+          data.providerId,
+          data.workflowId,
+          data.workflowVersionId,
+          data.providerPlanId || null,
+          data.name,
+          data.category,
+          data.description,
+          data.supportedMarkets,
+          data.status || 'published',
+        ],
+      );
+      return result.rows[0];
+    },
+
+    async updateStrategyStatus(strategyId, status) {
+      const result = await db.query(
+        `UPDATE marketplace_strategies SET status = $2, updated_at = now() WHERE id = $1 RETURNING *`,
+        [strategyId, status],
+      );
+      return result.rows[0] || null;
+    },
+
+    async followStrategy(strategyId, userId, workspaceId) {
+      const result = await db.query(
+        `
+        INSERT INTO marketplace_strategy_follows (strategy_id, user_id, workspace_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (strategy_id, user_id) DO NOTHING
+        RETURNING *
+        `,
+        [strategyId, userId, workspaceId || null],
+      );
+      return result.rows[0] || null;
+    },
+
+    async unfollowStrategy(strategyId, userId) {
+      const result = await db.query(
+        `DELETE FROM marketplace_strategy_follows WHERE strategy_id = $1 AND user_id = $2 RETURNING strategy_id`,
+        [strategyId, userId],
+      );
+      return result.rowCount > 0;
+    },
+
+    async listFollowedStrategies(userId, workspaceId) {
+      const result = await db.query(
+        `
+        SELECT strategy.*,
+               provider.handle AS provider_handle,
+               provider.display_name AS provider_name,
+               provider.avatar_url AS provider_avatar_url,
+               plan.name AS plan_name,
+               plan.pricing AS plan_pricing,
+               follow.created_at AS followed_at,
+               true AS viewer_is_following
+        FROM marketplace_strategy_follows follow
+        JOIN marketplace_strategies strategy ON strategy.id = follow.strategy_id
+        JOIN marketplace_provider_profiles provider ON provider.id = strategy.provider_id
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = strategy.provider_plan_id
+        WHERE follow.user_id = $1
+          AND ($2::uuid IS NULL OR follow.workspace_id IS NULL OR follow.workspace_id = $2)
+        ORDER BY follow.created_at DESC
+        `,
+        [userId, workspaceId || null],
+      );
+      return result.rows;
+    },
+
+    async insertStrategyDeploymentOrder(client, deploymentId, orderId) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_strategy_deployment_orders (deployment_id, order_id)
+        VALUES ($1, $2)
+        ON CONFLICT (deployment_id, order_id) DO NOTHING
+        RETURNING *
+        `,
+        [deploymentId, orderId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async findStrategyDeploymentByWorkflow(workflowId) {
+      const result = await db.query(
+        `
+        SELECT deployment.*, strategy.name AS strategy_name,
+               workflow.status AS workflow_status,
+               connection.exchange_code
+        FROM marketplace_strategy_deployments deployment
+        JOIN marketplace_strategies strategy ON strategy.id = deployment.strategy_id
+        JOIN automation_workflows workflow ON workflow.id = deployment.workflow_id
+        JOIN exchange_connections connection ON connection.id = deployment.connection_id
+        WHERE deployment.workflow_id = $1
+        LIMIT 1
+        `,
+        [workflowId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async listStrategyDeployments({ workspaceId, userId }) {
+      const result = await db.query(
+        `
+        SELECT deployment.*, strategy.name AS strategy_name,
+               workflow.status AS workflow_status,
+               connection.exchange_code,
+               account.account_type AS account_name
+        FROM marketplace_strategy_deployments deployment
+        JOIN marketplace_strategies strategy ON strategy.id = deployment.strategy_id
+        JOIN automation_workflows workflow ON workflow.id = deployment.workflow_id
+        JOIN exchange_connections connection ON connection.id = deployment.connection_id
+        JOIN exchange_accounts account ON account.id = deployment.account_id
+        WHERE deployment.workspace_id = $1 AND deployment.user_id = $2
+        ORDER BY deployment.created_at DESC
+        `,
+        [workspaceId, userId],
+      );
+      return result.rows;
+    },
+
     /* =========================================================================
      * PROVIDERS
      * ====================================================================== */

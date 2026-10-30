@@ -12,6 +12,8 @@ import {
   serializeMarketplaceSubscription,
   serializeCopyConfiguration,
   serializeCopyProcessingRecord,
+  serializeStrategy,
+  serializeStrategyDeployment,
 } from '../../lib/serializers.js';
 
 export function createMarketplaceController(services) {
@@ -28,6 +30,7 @@ export function createMarketplaceController(services) {
     signalDiscussionService,
     stripeMarketplaceService,
     traderSignalExecutionService,
+    strategyService,
   } = services;
 
   return {
@@ -71,6 +74,133 @@ export function createMarketplaceController(services) {
         providerId: provider.id,
       });
       return success(res, { ...serializeProvider(provider), viewerIsFollowing });
+    },
+
+    async listStrategies(req, res) {
+      const strategies = await strategyService.list({
+        userId: req.auth?.userId,
+        search: req.query.q || null,
+        category: req.query.category || null,
+        market: req.query.market || null,
+        limit: Number(req.query.limit) || 50,
+      });
+      return success(res, strategies.map(serializeStrategy));
+    },
+
+    async getStrategy(req, res) {
+      const strategy = await strategyService.get({
+        strategyId: req.params.strategyId,
+        userId: req.auth?.userId,
+      });
+      return success(res, serializeStrategy(strategy));
+    },
+
+    async listMyStrategies(req, res) {
+      const strategies = await strategyService.listMine({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, strategies.map(serializeStrategy));
+    },
+
+    async createMyStrategy(req, res) {
+      const strategy = await strategyService.create({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        workflowId: req.body.workflowId,
+        workflowVersionId: req.body.workflowVersionId,
+        providerPlanId: req.body.providerPlanId,
+        name: req.body.name,
+        category: req.body.category,
+        description: req.body.description,
+        supportedMarkets: req.body.supportedMarkets,
+      });
+      return created(res, serializeStrategy(strategy));
+    },
+
+    async updateMyStrategyStatus(req, res) {
+      const strategy = await strategyService.setStatus({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        strategyId: req.params.strategyId,
+        status: req.body.status,
+      });
+      return success(res, serializeStrategy(strategy));
+    },
+
+    async followStrategy(req, res) {
+      const strategy = await strategyService.follow({
+        userId: req.auth.userId,
+        workspaceId: req.workspace?.id,
+        strategyId: req.params.strategyId,
+      });
+      return success(res, serializeStrategy(strategy));
+    },
+
+    async unfollowStrategy(req, res) {
+      const result = await strategyService.unfollow({
+        userId: req.auth.userId,
+        strategyId: req.params.strategyId,
+      });
+      return success(res, result);
+    },
+
+    async listFollowedStrategies(req, res) {
+      const strategies = await strategyService.listFollows({
+        userId: req.auth.userId,
+        workspaceId: req.workspace?.id,
+      });
+      return success(res, strategies.map(serializeStrategy));
+    },
+
+    async createStrategyDeployment(req, res) {
+      const deployment = await strategyService.createDeployment({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        strategyId: req.params.strategyId,
+        connectionId: req.body.connectionId,
+        accountId: req.body.accountId,
+        allocationAmount: req.body.allocationAmount,
+        maxOpenPositions: req.body.maxOpenPositions,
+        maxDrawdownPercent: req.body.maxDrawdownPercent,
+        dailyLossLimitPercent: req.body.dailyLossLimitPercent,
+      });
+      return created(res, serializeStrategyDeployment(deployment));
+    },
+
+    async listMyStrategyDeployments(req, res) {
+      const deployments = await strategyService.listDeployments({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, deployments.map(serializeStrategyDeployment));
+    },
+
+    async activateStrategyDeployment(req, res) {
+      const deployment = await strategyService.activateDeployment({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        deploymentId: req.params.deploymentId,
+      });
+      return success(res, serializeStrategyDeployment(deployment));
+    },
+
+    async pauseStrategyDeployment(req, res) {
+      const deployment = await strategyService.pauseDeployment({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        deploymentId: req.params.deploymentId,
+      });
+      return success(res, serializeStrategyDeployment(deployment));
+    },
+
+    async stopStrategyDeployment(req, res) {
+      const deployment = await strategyService.stopDeployment({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        deploymentId: req.params.deploymentId,
+      });
+      return success(res, serializeStrategyDeployment(deployment));
     },
 
     async listProviderPlans(req, res) {

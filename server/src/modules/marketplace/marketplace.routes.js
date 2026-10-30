@@ -38,6 +38,35 @@ const ProviderQuerySchema = PaginationSchema.keys({
   markets: Joi.string().trim().max(200).optional(),
 });
 
+const StrategyQuerySchema = PaginationSchema.keys({
+  q: Joi.string().trim().max(100).optional(),
+  category: Joi.string().trim().max(64).optional(),
+  market: Joi.string().trim().max(32).optional(),
+});
+
+const CreateStrategySchema = Joi.object({
+  workflowId: UuidSchema.required(),
+  workflowVersionId: UuidSchema.required(),
+  providerPlanId: UuidSchema.optional(),
+  name: Joi.string().trim().min(1).max(100).required(),
+  category: Joi.string().trim().min(1).max(64).required(),
+  description: Joi.string().trim().min(1).max(4000).required(),
+  supportedMarkets: Joi.array().items(Joi.string().trim().max(32)).min(1).max(10).required(),
+});
+
+const UpdateStrategySchema = Joi.object({
+  status: Joi.string().valid('paused', 'archived').required(),
+});
+
+const CreateStrategyDeploymentSchema = Joi.object({
+  connectionId: UuidSchema.required(),
+  accountId: UuidSchema.required(),
+  allocationAmount: Joi.number().greater(0).precision(12).required(),
+  maxOpenPositions: Joi.number().integer().min(1).max(100).default(1),
+  maxDrawdownPercent: Joi.number().greater(0).less(100).precision(3).default(10),
+  dailyLossLimitPercent: Joi.number().greater(0).less(100).precision(3).default(5),
+});
+
 const MySignalsQuerySchema = PaginationSchema.keys({
   status: Joi.string()
     .valid('draft', 'pending_validation', 'pending_review', 'published', 'updated', 'cancelled', 'expired', 'closed', 'rejected', 'withdrawn')
@@ -176,6 +205,111 @@ export function createMarketplaceRoutes(services) {
     '/providers/:providerId/disclosures',
     middleware.optionalAuth(),
     middleware.asyncHandler(controller.listDisclosures)
+  );
+
+  /* ---------------------------------------------------------------------------
+   * Strategy discovery and execution
+   * ------------------------------------------------------------------------ */
+  router.get(
+    '/strategies',
+    middleware.optionalAuth(),
+    middleware.validateQuery(StrategyQuerySchema),
+    middleware.asyncHandler(controller.listStrategies)
+  );
+
+  router.get(
+    '/strategies/follows',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.listFollowedStrategies)
+  );
+
+  router.get(
+    '/strategies/:strategyId',
+    middleware.optionalAuth(),
+    middleware.validateParams(Joi.object({ strategyId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.getStrategy)
+  );
+
+  router.post(
+    '/strategies/:strategyId/follow',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ strategyId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.followStrategy)
+  );
+
+  router.delete(
+    '/strategies/:strategyId/follow',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ strategyId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.unfollowStrategy)
+  );
+
+  router.post(
+    '/strategies/:strategyId/deploy',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('trading.request_execution'),
+    middleware.validateParams(Joi.object({ strategyId: UuidSchema.required() })),
+    middleware.validateBody(CreateStrategyDeploymentSchema),
+    middleware.asyncHandler(controller.createStrategyDeployment)
+  );
+
+  router.get(
+    '/me/strategies',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.listMyStrategies)
+  );
+
+  router.post(
+    '/me/strategies',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(CreateStrategySchema),
+    middleware.asyncHandler(controller.createMyStrategy)
+  );
+
+  router.patch(
+    '/me/strategies/:strategyId',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ strategyId: UuidSchema.required() })),
+    middleware.validateBody(UpdateStrategySchema),
+    middleware.asyncHandler(controller.updateMyStrategyStatus)
+  );
+
+  router.get(
+    '/me/strategy-deployments',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.listMyStrategyDeployments)
+  );
+
+  router.post(
+    '/me/strategy-deployments/:deploymentId/activate',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('trading.request_execution'),
+    middleware.validateParams(Joi.object({ deploymentId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.activateStrategyDeployment)
+  );
+
+  router.post(
+    '/me/strategy-deployments/:deploymentId/pause',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ deploymentId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.pauseStrategyDeployment)
+  );
+
+  router.post(
+    '/me/strategy-deployments/:deploymentId/stop',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateParams(Joi.object({ deploymentId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.stopStrategyDeployment)
   );
 
   /* ---------------------------------------------------------------------------

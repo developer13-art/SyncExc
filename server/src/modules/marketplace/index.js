@@ -30,6 +30,7 @@ import { createStripeMarketplaceService } from './stripe-marketplace.service.js'
 import { createMarketplaceRoutes } from './marketplace.routes.js';
 import { createMarketplaceListeners } from './listeners.js';
 import { createTraderSignalExecutionService } from './trader-signal-execution.service.js';
+import { createStrategyService } from './strategy.service.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createMarketplaceModule({ services }) {
@@ -120,6 +121,16 @@ export function createMarketplaceModule({ services }) {
     logger,
   });
 
+  const strategyService = createStrategyService({
+    db: services.db,
+    queries,
+    providers: providerService,
+    connections: services.connections,
+    events: services.events,
+    getAutomation: () => services.automation,
+    logger,
+  });
+
   const moderationService = createModerationService({
     db: services.db,
     queries,
@@ -142,6 +153,7 @@ export function createMarketplaceModule({ services }) {
     signalDiscussionService,
     stripeMarketplaceService,
     traderSignalExecutionService,
+    strategyService,
     middleware: services.middleware,
   });
 
@@ -172,6 +184,12 @@ export function createMarketplaceModule({ services }) {
       executePublishedSignal: (params) =>
         traderSignalExecutionService.executePublishedSignal(params),
     },
+    strategy: {
+      findExecutionContext: (workflowId) =>
+        strategyService.findExecutionContext(workflowId),
+      authorizeExecution: (params) => strategyService.authorizeExecution(params),
+      recordOrder: (params) => strategyService.recordOrder(params),
+    },
   };
 
   return {
@@ -185,6 +203,7 @@ export function createMarketplaceModule({ services }) {
     copyConfiguration: copyConfigurationService,
     copyOrchestration: copyOrchestrationService,
     traderSignalExecution: traderSignalExecutionService,
+    strategy: strategyService,
     performance: performanceService,
     disclosure: disclosureService,
     moderation: moderationService,
