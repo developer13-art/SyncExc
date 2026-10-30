@@ -106,6 +106,12 @@ export const ROUTES = Object.freeze({
 
     marketplace: {
       browse: '/app/marketplace',
+      traders: '/app/marketplace/traders',
+      signalProviders: '/app/marketplace/signals',
+      strategies: '/app/marketplace/strategies',
+      strategy: (id = ':strategyId') => `/app/marketplace/strategies/${id}`,
+      createStrategy: '/app/marketplace/strategies/new',
+      watchlist: '/app/marketplace/watchlist',
       traderProfile: '/app/marketplace/profile',
       provider: (id = ':providerId') => `/app/marketplace/providers/${id}`,
       providerSignals: (id = ':providerId') => `/app/marketplace/providers/${id}/signals`,
@@ -124,6 +130,8 @@ export const ROUTES = Object.freeze({
 
     trader: {
       overview: '/app/trader/dashboard',
+      marketplace: '/app/trader/marketplace',
+      createListing: '/app/trader/listings/new',
       publishSignal: '/app/trader/signals/publish',
       signalHistory: '/app/trader/signals/history',
       subscribers: '/app/trader/subscribers',

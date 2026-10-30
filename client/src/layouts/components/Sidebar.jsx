@@ -71,9 +71,7 @@ export function Sidebar() {
 
   const isActive = (item) => {
     if (item.id === 'marketplace') {
-      return location.pathname === item.path ||
-        (location.pathname.startsWith(`${item.path}/`) &&
-          !location.pathname.startsWith('/app/marketplace/profile'));
+      return location.pathname === item.path;
     }
     return location.pathname === item.path ||
       (item.path !== '/app/dashboard' && item.path !== '/app/trader/dashboard' &&

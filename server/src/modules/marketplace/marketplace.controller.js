@@ -82,6 +82,7 @@ export function createMarketplaceController(services) {
         search: req.query.q || null,
         category: req.query.category || null,
         market: req.query.market || null,
+        providerId: req.query.providerId || null,
         limit: Number(req.query.limit) || 50,
       });
       return success(res, strategies.map(serializeStrategy));

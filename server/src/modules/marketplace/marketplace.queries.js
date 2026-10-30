@@ -266,7 +266,12 @@ export function createMarketplaceQueries({ db }) {
 
     async findProviderById(providerId) {
       const result = await db.query(
-        `SELECT * FROM marketplace_provider_profiles WHERE id = $1`,
+        `SELECT provider.*,
+                (SELECT count(*)::int
+                 FROM marketplace_follows follow
+                 WHERE follow.provider_id = provider.id) AS follower_count
+         FROM marketplace_provider_profiles provider
+         WHERE provider.id = $1`,
         [providerId]
       );
       return result.rows[0] || null;
@@ -593,6 +598,8 @@ export function createMarketplaceQueries({ db }) {
         SELECT
           (SELECT count(*)::int FROM marketplace_subscriptions
            WHERE provider_id = $1 AND status IN ('active', 'trialing')) AS active_subscribers,
+          (SELECT count(*)::int FROM marketplace_follows
+           WHERE provider_id = $1) AS total_followers,
           (SELECT count(*)::int FROM marketplace_published_signals
            WHERE provider_id = $1) AS total_signals,
           (SELECT count(*)::int FROM marketplace_published_signals
@@ -647,6 +654,9 @@ export function createMarketplaceQueries({ db }) {
       const result = await db.query(
         `
         SELECT provider.*,
+               (SELECT count(*)::int
+                FROM marketplace_follows follow
+                WHERE follow.provider_id = provider.id) AS follower_count,
                (SELECT count(*)::int
                 FROM marketplace_subscriptions subscription
                 WHERE subscription.provider_id = provider.id

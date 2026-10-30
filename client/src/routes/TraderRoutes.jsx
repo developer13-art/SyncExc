@@ -6,12 +6,15 @@ import SubscribersList from '../features/trader/SubscribersList';
 import SubscriptionPlans from '../features/trader/SubscriptionPlans';
 import RevenueAndPayouts from '../features/trader/RevenueAndPayouts';
 import TraderProfile from '../features/marketplace/TraderProfile';
+import CreateStrategyListing from '../features/marketplace/CreateStrategyListing';
 
 export default function TraderRoutes() {
   return (
     <Routes>
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={<ProviderDashboard />} />
+      <Route path="marketplace" element={<ProviderDashboard />} />
+      <Route path="listings/new" element={<CreateStrategyListing />} />
       <Route path="signals/publish" element={<PublishSignal />} />
       <Route path="signals/history" element={<SignalHistory />} />
       <Route path="subscribers" element={<SubscribersList />} />

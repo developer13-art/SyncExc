@@ -21,8 +21,8 @@ export function createStrategyService({
   getAutomation,
   logger,
 }) {
-  async function list({ userId, search, category, market, limit = 50 }) {
-    return queries.listStrategies({ userId, search, category, market, limit });
+  async function list({ userId, search, category, market, providerId, limit = 50 }) {
+    return queries.listStrategies({ userId, search, category, market, providerId, limit });
   }
 
   async function get({ strategyId, userId }) {

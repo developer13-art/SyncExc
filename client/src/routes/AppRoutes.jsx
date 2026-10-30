@@ -21,6 +21,10 @@ const SourceDetails = lazy(() => import('../features/sources/SourceDetails.jsx')
 const AddSource = lazy(() => import('../features/sources/AddSource.jsx'));
 const Signals = lazy(() => import('../features/signals/SignalsOverview.jsx'));
 const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.jsx'));
+const MarketplaceTraders = lazy(() => import('../features/marketplace/MarketplaceTraders.jsx'));
+const MarketplaceStrategies = lazy(() => import('../features/marketplace/MarketplaceStrategies.jsx'));
+const MarketplaceStrategyDetails = lazy(() => import('../features/marketplace/MarketplaceStrategyDetails.jsx'));
+const CreateStrategyListing = lazy(() => import('../features/marketplace/CreateStrategyListing.jsx'));
 const TraderProfile = lazy(() => import('../features/marketplace/TraderProfile.jsx'));
 const ProviderProfile = lazy(() => import('../features/marketplace/ProviderProfile.jsx'));
 const Following = lazy(() => import('../features/marketplace/Following.jsx'));
@@ -130,6 +134,12 @@ export function AppRoutes() {
         <Route path="sources/*" element={<Fallback><Sources /></Fallback>} />
         <Route path="signals/*" element={<Fallback><Signals /></Fallback>} />
         <Route path="marketplace/profile" element={<Fallback><TraderProfile /></Fallback>} />
+        <Route path="marketplace/strategies/new" element={<Fallback><CreateStrategyListing /></Fallback>} />
+        <Route path="marketplace/strategies/:strategyId" element={<Fallback><MarketplaceStrategyDetails /></Fallback>} />
+        <Route path="marketplace/strategies" element={<Fallback><MarketplaceStrategies /></Fallback>} />
+        <Route path="marketplace/traders" element={<Fallback><MarketplaceTraders /></Fallback>} />
+        <Route path="marketplace/signals" element={<Fallback><MarketplaceTraders /></Fallback>} />
+        <Route path="marketplace/watchlist" element={<Fallback><Following /></Fallback>} />
         <Route path="marketplace/providers/:providerId" element={<Fallback><ProviderProfile /></Fallback>} />
         <Route path="marketplace/copy-configurations/new" element={<Fallback><CreateCopyConfiguration /></Fallback>} />
         <Route path="marketplace/copy-configurations/:configId" element={<Fallback><CopyConfigurationDetails /></Fallback>} />

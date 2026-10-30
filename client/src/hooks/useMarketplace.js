@@ -29,6 +29,8 @@ export function useMarketplaceProviders(params = {}) {
     providers: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
+    error: listQuery.error,
+    refetch: listQuery.refetch,
     follow: follow.mutateAsync,
     unfollow: unfollow.mutateAsync,
   };

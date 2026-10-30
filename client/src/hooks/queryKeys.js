@@ -130,6 +130,10 @@ export const queryKeys = {
 
   marketplace: {
     providers: (params) => ['marketplace', 'providers', params],
+    strategies: (params) => ['marketplace', 'strategies', params],
+    strategy: (id) => ['marketplace', 'strategy', id],
+    followedStrategies: ['marketplace', 'strategy-follows'],
+    myStrategies: ['marketplace', 'my-strategies'],
     provider: (id) => ['marketplace', 'provider', id],
     providerSignals: (id, params) => ['marketplace', 'provider-signals', id, params],
     providerPlans: (id) => ['marketplace', 'provider-plans', id],

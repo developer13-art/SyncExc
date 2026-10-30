@@ -562,6 +562,7 @@ export function serializeProvider(row) {
     supportedMarkets: row.supported_markets || [],
     supportedLanguages: row.supported_languages || [],
     subscriberCount: row.subscriber_count == null ? undefined : Number(row.subscriber_count),
+    followerCount: row.follower_count == null ? undefined : Number(row.follower_count),
     signalCount: row.signal_count == null ? undefined : Number(row.signal_count),
     realizedPnlByAsset: Array.isArray(row.realized_pnl_by_asset)
       ? row.realized_pnl_by_asset

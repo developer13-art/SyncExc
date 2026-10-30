@@ -6,6 +6,30 @@ const { endpoints } = apiConfig;
 export const marketplaceApi = {
   listProviders: (params) => api.getPaged(endpoints.marketplace.providers, { params }),
 
+  listStrategies: (params) =>
+    api.get(endpoints.marketplace.strategies, { params }),
+
+  getStrategy: (strategyId) => api.get(endpoints.marketplace.strategy(strategyId)),
+
+  followStrategy: (strategyId) =>
+    api.post(endpoints.marketplace.strategyFollow(strategyId)),
+
+  unfollowStrategy: (strategyId) =>
+    api.delete(endpoints.marketplace.strategyFollow(strategyId)),
+
+  listFollowedStrategies: () => api.get(endpoints.marketplace.followedStrategies),
+
+  listMyStrategies: () => api.get(endpoints.marketplace.myStrategies),
+
+  createMyStrategy: (payload) =>
+    api.post(endpoints.marketplace.myStrategies, payload),
+
+  updateMyStrategy: (strategyId, payload) =>
+    api.patch(endpoints.marketplace.myStrategy(strategyId), payload),
+
+  listMyStrategyDeployments: () =>
+    api.get(endpoints.marketplace.myStrategyDeployments),
+
   getMyProvider: () => api.get(endpoints.marketplace.myProvider),
 
   createProvider: (payload) => api.post(endpoints.marketplace.providers, payload),

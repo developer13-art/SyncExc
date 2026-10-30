@@ -42,6 +42,7 @@ const StrategyQuerySchema = PaginationSchema.keys({
   q: Joi.string().trim().max(100).optional(),
   category: Joi.string().trim().max(64).optional(),
   market: Joi.string().trim().max(32).optional(),
+  providerId: UuidSchema.optional(),
 });
 
 const CreateStrategySchema = Joi.object({
