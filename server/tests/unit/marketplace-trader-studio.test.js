@@ -1140,7 +1140,7 @@ describe('Trader Studio API', () => {
     assert.equal(response.statusCode, 200);
   });
 
-  it('filters public signal queries to published and updated statuses', async () => {
+  it('filters public signal queries to published, updated, and closed statuses', async () => {
     let sql;
     const queries = createMarketplaceQueries({
       db: {
@@ -1153,7 +1153,7 @@ describe('Trader Studio API', () => {
 
     await queries.listPublishedSignals({ providerId: 'provider-1', publicOnly: true });
 
-    assert.match(sql, /signal\.status IN \('published', 'updated'\)/);
+    assert.match(sql, /signal\.status IN \('published', 'updated', 'closed'\)/);
     assert.match(sql, /count\(DISTINCT processing\.subscriber_user_id\)/);
     assert.doesNotMatch(sql, /draft|cancelled|rejected/);
   });
@@ -1220,15 +1220,22 @@ describe('Trader Studio API', () => {
   it('publishes a confirmed terminal fill once as a limit signal', async () => {
     const handlers = new Map();
     let publishedSignal;
+    const sequence = [];
     createMarketplaceListeners({
       events: {
         subscribe(topic, handler) {
           handlers.set(topic, handler);
         },
       },
-      copyOrchestration: { async processPublishedSignal() {} },
+      copyOrchestration: {
+        async processPublishedSignal() {
+          sequence.push('subscriber-copy');
+        },
+      },
       traderSignalExecution: {
-        async executePublishedSignal() {},
+        async executePublishedSignal() {
+          sequence.push('trader-account-copy');
+        },
         async handleOrderFilled() {},
         async handleOrderStatus() {},
         async handleClosedTrade() {},
@@ -1247,6 +1254,7 @@ describe('Trader Studio API', () => {
           return {
             id: orderId,
             workspace_id: 'workspace-1',
+            account_id: 'source-account-1',
             provider_id: 'provider-1',
             user_id: 'user-1',
             instrument: 'BTCUSDT',
@@ -1267,6 +1275,9 @@ describe('Trader Studio API', () => {
     assert.equal(publishedSignal.entry, '60000');
     assert.equal(publishedSignal.direction, 'long');
     assert.equal(publishedSignal.sourceOrderId, 'order-1');
+    assert.equal(publishedSignal.sourceAccountId, 'source-account-1');
+    await handlers.get('marketplace.signal_published')({ payload: { signalId: 'signal-1' } });
+    assert.deepEqual(sequence, ['trader-account-copy', 'subscriber-copy']);
   });
 
   it('publishes newly synced exchange positions for public approved trader profiles', async () => {
@@ -1311,6 +1322,7 @@ describe('Trader Studio API', () => {
       payload: {
         positionSnapshotId: 'position-snapshot-1',
         workspaceId: 'workspace-1',
+        accountId: 'source-account-1',
         instrument: 'BTCUSDT',
         marketType: 'futures',
         direction: 'long',
@@ -1325,6 +1337,67 @@ describe('Trader Studio API', () => {
     assert.equal(publishedSignal.direction, 'long');
     assert.equal(publishedSignal.orderType, undefined);
     assert.equal(publishedSignal.sourcePositionSnapshotId, 'position-snapshot-1');
+    assert.equal(publishedSignal.sourceAccountId, 'source-account-1');
+  });
+
+  it('lists externally closed trades without sending them through copy execution', async () => {
+    const handlers = new Map();
+    let publishedClosedTrade;
+    let recordedClosedSignal;
+    createMarketplaceListeners({
+      events: {
+        subscribe(topic, handler) {
+          handlers.set(topic, handler);
+        },
+      },
+      copyOrchestration: { async processPublishedSignal() {} },
+      traderSignalExecution: {
+        async executePublishedSignal() {},
+        async handleOrderFilled() {},
+        async handleOrderStatus() {},
+        async handleClosedTrade() {
+          return false;
+        },
+        async recordClosedTradeSignal(record) {
+          recordedClosedSignal = record;
+        },
+      },
+      publicationService: {
+        async publishClosedTrade(data) {
+          publishedClosedTrade = data;
+          return { id: 'closed-signal-1' };
+        },
+      },
+      queries: {
+        async findProviderForPositionPublication(workspaceId) {
+          assert.equal(workspaceId, 'workspace-1');
+          return {
+            id: 'provider-1',
+            user_id: 'user-1',
+            workspace_id: workspaceId,
+          };
+        },
+      },
+      logger: { debug() {}, error() {} },
+    });
+
+    const trade = {
+      closedTradeId: 'closed-trade-1',
+      workspaceId: 'workspace-1',
+      accountId: 'source-account-1',
+      instrument: 'BTCUSDT',
+      side: 'long',
+      realizedPnl: '12.5',
+      closedAt: new Date('2026-10-29T10:00:00.000Z'),
+    };
+    await handlers.get('execution.closed_trade_recorded')({ payload: trade });
+
+    assert.equal(publishedClosedTrade.providerId, 'provider-1');
+    assert.equal(publishedClosedTrade.trade, trade);
+    assert.deepEqual(recordedClosedSignal, {
+      signalId: 'closed-signal-1',
+      trade,
+    });
   });
 
   it('auto-publication is enabled for every public, approved provider', async () => {
@@ -1341,9 +1414,63 @@ describe('Trader Studio API', () => {
     await queries.findOrderForAutoPublication('order-1');
 
     assert.match(queryText, /orders\.status = 'filled'/);
+    assert.match(queryText, /orders\.account_id/);
     assert.match(queryText, /provider\.visibility = 'public'/);
     assert.match(queryText, /provider\.moderation_state = 'approved'/);
     assert.doesNotMatch(queryText, /auto_publish_trades/);
+  });
+
+  it('closes a source marketplace signal only when its exchange position is flat', async () => {
+    let queryText;
+    const queries = createMarketplaceQueries({
+      db: {
+        async query() {
+          throw new Error('The supplied transaction should receive the query');
+        },
+      },
+    });
+    await queries.closeSourceSignalForClosedTrade(
+      {
+        async query(sql, params) {
+          queryText = sql;
+          assert.deepEqual(params, [
+            'account-1',
+            'BTCUSDT',
+            'long',
+            new Date('2026-10-29T10:00:00.000Z'),
+            'USDT',
+          ]);
+          return { rows: [] };
+        },
+      },
+      {
+        accountId: 'account-1',
+        instrument: 'BTCUSDT',
+        side: 'long',
+        closedAt: new Date('2026-10-29T10:00:00.000Z'),
+        pnlAsset: 'USDT',
+      },
+    );
+
+    assert.match(queryText, /signal\.source_account_id = \$1/);
+    assert.match(queryText, /signal\.status IN \('published', 'updated'\)/);
+    assert.match(queryText, /position\.quantity > 0/);
+    assert.match(queryText, /SUM\(closed_trade\.realized_pnl\)/);
+  });
+
+  it('includes closed signals in public marketplace listings', async () => {
+    let queryText;
+    const queries = createMarketplaceQueries({
+      db: {
+        async query(query) {
+          queryText = query;
+          return { rows: [] };
+        },
+      },
+    });
+    await queries.listPublishedSignals({ publicOnly: true });
+
+    assert.match(queryText, /signal\.status IN \('published', 'updated', 'closed'\)/);
   });
 
   it('requires signal access before returning comments', async () => {

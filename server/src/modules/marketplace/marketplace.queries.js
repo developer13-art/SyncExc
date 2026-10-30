@@ -57,6 +57,35 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findPublishedSignalBySourceClosedTradeId(closedTradeId, client = db) {
+      const result = await client.query(
+        `SELECT * FROM marketplace_published_signals WHERE source_closed_trade_id = $1`,
+        [closedTradeId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async listTraderTradeSyncTargets() {
+      const result = await db.query(
+        `
+        SELECT DISTINCT
+          connection.workspace_id,
+          account.id AS account_id
+        FROM marketplace_provider_profiles provider
+        JOIN exchange_connections connection
+          ON connection.owner_id = provider.user_id
+         AND connection.workspace_id = provider.workspace_id
+        JOIN exchange_accounts account ON account.connection_id = connection.id
+        WHERE provider.visibility = 'public'
+          AND provider.moderation_state = 'approved'
+          AND connection.status = 'active'
+          AND account.status = 'active'
+        ORDER BY connection.workspace_id, account.id
+        `,
+      );
+      return result.rows;
+    },
+
     async findProviderForPositionPublication(workspaceId) {
       const result = await db.query(
         `
@@ -77,6 +106,7 @@ export function createMarketplaceQueries({ db }) {
         SELECT
           orders.id,
           orders.workspace_id,
+          orders.account_id,
           orders.instrument,
           orders.market_type,
           orders.side,
@@ -535,9 +565,11 @@ export function createMarketplaceQueries({ db }) {
         INSERT INTO marketplace_published_signals (
           provider_id, source_signal_id, instrument, market_type, direction, order_type,
           entry_time, entry, entry_range, stop_loss, leverage, status, valid_until, metadata,
-          source_order_id, source_position_snapshot_id
+          source_order_id, source_position_snapshot_id, source_account_id, source_closed_trade_id,
+          realized_pnl, pnl_asset, closed_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8, $9, $10, $11, 'draft', $12, $13, $14, $15)
+        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        ON CONFLICT (source_closed_trade_id) DO NOTHING
         RETURNING *
         `,
         [
@@ -552,10 +584,16 @@ export function createMarketplaceQueries({ db }) {
           data.entryRange ? JSON.stringify(data.entryRange) : null,
           data.stopLoss || null,
           data.leverage || null,
+          data.status || 'draft',
           data.validUntil || null,
           data.metadata ? JSON.stringify(data.metadata) : null,
           data.sourceOrderId || null,
           data.sourcePositionSnapshotId || null,
+          data.sourceAccountId || null,
+          data.sourceClosedTradeId || null,
+          data.realizedPnl ?? null,
+          data.pnlAsset || null,
+          data.closedAt || null,
         ]
       );
       return result.rows[0];
@@ -666,7 +704,7 @@ export function createMarketplaceQueries({ db }) {
         conditions.push(`signal.status = $${params.length}`);
       }
       if (publicOnly) {
-        conditions.push(`signal.status IN ('published', 'updated')`);
+        conditions.push(`signal.status IN ('published', 'updated', 'closed')`);
       }
       if (cursor) {
         params.push(cursor);
@@ -756,6 +794,84 @@ export function createMarketplaceQueries({ db }) {
         ]
       );
       return result.rows[0] || null;
+    },
+
+    async closeSourceSignalForClosedTrade(client, {
+      accountId,
+      instrument,
+      side,
+      closedAt,
+      pnlAsset,
+    }) {
+      const result = await client.query(
+        `
+        WITH candidate AS (
+          SELECT
+            signal.id,
+            COALESCE((
+              SELECT SUM(closed_trade.realized_pnl)
+              FROM trading_closed_trades closed_trade
+              WHERE closed_trade.account_id = $1
+                AND closed_trade.instrument = $2
+                AND closed_trade.side = $3
+                AND closed_trade.closed_at >= signal.entry_time
+                AND closed_trade.closed_at <= $4
+            ), 0)::numeric AS realized_pnl
+          FROM marketplace_published_signals signal
+          WHERE signal.source_account_id = $1
+            AND signal.instrument = $2
+            AND signal.direction = $3
+            AND signal.status IN ('published', 'updated')
+            AND (signal.source_order_id IS NOT NULL OR signal.source_position_snapshot_id IS NOT NULL)
+            AND signal.entry_time <= $4
+            AND NOT EXISTS (
+              SELECT 1
+              FROM trading_positions position
+              WHERE position.account_id = $1
+                AND position.instrument = $2
+                AND position.side = $3
+                AND position.quantity > 0
+            )
+          ORDER BY signal.created_at DESC
+          LIMIT 1
+          FOR UPDATE
+        )
+        UPDATE marketplace_published_signals signal
+        SET status = 'closed',
+            realized_pnl = candidate.realized_pnl,
+            pnl_asset = $5,
+            closed_at = $4,
+            updated_at = now()
+        FROM candidate
+        WHERE signal.id = candidate.id
+        RETURNING signal.*
+        `,
+        [accountId, instrument, side, closedAt, pnlAsset || null],
+      );
+      return result.rows[0] || null;
+    },
+
+    async hasActiveSourceSignalForClosedTrade(client, {
+      accountId,
+      instrument,
+      side,
+      closedAt,
+    }) {
+      const result = await client.query(
+        `
+        SELECT 1
+        FROM marketplace_published_signals signal
+        WHERE signal.source_account_id = $1
+          AND signal.instrument = $2
+          AND signal.direction = $3
+          AND signal.status IN ('published', 'updated')
+          AND (signal.source_order_id IS NOT NULL OR signal.source_position_snapshot_id IS NOT NULL)
+          AND signal.entry_time <= $4
+        LIMIT 1
+        `,
+        [accountId, instrument, side, closedAt],
+      );
+      return result.rowCount > 0;
     },
 
     async insertPublishedSignalVersion(client, data) {

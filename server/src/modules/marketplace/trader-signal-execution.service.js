@@ -59,16 +59,22 @@ export function createTraderSignalExecutionService({
   async function executePublishedSignal({ publishedSignalId }) {
     const signal = await queries.findPublishedSignalById(publishedSignalId);
     if (!signal || !['published', 'updated'].includes(signal.status)) return;
-    if (signal.source_order_id) return;
 
-    const accounts = await queries.listTraderSignalExecutionAccounts(
+    const allAccounts = await queries.listTraderSignalExecutionAccounts(
       signal.user_id,
       signal.workspace_id,
     );
+    const accounts = allAccounts.filter((account) =>
+      String(account.account_id) !== String(signal.source_account_id),
+    );
     if (accounts.length === 0) {
       logger.info(
-        { signalId: signal.id, workspaceId: signal.workspace_id },
-        'Trader signal execution skipped: no active exchange accounts are connected',
+        {
+          signalId: signal.id,
+          workspaceId: signal.workspace_id,
+          sourceAccountId: signal.source_account_id || null,
+        },
+        'Trader signal execution skipped: no other active exchange accounts are connected',
       );
       return;
     }
@@ -644,43 +650,117 @@ export function createTraderSignalExecutionService({
   }
 
   async function handleClosedTrade(trade) {
-    if (!trade?.closedTradeId || !trade.accountId || !trade.instrument || !trade.exchangeOrderId) return;
-    const execution = await queries.findSignalExecutionForClosedTrade({
-      accountId: trade.accountId,
-      exchangeOrderId: trade.exchangeOrderId,
-      instrument: trade.instrument,
-    });
-    if (!execution) return;
-
+    if (!trade?.closedTradeId || !trade.accountId || !trade.instrument) return false;
     const realizedPnl = Number(trade.realizedPnl);
     if (!Number.isFinite(realizedPnl)) {
-      logger.warn(
-        { signalId: execution.signal_id, closedTradeId: trade.closedTradeId },
-        'Signal performance not recorded: closed-trade PnL is invalid',
-      );
-      return;
+      logger.warn({ closedTradeId: trade.closedTradeId }, 'Signal performance not recorded: closed-trade PnL is invalid');
+      return false;
     }
     const closedAt = trade.closedAt ? new Date(trade.closedAt) : new Date();
     const outcome = realizedPnl > 0 ? 'win' : realizedPnl < 0 ? 'loss' : 'breakeven';
-    await db.tx(async (tx) => {
-      const attributed = await queries.insertSignalExecutionClosedTrade(tx, {
-        executionId: execution.id,
-        closedTradeId: trade.closedTradeId,
-        realizedPnl: String(trade.realizedPnl),
-        pnlAsset: trade.pnlAsset || null,
-        closedAt,
+    if (Number.isNaN(closedAt.getTime())) return false;
+    const execution = trade.exchangeOrderId
+      ? await queries.findSignalExecutionForClosedTrade({
+          accountId: trade.accountId,
+          exchangeOrderId: trade.exchangeOrderId,
+          instrument: trade.instrument,
+        })
+      : null;
+    let matchedSignal = Boolean(execution);
+    if (execution) {
+      await db.tx(async (tx) => {
+        const attributed = await queries.insertSignalExecutionClosedTrade(tx, {
+          executionId: execution.id,
+          closedTradeId: trade.closedTradeId,
+          realizedPnl: String(trade.realizedPnl),
+          pnlAsset: trade.pnlAsset || null,
+          closedAt,
+        });
+        if (!attributed) return;
+        await performance.recordObservation({
+          signalId: execution.signal_id,
+          observedAt: closedAt,
+          outcome,
+          sourceClosedTradeId: trade.closedTradeId,
+          client: tx,
+          evidence: {
+            attribution: 'exact_exchange_order_id',
+            accountId: trade.accountId,
+            exchangeOrderId: trade.exchangeOrderId,
+            instrument: trade.instrument,
+            quantity: trade.quantity,
+            entryPrice: trade.entryPrice,
+            exitPrice: trade.exitPrice,
+            realizedPnl: String(trade.realizedPnl),
+            pnlAsset: trade.pnlAsset || null,
+            feeAmount: trade.feeAmount,
+            feeAsset: trade.feeAsset,
+          },
+        });
       });
-      if (!attributed) return;
+    }
+
+    const closedSourceSignal = await db.tx(async (tx) => {
+      const signal = await queries.closeSourceSignalForClosedTrade(tx, {
+        accountId: trade.accountId,
+        instrument: trade.instrument,
+        side: trade.side,
+        closedAt,
+        pnlAsset: trade.pnlAsset,
+      });
+      if (!signal) return null;
+      const totalPnl = Number(signal.realized_pnl);
+      const finalOutcome = totalPnl > 0 ? 'win' : totalPnl < 0 ? 'loss' : 'breakeven';
       await performance.recordObservation({
-        signalId: execution.signal_id,
+        signalId: signal.id,
         observedAt: closedAt,
-        outcome,
+        outcome: finalOutcome,
         sourceClosedTradeId: trade.closedTradeId,
         client: tx,
         evidence: {
-          attribution: 'exact_exchange_order_id',
+          attribution: 'source_account_position',
           accountId: trade.accountId,
-          exchangeOrderId: trade.exchangeOrderId,
+          instrument: trade.instrument,
+          realizedPnl: String(signal.realized_pnl),
+          pnlAsset: signal.pnl_asset || null,
+        },
+      });
+      return signal;
+    });
+    if (closedSourceSignal) {
+      matchedSignal = true;
+      logger.info(
+        { signalId: closedSourceSignal.id, outcome, realizedPnl: closedSourceSignal.realized_pnl },
+        'Source marketplace trade closed with exchange-reported PnL',
+      );
+    } else {
+      matchedSignal = matchedSignal || await queries.hasActiveSourceSignalForClosedTrade(db, {
+        accountId: trade.accountId,
+        instrument: trade.instrument,
+        side: trade.side,
+        closedAt,
+      });
+    }
+    return matchedSignal;
+  }
+
+  async function recordClosedTradeSignal({ signalId, trade }) {
+    if (!signalId || !trade?.closedTradeId) return;
+    const realizedPnl = Number(trade.realizedPnl);
+    if (!Number.isFinite(realizedPnl)) return;
+    const closedAt = trade.closedAt ? new Date(trade.closedAt) : new Date();
+    if (Number.isNaN(closedAt.getTime())) return;
+    await db.tx((tx) =>
+      performance.recordObservation({
+        signalId,
+        observedAt: closedAt,
+        outcome: realizedPnl > 0 ? 'win' : realizedPnl < 0 ? 'loss' : 'breakeven',
+        sourceClosedTradeId: trade.closedTradeId,
+        client: tx,
+        evidence: {
+          attribution: 'external_closed_trade',
+          accountId: trade.accountId,
+          exchangeCode: trade.exchangeCode || null,
           instrument: trade.instrument,
           quantity: trade.quantity,
           entryPrice: trade.entryPrice,
@@ -690,8 +770,8 @@ export function createTraderSignalExecutionService({
           feeAmount: trade.feeAmount,
           feeAsset: trade.feeAsset,
         },
-      });
-    });
+      }),
+    );
   }
 
   return {
@@ -701,6 +781,7 @@ export function createTraderSignalExecutionService({
     handleOrderFilled,
     handleOrderStatus,
     handleClosedTrade,
+    recordClosedTradeSignal,
   };
 }
 

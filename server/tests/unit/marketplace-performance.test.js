@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import { createPerformanceService } from '../../src/modules/marketplace/performance.service.js';
 
 test('returns exact performance grouped by settlement asset without cross-asset sums', async () => {
+  const queries = [];
   const service = createPerformanceService({
     db: {
       async query(sql) {
+        queries.push(sql);
         if (sql.includes('observed_executions')) {
           return {
             rows: [
@@ -65,4 +67,15 @@ test('returns exact performance grouped by settlement asset without cross-asset 
   assert.equal(result.seriesByAsset.USDT.all[0].value, 3.25);
   assert.equal(result.seriesByAsset.BTC.all[0].value, 0.001);
   assert.equal(Object.hasOwn(result.metrics, 'realizedPnl'), false);
+  assert.ok(queries.some((sql) =>
+    sql.includes('source_signal_pnl') &&
+    sql.includes('signal.realized_pnl') &&
+    sql.includes('marketplace_published_signals')
+  ));
+  assert.ok(queries.some((sql) =>
+    sql.includes('daily_pnl') &&
+    sql.includes('date_trunc')
+    && sql.includes('signal.realized_pnl')
+    && sql.includes('marketplace_published_signals')
+  ));
 });

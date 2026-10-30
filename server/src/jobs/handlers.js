@@ -101,6 +101,31 @@ export async function registerAllHandlers({ registry, services }) {
     await s.terminal.service.reconcilePendingOrders({ limit: payload.limit || 100 });
   });
 
+  register('marketplace_trader_trade_sync', async ({ services: s }) => {
+    const targets = await s.marketplace.queries.listTraderTradeSyncTargets();
+    const failures = [];
+    for (const target of targets) {
+      try {
+        await s.terminal.service.syncAccountState({
+          workspaceId: target.workspace_id,
+          accountId: target.account_id,
+        });
+      } catch (err) {
+        failures.push({ accountId: target.account_id, err });
+        logger.warn(
+          { err, accountId: target.account_id, workspaceId: target.workspace_id },
+          'Background marketplace exchange sync failed for trader account',
+        );
+      }
+    }
+    if (failures.length > 0) {
+      logger.warn(
+        { failedAccounts: failures.length, checkedAccounts: targets.length },
+        'Background marketplace exchange sync completed with account failures',
+      );
+    }
+  });
+
   register('sync_reconcile', async ({ payload, services: s }) => {
     const reconciliation = s.synchronization.reconciliation;
 

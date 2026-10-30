@@ -18,8 +18,13 @@ export function createMarketplaceListeners({
       const { signalId } = envelope.payload || {};
       if (!signalId) return;
       try {
-        // The publisher finishes the trader's own account execution before it
-        // emits this event. Copy fanout therefore starts only after that baseline.
+        // Mirror to the trader's other accounts before subscriber fanout. The
+        // source account is excluded by the execution service.
+        try {
+          await traderSignalExecution.executePublishedSignal({ publishedSignalId: signalId });
+        } catch (err) {
+          logger.error({ err, signalId }, 'Trader account synchronization failed after publish');
+        }
         await copyOrchestration.processPublishedSignal({ publishedSignalId: signalId });
       } catch (err) {
         logger.error({ err, signalId }, 'Signal execution orchestration failed after publish');
@@ -54,6 +59,7 @@ export function createMarketplaceListeners({
           entryTime: order.created_at,
           entry: String(order.average_fill_price),
           sourceOrderId: order.id,
+          sourceAccountId: order.account_id,
         });
       } catch (err) {
         logger.error({ err, orderId }, 'Automatic signal publication failed for terminal fill');
@@ -84,6 +90,7 @@ export function createMarketplaceListeners({
           entry: String(position.entry),
           leverage: position.leverage,
           sourcePositionSnapshotId: position.positionSnapshotId,
+          sourceAccountId: position.accountId,
         });
       } catch (err) {
         logger.error(
@@ -124,12 +131,26 @@ export function createMarketplaceListeners({
   events.subscribe(
     'execution.closed_trade_recorded',
     async (envelope) => {
+      const trade = envelope.payload || {};
       try {
-        await traderSignalExecution.handleClosedTrade(envelope.payload || {});
+        const matchedExistingSignal = await traderSignalExecution.handleClosedTrade(trade);
+        if (matchedExistingSignal || !trade.workspaceId) return;
+
+        const provider = await queries.findProviderForPositionPublication(trade.workspaceId);
+        if (!provider) return;
+        const signal = await publicationService.publishClosedTrade({
+          userId: provider.user_id,
+          workspaceId: provider.workspace_id,
+          providerId: provider.id,
+          trade,
+        });
+        if (signal?.id) {
+          await traderSignalExecution.recordClosedTradeSignal({ signalId: signal.id, trade });
+        }
       } catch (err) {
         logger.error(
-          { err, closedTradeId: envelope.payload?.closedTradeId },
-          'Could not attribute closed-trade performance to a trader signal',
+          { err, closedTradeId: trade.closedTradeId },
+          'Could not publish or attribute the closed exchange trade',
         );
       }
     },

@@ -208,6 +208,27 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       render: (row) => (row.stopLoss ? formatQuantity(row.stopLoss, 6) : '—'),
     },
     {
+      key: 'result',
+      label: 'Result',
+      align: 'right',
+      render: (row) => {
+        if (row.status !== 'closed' || row.realizedPnl == null) return '—';
+        const pnl = Number(row.realizedPnl);
+        if (!Number.isFinite(pnl)) return '—';
+        const outcome = pnl > 0 ? 'Profit' : pnl < 0 ? 'Loss' : 'Breakeven';
+        const color = pnl > 0
+          ? 'text-success'
+          : pnl < 0
+            ? 'text-destructive'
+            : 'text-muted-foreground';
+        return (
+          <span className={`font-medium ${color}`} title={row.closedAt ? `Closed ${formatDateTime(row.closedAt)}` : undefined}>
+            {outcome}: {formatQuantity(row.realizedPnl, 6)} {row.pnlAsset || ''}
+          </span>
+        );
+      },
+    },
+    {
       key: 'copyCount',
       label: 'Copies',
       align: 'right',
@@ -217,6 +238,9 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       key: 'copy',
       label: 'Copy',
       render: (row) => {
+        if (!['published', 'updated'].includes(row.status)) {
+          return <Badge variant="muted">Filled · not copyable</Badge>;
+        }
         if (configurationsLoading) {
           return <Button size="sm" variant="outline" disabled>Loading…</Button>;
         }
@@ -279,8 +303,8 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       key: 'status',
       label: 'Status',
       render: (row) => (
-        <Badge variant={row.status === 'published' ? 'success' : 'muted'}>
-          {row.status ?? 'published'}
+        <Badge variant={row.status === 'published' || row.status === 'updated' ? 'success' : 'muted'}>
+          {row.status === 'closed' ? 'Filled' : row.status ?? 'published'}
         </Badge>
       ),
     },

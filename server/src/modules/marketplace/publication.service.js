@@ -25,6 +25,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
     sourceEvidence,
     sourceOrderId,
     sourcePositionSnapshotId,
+    sourceAccountId,
     executionAccountIds,
     executionAmount,
     beforePublish,
@@ -105,6 +106,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
         validUntil,
         sourceOrderId,
         sourcePositionSnapshotId,
+        sourceAccountId,
         metadata: { sourceEvidence, disclosures },
       });
 
@@ -169,6 +171,94 @@ export function createPublicationService({ db, queries, events, disclosureServic
       );
 
       return publishedSignal;
+    });
+  }
+
+  async function publishClosedTrade({ userId, workspaceId, providerId, trade }) {
+    const provider = await queries.findProviderById(providerId);
+    if (!provider || provider.user_id !== userId || provider.workspace_id !== workspaceId) {
+      throw new NotFoundError('Provider');
+    }
+    if (provider.moderation_state !== 'approved' || provider.visibility !== 'public') {
+      throw new ConflictError('Provider is not approved for public publication', 'PROVIDER_NOT_APPROVED');
+    }
+    if (
+      !trade?.closedTradeId ||
+      !trade.instrument ||
+      !['long', 'short'].includes(trade.side) ||
+      !Number.isFinite(Number(trade.realizedPnl))
+    ) {
+      throw new ValidationError('A closed exchange trade must include its ID, instrument, direction, and realized PnL');
+    }
+    const marketType = trade.marketType || 'perpetual';
+    if (!['spot', 'futures', 'perpetual'].includes(marketType)) {
+      throw new ValidationError('marketType must be spot, futures, or perpetual');
+    }
+    const closedAt = trade.closedAt instanceof Date ? trade.closedAt : new Date(trade.closedAt);
+    if (Number.isNaN(closedAt.getTime())) {
+      throw new ValidationError('A closed exchange trade must include a valid close time');
+    }
+    const entryCandidate = Number(trade.entryPrice);
+    const entry = Number.isFinite(entryCandidate) && entryCandidate > 0
+      ? String(trade.entryPrice)
+      : null;
+    const entryTimeCandidate = trade.entryTime
+      ? (/^\d+$/.test(String(trade.entryTime))
+          ? new Date(Number(trade.entryTime))
+          : new Date(trade.entryTime))
+      : closedAt;
+    const entryTime = Number.isNaN(entryTimeCandidate.getTime()) ? closedAt : entryTimeCandidate;
+    const existing = await queries.findPublishedSignalBySourceClosedTradeId(trade.closedTradeId);
+    if (existing) return existing;
+
+    return db.tx(async (tx) => {
+      const inserted = await queries.insertPublishedSignal(tx, {
+        providerId,
+        instrument: trade.instrument,
+        marketType,
+        direction: trade.side,
+        orderType: 'market',
+        entryTime,
+        entry,
+        stopLoss: null,
+        leverage: trade.leverage || null,
+        status: 'closed',
+        sourceAccountId: trade.accountId,
+        sourceClosedTradeId: trade.closedTradeId,
+        realizedPnl: String(trade.realizedPnl),
+        pnlAsset: trade.pnlAsset || null,
+        closedAt,
+        metadata: {
+          sourceEvidence: {
+            type: 'exchange_closed_trade',
+            exchangeCode: trade.exchangeCode || null,
+          },
+        },
+      });
+      if (!inserted) {
+        return queries.findPublishedSignalBySourceClosedTradeId(trade.closedTradeId, tx);
+      }
+
+      await queries.insertPublishedSignalVersion(tx, {
+        signalId: inserted.id,
+        version: 1,
+        snapshot: {
+          ...inserted,
+          targets: [],
+        },
+        changeReason: 'initial',
+      });
+      await queries.insertPublication(tx, {
+        signalId: inserted.id,
+        channel: 'marketplace',
+        visibility: 'subscribers',
+      });
+      return {
+        ...inserted,
+        user_id: userId,
+        workspace_id: workspaceId,
+        targets: [],
+      };
     });
   }
 
@@ -273,6 +363,7 @@ export function createPublicationService({ db, queries, events, disclosureServic
 
   return {
     publishSignal,
+    publishClosedTrade,
     updateSignal,
     cancelSignal,
     listSignals,

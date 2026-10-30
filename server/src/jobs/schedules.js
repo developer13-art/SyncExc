@@ -35,6 +35,13 @@ export async function registerAllSchedules({ scheduler }) {
   });
 
   scheduler.add({
+    name: 'marketplace-trader-trade-sync-tick',
+    type: 'marketplace_trader_trade_sync',
+    intervalMs: 60 * 1000,
+    priority: 45,
+  });
+
+  scheduler.add({
     name: 'outbox-publisher-tick',
     type: 'outbox_publish',
     intervalMs: 30 * 1000,

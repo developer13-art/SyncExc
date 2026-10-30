@@ -21,11 +21,14 @@ function createDependencies({
   },
   marketData = { async getSpotPrice() { return 100; } },
   accountStateByExchange = {},
+  executionForClosedTrade = { id: 'signal-execution-1', signal_id: 'signal-closed-1' },
+  sourceSignalClosed = null,
 }) {
   const submitted = [];
   const records = [];
   const observations = [];
   const closedRecords = [];
+  const sourceCloseRequests = [];
   const service = createTraderSignalExecutionService({
     db: {
       async tx(callback) {
@@ -41,11 +44,18 @@ function createDependencies({
       },
       async updateTraderSignalExecutionByOrder() { return []; },
       async findSignalExecutionForClosedTrade() {
-        return { id: 'signal-execution-1', signal_id: 'signal-closed-1' };
+        return executionForClosedTrade;
       },
       async insertSignalExecutionClosedTrade(_tx, record) {
         closedRecords.push(record);
         return record;
+      },
+      async closeSourceSignalForClosedTrade(_tx, record) {
+        sourceCloseRequests.push(record);
+        return sourceSignalClosed;
+      },
+      async hasActiveSourceSignalForClosedTrade() {
+        return false;
       },
     },
     connections: {
@@ -86,7 +96,7 @@ function createDependencies({
     },
     logger: { info() {}, warn() {}, error() {} },
   });
-  return { service, submitted, records, observations, closedRecords };
+  return { service, submitted, records, observations, closedRecords, sourceCloseRequests };
 }
 
 test('submits a limit signal to every matching trader account with percentage sizing', async () => {
@@ -397,18 +407,45 @@ test('blocks Spot short signal execution instead of submitting an unprotected se
   assert.match(records[0].errorMessage, /cannot open short positions/);
 });
 
-test('does not execute a terminal fill that was already traded before auto-publication', async () => {
-  const { service, submitted } = createDependencies({
+test('mirrors a terminal fill to the trader’s other accounts, not its source account', async () => {
+  const { service, submitted, records } = createDependencies({
     signal: {
       id: 'signal-2',
       source_order_id: 'existing-order',
+      source_account_id: 'account-source',
+      user_id: 'trader-1',
+      workspace_id: 'workspace-1',
+      instrument: 'BTCUSDT',
+      market_type: 'spot',
+      direction: 'long',
+      order_type: 'market',
+      stop_loss: null,
+      targets: [],
       status: 'published',
     },
+    accounts: [
+      {
+        connection_id: 'connection-source',
+        account_id: 'account-source',
+        account_type: 'unified',
+        exchange_code: 'bybit',
+        environment: 'testnet',
+      },
+      {
+        connection_id: 'connection-destination',
+        account_id: 'account-destination',
+        account_type: 'unified',
+        exchange_code: 'bybit',
+        environment: 'testnet',
+      },
+    ],
   });
 
   await service.executePublishedSignal({ publishedSignalId: 'signal-2' });
 
-  assert.equal(submitted.length, 0);
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].accountId, 'account-destination');
+  assert.equal(records.length, 1);
 });
 
 test('does not execute when the trader has not configured a balance percentage', async () => {
@@ -491,4 +528,32 @@ test('records realized signal PnL only after an exact exchange order link', asyn
   assert.equal(observations[0].sourceClosedTradeId, 'closed-trade-1');
   assert.equal(observations[0].evidence.realizedPnl, '12.5');
   assert.equal(closedRecords[0].closedTradeId, 'closed-trade-1');
+});
+
+test('closes externally sourced marketplace signals with realized exchange PnL', async () => {
+  const { service, observations, sourceCloseRequests } = createDependencies({
+    executionForClosedTrade: null,
+    sourceSignalClosed: {
+      id: 'external-signal-1',
+      realized_pnl: '4.25',
+      pnl_asset: 'USDT',
+    },
+  });
+
+  await service.handleClosedTrade({
+    closedTradeId: 'closed-trade-external',
+    accountId: 'account-source',
+    instrument: 'BTCUSDT',
+    side: 'long',
+    realizedPnl: '4.25',
+    pnlAsset: 'USDT',
+    closedAt: '2026-10-29T10:00:00.000Z',
+  });
+
+  assert.equal(sourceCloseRequests.length, 1);
+  assert.equal(sourceCloseRequests[0].accountId, 'account-source');
+  assert.equal(sourceCloseRequests[0].side, 'long');
+  assert.equal(observations.length, 1);
+  assert.equal(observations[0].signalId, 'external-signal-1');
+  assert.equal(observations[0].outcome, 'win');
 });

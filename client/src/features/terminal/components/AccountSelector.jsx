@@ -40,7 +40,7 @@ export function AccountSelector({ accounts = [], value, onChange, className }) {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className={className}>
-        <SelectValue placeholder="Select account" />
+        <SelectValue placeholder="Select destination account" />
       </SelectTrigger>
       <SelectContent>
         {grouped.map((group) => (

@@ -20,8 +20,8 @@ export function createPerformanceService({ db, queries, logger }) {
       SELECT status, count(*)::int AS count
       FROM marketplace_published_signals
       WHERE provider_id = $1
-        AND created_at >= $2
-        AND created_at <= $3
+        AND COALESCE(closed_at, created_at) >= $2
+        AND COALESCE(closed_at, created_at) <= $3
       GROUP BY status
       `,
       [providerId, periodStart, periodEnd]
@@ -63,9 +63,26 @@ export function createPerformanceService({ db, queries, logger }) {
           ON execution.id = closed_trade.signal_execution_id
         JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
         WHERE signal.provider_id = $1
+          AND signal.source_account_id IS NULL
           AND closed_trade.closed_at >= $2
           AND closed_trade.closed_at <= $3
         GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+      ),
+      source_signal_pnl AS (
+        SELECT
+          signal.id AS execution_id,
+          COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+          signal.realized_pnl
+        FROM marketplace_published_signals signal
+        WHERE signal.provider_id = $1
+          AND signal.closed_at >= $2
+          AND signal.closed_at <= $3
+          AND signal.realized_pnl IS NOT NULL
+      ),
+      all_pnl AS (
+        SELECT * FROM execution_pnl
+        UNION ALL
+        SELECT * FROM source_signal_pnl
       )
       SELECT
         pnl_asset,
@@ -76,7 +93,7 @@ export function createPerformanceService({ db, queries, logger }) {
         END AS outcome,
         count(*)::int AS count,
         sum(realized_pnl)::text AS realized_pnl
-      FROM execution_pnl
+      FROM all_pnl
       GROUP BY pnl_asset, outcome
       `,
       [providerId, periodStart, periodEnd],
@@ -91,7 +108,10 @@ export function createPerformanceService({ db, queries, logger }) {
         (exactExecutionOutcomes[row.outcome] || 0) + row.count;
     }
 
-    const totalPublished = (signalsByStatus.published || 0) + (signalsByStatus.updated || 0);
+    const totalPublished =
+      (signalsByStatus.published || 0) +
+      (signalsByStatus.updated || 0) +
+      (signalsByStatus.closed || 0);
     const observedSignalsResult = await db.query(
       `
       SELECT count(DISTINCT o.signal_id)::int AS count
@@ -156,7 +176,7 @@ export function createPerformanceService({ db, queries, logger }) {
       db.query(
         `SELECT count(*)::int AS count
          FROM marketplace_published_signals
-         WHERE provider_id = $1 AND status IN ('published', 'updated')`,
+         WHERE provider_id = $1 AND status IN ('published', 'updated', 'closed')`,
         [providerId],
       ),
       db.query(
@@ -171,7 +191,24 @@ export function createPerformanceService({ db, queries, logger }) {
             ON execution.id = closed_trade.signal_execution_id
           JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
           WHERE signal.provider_id = $1
+            AND signal.source_account_id IS NULL
           GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+        ),
+        source_signal_pnl AS (
+          SELECT
+            signal.id AS execution_id,
+            COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+            signal.realized_pnl
+          FROM marketplace_published_signals signal
+          WHERE signal.provider_id = $1
+            AND signal.status = 'closed'
+            AND signal.closed_at IS NOT NULL
+            AND signal.realized_pnl IS NOT NULL
+        ),
+        all_pnl AS (
+          SELECT * FROM execution_pnl
+          UNION ALL
+          SELECT * FROM source_signal_pnl
         )
         SELECT
           pnl_asset,
@@ -180,7 +217,7 @@ export function createPerformanceService({ db, queries, logger }) {
           count(*) FILTER (WHERE realized_pnl < 0)::int AS losses,
           count(*) FILTER (WHERE realized_pnl = 0)::int AS breakeven,
           SUM(realized_pnl)::text AS net_pnl
-        FROM execution_pnl
+        FROM all_pnl
         GROUP BY pnl_asset
         ORDER BY pnl_asset
         `,
@@ -198,9 +235,23 @@ export function createPerformanceService({ db, queries, logger }) {
             ON execution.id = closed_trade.signal_execution_id
           JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
           WHERE signal.provider_id = $1
+            AND signal.source_account_id IS NULL
           GROUP BY
             COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN'),
             date_trunc('day', closed_trade.closed_at)
+          UNION ALL
+          SELECT
+            COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+            date_trunc('day', signal.closed_at) AS day,
+            SUM(signal.realized_pnl) AS pnl
+          FROM marketplace_published_signals signal
+          WHERE signal.provider_id = $1
+            AND signal.status = 'closed'
+            AND signal.closed_at IS NOT NULL
+            AND signal.realized_pnl IS NOT NULL
+          GROUP BY
+            COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN'),
+            date_trunc('day', signal.closed_at)
         )
         SELECT
           pnl_asset,

@@ -14,6 +14,38 @@ async function createHandlers(services) {
 }
 
 describe('job handlers', () => {
+  it('syncs every active account used by a public trader profile', async () => {
+    const syncedAccounts = [];
+    const registry = await createHandlers({});
+
+    await registry.require('marketplace_trader_trade_sync')({
+      services: {
+        marketplace: {
+          queries: {
+            async listTraderTradeSyncTargets() {
+              return [
+                { workspace_id: 'workspace-a', account_id: 'account-a' },
+                { workspace_id: 'workspace-b', account_id: 'account-b' },
+              ];
+            },
+          },
+        },
+        terminal: {
+          service: {
+            async syncAccountState(target) {
+              syncedAccounts.push(target);
+            },
+          },
+        },
+      },
+    });
+
+    assert.deepEqual(syncedAccounts, [
+      { workspaceId: 'workspace-a', accountId: 'account-a' },
+      { workspaceId: 'workspace-b', accountId: 'account-b' },
+    ]);
+  });
+
   it('uses the public event poll method for outbox publish jobs', async () => {
     let pollCount = 0;
     const registry = await createHandlers({
