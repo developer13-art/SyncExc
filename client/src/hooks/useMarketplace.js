@@ -10,6 +10,8 @@ export function useMarketplaceProviders(params = {}) {
     queryKey: queryKeys.marketplace.providers(params),
     queryFn: () => marketplaceApi.listProviders(params),
     staleTime: 60_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const follow = useMutation({
@@ -40,6 +42,8 @@ export function useMarketplaceProvider(providerId) {
     queryFn: () => marketplaceApi.getProvider(providerId),
     enabled: Boolean(providerId),
     staleTime: 60_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const plansQuery = useQuery({
@@ -54,6 +58,8 @@ export function useMarketplaceProvider(providerId) {
     queryFn: () => marketplaceApi.getProviderPerformance(providerId),
     enabled: Boolean(providerId),
     staleTime: 60_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const disclosuresQuery = useQuery({

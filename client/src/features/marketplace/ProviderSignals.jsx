@@ -38,6 +38,8 @@ export function ProviderSignals({ providerId, onSubscribe }) {
     queryKey: queryKeys.marketplace.providerSignals(providerId, {}),
     queryFn: () => marketplaceApi.listProviderSignals(providerId, { limit: 50 }),
     enabled: Boolean(providerId),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
   const {
     configurations,
@@ -397,7 +399,11 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       label: 'Copy',
       render: (row) => {
         if (!['published', 'updated'].includes(row.status)) {
-          return <Badge variant="muted">Filled · not copyable</Badge>;
+          return (
+            <Badge variant="muted">
+              {row.status === 'closed' ? 'Closed' : 'Filled'} · not copyable
+            </Badge>
+          );
         }
         if (configurationsLoading) {
           return <Button size="sm" variant="outline" disabled>Loading…</Button>;
@@ -462,7 +468,7 @@ export function ProviderSignals({ providerId, onSubscribe }) {
       label: 'Status',
       render: (row) => (
         <Badge variant={row.status === 'published' || row.status === 'updated' ? 'success' : 'muted'}>
-          {row.status === 'closed' ? 'Filled' : row.status ?? 'published'}
+          {row.status === 'closed' ? 'Closed' : row.status ?? 'published'}
         </Badge>
       ),
     },

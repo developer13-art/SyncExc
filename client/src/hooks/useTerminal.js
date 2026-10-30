@@ -61,6 +61,7 @@ export function useTerminalOrders(workspaceId, params = {}) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.connections.balances(accountId),
       });
+      queryClient.invalidateQueries({ queryKey: ['marketplace'] });
     },
   });
 
@@ -97,6 +98,7 @@ export function useTerminalPositions(workspaceId, params = {}) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.connections.balances(accountId),
       });
+      queryClient.invalidateQueries({ queryKey: ['marketplace'] });
     },
   });
 
@@ -129,6 +131,7 @@ export function useTerminalAccountSync(workspaceId, accountId) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.connections.balances(accountId),
         }),
+        queryClient.invalidateQueries({ queryKey: ['marketplace'] }),
       ]);
       return result;
     },
@@ -163,6 +166,7 @@ export function useTerminalAccountsSync(workspaceId, accounts = []) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.terminal.overview(workspaceId),
         }),
+        queryClient.invalidateQueries({ queryKey: ['marketplace'] }),
       ]);
       return results;
     },

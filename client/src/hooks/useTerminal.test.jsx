@@ -9,6 +9,7 @@ vi.mock('../api/index.js', () => ({
   terminalApi: {
     cancelOrder: vi.fn(),
     listOrders: vi.fn(),
+    syncAccountState: vi.fn(),
     submitOrder: vi.fn(),
   },
 }));
@@ -42,5 +43,23 @@ describe('useTerminalOrders', () => {
     });
 
     expect(terminalApi.listOrders).toHaveBeenCalledTimes(2);
+  });
+
+  test('refreshes marketplace data after syncing an exchange account', async () => {
+    terminalApi.syncAccountState.mockResolvedValue([]);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    const wrapper = ({ children }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useTerminalOrders('workspace-id'), { wrapper });
+
+    await act(async () => {
+      await result.current.syncAccountState('account-id');
+    });
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['marketplace'] });
   });
 });
