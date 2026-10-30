@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Copy } from 'lucide-react';
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { DataTable } from '../../components/ui/DataTable.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { marketplaceApi } from '../../api/index.js';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { connectionsApi, marketplaceApi, terminalApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
 import { formatQuantity } from '../../lib/formatters/number.formatter.js';
+import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
+import {
+  findUsdConversionMarket,
+  getUsdConversionRate,
+} from '../../lib/trading/order-preview.js';
 import { formatDateTime, formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { Button } from '../../components/ui/Button.jsx';
@@ -18,10 +23,12 @@ import { useCopyConfigurations } from '../../hooks/useMarketplace.js';
 import { useToast } from '../../hooks/useToast.js';
 import { Modal } from '../../components/ui/Modal.jsx';
 import { Input } from '../../components/ui/Input.jsx';
+import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 
 export function ProviderSignals({ providerId, onSubscribe }) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { activeWorkspaceId } = useWorkspaceContext();
   const [selectedSignalId, setSelectedSignalId] = useState(null);
   const [copyTarget, setCopyTarget] = useState(null);
   const [selectedConfigurationId, setSelectedConfigurationId] = useState('');
@@ -54,6 +61,157 @@ export function ProviderSignals({ providerId, onSubscribe }) {
     enabled: Boolean(copyTarget?.configuration?.id),
   });
   const availableCopyDestinations = copyConfigurationDetailQuery.data?.destinations ?? [];
+  const selectedDestinations = useMemo(
+    () =>
+      availableCopyDestinations.filter(
+        (destination) =>
+          selectedDestinationAccountIds.includes(destination.account_id) &&
+          destination.connection_status === 'active' &&
+          destination.account_status === 'active',
+      ),
+    [availableCopyDestinations, selectedDestinationAccountIds],
+  );
+  const destinationExchangeCodes = useMemo(
+    () => [...new Set(selectedDestinations.map((destination) => destination.exchange_code).filter(Boolean))],
+    [selectedDestinations],
+  );
+  const destinationMarketsQueries = useQueries({
+    queries: destinationExchangeCodes.map((exchangeCode) => ({
+      queryKey: queryKeys.terminal.markets(activeWorkspaceId, { exchangeCode }),
+      queryFn: () => terminalApi.listMarkets(activeWorkspaceId, { exchangeCode }),
+      enabled: Boolean(activeWorkspaceId && copyTarget),
+      staleTime: 60_000,
+    })),
+  });
+  const destinationBalanceQueries = useQueries({
+    queries: selectedDestinations.map((destination) => ({
+      queryKey: queryKeys.connections.balances(destination.account_id),
+      queryFn: () => connectionsApi.listBalances(destination.account_id),
+      enabled: Boolean(copyTarget),
+      staleTime: 15_000,
+    })),
+  });
+  const destinationMarketDetails = selectedDestinations.map((destination, index) => {
+    const exchangeIndex = destinationExchangeCodes.indexOf(destination.exchange_code);
+    const marketsQuery = destinationMarketsQueries[exchangeIndex];
+    const marketType = copyTarget?.signal?.marketType === 'spot' ? 'spot' : 'futures';
+    const instrument = (marketsQuery?.data ?? []).find(
+      (market) =>
+        (market.exchangeSymbol === copyTarget?.signal?.instrument ||
+          market.symbol === copyTarget?.signal?.instrument) &&
+        (market.marketType === marketType ||
+          (marketType === 'futures' && market.marketType === 'perpetual')),
+    );
+    const quoteAsset = instrument?.quoteAsset;
+    const conversionMarket = findUsdConversionMarket(
+      quoteAsset,
+      marketsQuery?.data ?? [],
+    );
+    const balanceQuery = destinationBalanceQueries[index];
+    const quoteBalance = balanceQuery?.data?.items?.find(
+      (balance) =>
+        String(balance.asset || '').toUpperCase() === String(quoteAsset || '').toUpperCase(),
+    );
+    const leverage = Math.max(1, Number(copyTarget?.signal?.leverage) || 1);
+    const amount = Number(copyAmount);
+    const isFutures = marketType === 'futures';
+    const requiredBalance = Number.isFinite(amount) && amount > 0
+      ? isFutures ? amount / leverage : amount
+      : null;
+    const availableBalance = Number(
+      (isFutures ? balanceQuery?.data?.availableMargin : null) ??
+        quoteBalance?.available ??
+        quoteBalance?.free,
+    );
+    return {
+      destination,
+      marketsQuery,
+      balanceQuery,
+      instrument,
+      quoteAsset,
+      conversionMarket,
+      isFutures,
+      requiredBalance,
+      availableBalance: Number.isFinite(availableBalance) ? availableBalance : null,
+    };
+  });
+  const usdConversionRequests = useMemo(() => {
+    const requests = new Map();
+    for (const detail of destinationMarketDetails) {
+      if (!detail.conversionMarket) continue;
+      const symbol =
+        detail.conversionMarket.instrument.exchangeSymbol ??
+        detail.conversionMarket.instrument.symbol;
+      const key = `${detail.destination.exchange_code}:${symbol}`;
+      if (!requests.has(key)) {
+        requests.set(key, {
+          exchangeCode: detail.destination.exchange_code,
+          symbol,
+          asset: detail.quoteAsset,
+        });
+      }
+    }
+    return [...requests.values()];
+  }, [destinationMarketDetails]);
+  const usdConversionQueries = useQueries({
+    queries: usdConversionRequests.map((request) => ({
+      queryKey: queryKeys.terminal.marketData(activeWorkspaceId, {
+        exchangeCode: request.exchangeCode,
+        symbol: request.symbol,
+        marketType: 'spot',
+        timeframe: '1h',
+        limit: 25,
+      }),
+      queryFn: () =>
+        terminalApi.getMarketData(activeWorkspaceId, {
+          exchangeCode: request.exchangeCode,
+          symbol: request.symbol,
+          marketType: 'spot',
+          timeframe: '1h',
+          limit: 25,
+        }),
+      enabled: Boolean(activeWorkspaceId && copyTarget),
+      staleTime: 30_000,
+      retry: false,
+    })),
+  });
+  const totalEstimatedUsd = destinationMarketDetails.reduce((total, detail) => {
+    const amount = Number(copyAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return total;
+    const requestIndex = usdConversionRequests.findIndex(
+      (request) =>
+        request.exchangeCode === detail.destination.exchange_code &&
+        request.asset === detail.quoteAsset,
+    );
+    const conversionQuery = usdConversionQueries[requestIndex];
+    const rate = getUsdConversionRate(
+      detail.quoteAsset,
+      detail.conversionMarket,
+      conversionQuery?.data?.overview?.lastPrice,
+    );
+    return rate ? total + amount * rate : total;
+  }, 0);
+  const hasCompleteUsdEstimate =
+    destinationMarketDetails.length > 0 &&
+    destinationMarketDetails.every((detail) => {
+      const amount = Number(copyAmount);
+      if (!Number.isFinite(amount) || amount <= 0) return false;
+      if (!detail.conversionMarket) return Boolean(
+        getUsdConversionRate(detail.quoteAsset, null, null),
+      );
+      const requestIndex = usdConversionRequests.findIndex(
+        (request) =>
+          request.exchangeCode === detail.destination.exchange_code &&
+          request.asset === detail.quoteAsset,
+      );
+      return Number.isFinite(
+        getUsdConversionRate(
+          detail.quoteAsset,
+          detail.conversionMarket,
+          usdConversionQueries[requestIndex]?.data?.overview?.lastPrice,
+        ),
+      );
+    });
   const availableDestinationKey = availableCopyDestinations
     .filter((item) =>
       item.connection_status === 'active' && item.account_status === 'active'
@@ -424,8 +582,128 @@ export function ProviderSignals({ providerId, onSubscribe }) {
                   onChange={(event) => setCopyAmount(event.target.value)}
                   placeholder="Enter amount"
                 />
+                {selectedDestinations.length > 0 &&
+                Number.isFinite(Number(copyAmount)) &&
+                Number(copyAmount) > 0 ? (
+                  <div className="grid gap-2 rounded-md border border-border p-3">
+                    <p className="text-xs font-medium text-foreground">
+                      Per-account funding check
+                    </p>
+                    {destinationMarketDetails.map((detail) => {
+                      const amount = Number(copyAmount);
+                      const balanceFreshness = detail.isFutures
+                        ? detail.balanceQuery?.data?.accountSnapshotFreshness ?? 'unknown'
+                        : detail.balanceQuery?.data?.freshness ?? 'unknown';
+                      const hasBalanceSnapshot = ['current', 'stale'].includes(balanceFreshness);
+                      const isUnsupportedSpotShort =
+                        !detail.isFutures &&
+                        ['short', 'sell'].includes(
+                          String(copyTarget.signal.direction || '').toLowerCase(),
+                        );
+                      const isLoading =
+                        detail.marketsQuery?.isLoading || detail.balanceQuery?.isLoading;
+                      const balanceIsSufficient =
+                        hasBalanceSnapshot &&
+                        detail.requiredBalance !== null &&
+                        detail.availableBalance !== null &&
+                        detail.availableBalance >= detail.requiredBalance;
+                      const balanceIsInsufficient =
+                        hasBalanceSnapshot &&
+                        detail.requiredBalance !== null &&
+                        (detail.availableBalance ?? 0) < detail.requiredBalance;
+                      const conversionRequestIndex = usdConversionRequests.findIndex(
+                        (request) =>
+                          request.exchangeCode === detail.destination.exchange_code &&
+                          request.asset === detail.quoteAsset,
+                      );
+                      const usdRate = getUsdConversionRate(
+                        detail.quoteAsset,
+                        detail.conversionMarket,
+                        usdConversionQueries[conversionRequestIndex]?.data?.overview?.lastPrice,
+                      );
+                      let statusText = 'Balance not available; live check required';
+                      let statusVariant = 'muted';
+                      if (isLoading) {
+                        statusText = 'Checking pair and balance…';
+                      } else if (detail.marketsQuery?.isError || detail.balanceQuery?.isError) {
+                        statusText = 'Could not load preview; live check required';
+                        statusVariant = 'warning';
+                      } else if (isUnsupportedSpotShort) {
+                        statusText = 'Spot accounts cannot open short positions';
+                        statusVariant = 'destructive';
+                      } else if (detail.marketsQuery?.data && !detail.instrument) {
+                        statusText = 'Instrument is not supported on this exchange';
+                        statusVariant = 'destructive';
+                      } else if (balanceIsInsufficient) {
+                        statusText = `Insufficient on last sync · ${formatQuantity(
+                          detail.availableBalance ?? 0,
+                          6,
+                        )} ${detail.quoteAsset} available`;
+                        statusVariant = 'destructive';
+                      } else if (balanceIsSufficient) {
+                        statusText = `${balanceFreshness === 'stale' ? 'Enough on stale snapshot' : 'Sufficient'} · ${formatQuantity(
+                          detail.availableBalance,
+                          6,
+                        )} ${detail.quoteAsset} available`;
+                        statusVariant = balanceFreshness === 'stale' ? 'warning' : 'success';
+                      }
+                      return (
+                        <div
+                          key={detail.destination.account_id}
+                          className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-xs"
+                        >
+                          <div>
+                            <p className="font-medium text-foreground">
+                              {(detail.destination.exchange_code || 'Exchange').toUpperCase()}
+                              {detail.destination.account_type
+                                ? ` · ${detail.destination.account_type}`
+                                : ''}
+                            </p>
+                            <p className="text-muted-foreground">
+                              Per account: {detail.quoteAsset
+                                ? formatCurrency(amount, detail.quoteAsset)
+                                : formatQuantity(amount, 4)}
+                              {usdRate
+                                ? ` · ${['USDT', 'USDC'].includes(
+                                    String(detail.quoteAsset).toUpperCase(),
+                                  ) ? '≈ ' : ''}${formatCurrency(amount * usdRate, 'USD')} USD`
+                                : ''}
+                              {detail.isFutures
+                                ? ` · est. margin ${formatQuantity(
+                                    detail.requiredBalance,
+                                    4,
+                                  )} ${detail.quoteAsset}`
+                                : ''}
+                            </p>
+                          </div>
+                          <Badge variant={statusVariant}>{statusText}</Badge>
+                        </div>
+                      );
+                    })}
+                    <div className="border-t border-border pt-2 text-xs">
+                      <span className="text-muted-foreground">
+                        Estimated total across selected accounts:{' '}
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {hasCompleteUsdEstimate
+                          ? `${destinationMarketDetails.some((detail) =>
+                              ['USDT', 'USDC'].includes(
+                                String(detail.quoteAsset || '').toUpperCase(),
+                              ),
+                            ) ? '≈ ' : ''}${formatCurrency(totalEstimatedUsd, 'USD')} USD`
+                          : 'USD estimate unavailable for one or more quote assets'}
+                      </span>
+                    </div>
+                    <p className="text-2xs text-muted-foreground">
+                      Estimates use the latest synced balances and market conversion rates. The
+                      exchange and risk checks verify funds, pair support, and permissions again
+                      before each order is sent.
+                    </p>
+                  </div>
+                ) : null}
                 <p className="text-xs text-muted-foreground">
-                  This amount and your account selection are private. Each destination is checked for pair support, account health, and available balance before submission. Risk controls and any required approval still apply.
+                  This amount and your account selection are private. Each selected destination
+                  uses the same amount in that pair’s quote currency.
                 </p>
               </div>
             </>

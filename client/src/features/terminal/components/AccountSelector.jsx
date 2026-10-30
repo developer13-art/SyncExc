@@ -50,7 +50,11 @@ export function AccountSelector({ accounts = [], value, onChange, className }) {
               {group.exchangeName}
             </div>
             {group.accounts.map((account) => (
-              <SelectItem key={account.id} value={account.id}>
+              <SelectItem
+                key={account.id}
+                value={account.id}
+                disabled={account.status !== 'active'}
+              >
                 <span className="flex items-center gap-2">
                   <span className="truncate">
                     {account.label ??
@@ -58,6 +62,7 @@ export function AccountSelector({ accounts = [], value, onChange, className }) {
                         .filter(Boolean)
                         .join(' · ') ??
                       account.id}
+                    {account.status !== 'active' ? ` · ${account.status}` : ''}
                   </span>
                   {account.healthStatus ? (
                     <ConnectionHealthBadge status={account.healthStatus} />

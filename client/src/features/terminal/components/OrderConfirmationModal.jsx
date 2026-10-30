@@ -12,6 +12,10 @@ export function OrderConfirmationModal({
   order,
   instrument,
   account,
+  orderPreview,
+  usdConversionRate,
+  usdConversionApproximate = false,
+  balanceFreshness = 'unknown',
   onConfirm,
   isSubmitting,
   approvalRequired = false,
@@ -22,10 +26,7 @@ export function OrderConfirmationModal({
   }
 
   const isBuy = order.side === 'buy';
-  const notional =
-    order.quantity && (order.price || instrument?.markPrice || instrument?.lastPrice)
-      ? Number(order.quantity) * Number(order.price ?? instrument.markPrice ?? instrument.lastPrice)
-      : 0;
+  const notional = orderPreview?.notional ?? 0;
 
   return (
     <Modal
@@ -89,6 +90,31 @@ export function OrderConfirmationModal({
           <Row
             label="Estimated notional"
             value={formatCurrency(notional, instrument?.quoteAsset ?? 'USD')}
+          />
+        ) : null}
+        {notional > 0 ? (
+          <Row
+            label="Estimated USD total"
+            value={
+              usdConversionRate
+                ? `${usdConversionApproximate ? '≈ ' : ''}${formatCurrency(
+                    notional * usdConversionRate,
+                    'USD',
+                  )}`
+                : 'Unavailable for this quote asset'
+            }
+          />
+        ) : null}
+        {orderPreview?.requiredBalance != null ? (
+          <Row
+            label={`Balance check · ${orderPreview.requiredAsset}`}
+            value={
+              orderPreview.sufficient === true
+                ? `${formatQuantity(orderPreview.availableBalance, 6)} available · sufficient (${balanceFreshness} snapshot)`
+                : orderPreview.sufficient === false
+                  ? `${formatQuantity(orderPreview.availableBalance, 6)} available · insufficient (${balanceFreshness} snapshot)`
+                  : 'Unable to estimate from latest balance snapshot'
+            }
           />
         ) : null}
       </div>

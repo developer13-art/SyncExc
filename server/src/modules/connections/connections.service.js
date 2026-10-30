@@ -718,19 +718,35 @@ export function createConnectionsService({
 
   async function fetchBalances({ accountId, workspaceId }) {
     await requireAccountAccess({ accountId, workspaceId });
-    const snapshot = await queries.getLatestBalanceSnapshot(accountId);
-    if (!snapshot) return { items: [], observedAt: null, freshness: 'unknown' };
-    const items = await queries.listBalanceItemsForSnapshot(snapshot.id);
-    const observedAt = new Date(snapshot.observed_at);
-    const freshness = Number.isNaN(observedAt.getTime())
+    const [snapshot, accountSnapshot] = await Promise.all([
+      queries.getLatestBalanceSnapshot(accountId),
+      queries.getLatestAccountSnapshot(accountId),
+    ]);
+    const items = snapshot
+      ? await queries.listBalanceItemsForSnapshot(snapshot.id)
+      : [];
+    const observedAt = snapshot?.observed_at ? new Date(snapshot.observed_at) : null;
+    const freshness = !observedAt || Number.isNaN(observedAt.getTime())
       ? 'unknown'
       : Date.now() - observedAt.getTime() > 60_000
         ? 'stale'
         : 'current';
+    const accountObservedAt = accountSnapshot?.observed_at
+      ? new Date(accountSnapshot.observed_at)
+      : null;
+    const accountSnapshotFreshness = !accountObservedAt || Number.isNaN(accountObservedAt.getTime())
+      ? 'unknown'
+      : Date.now() - accountObservedAt.getTime() > 60_000
+        ? 'stale'
+        : 'current';
     return {
-      observedAt: snapshot.observed_at,
-      receivedAt: snapshot.received_at,
+      observedAt: snapshot?.observed_at ?? null,
+      receivedAt: snapshot?.received_at ?? null,
       freshness,
+      accountSnapshotObservedAt: accountSnapshot?.observed_at ?? null,
+      accountSnapshotFreshness,
+      equity: accountSnapshot?.equity ?? null,
+      availableMargin: accountSnapshot?.available_margin ?? null,
       items: items.map((i) => ({
         asset: i.asset,
         free: i.free,

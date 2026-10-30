@@ -34,6 +34,11 @@ import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { userPreferencesQueryKey } from '../settings/useUserPreferences.js';
+import {
+  calculateOrderPreview,
+  findUsdConversionMarket,
+  getUsdConversionRate,
+} from '../../lib/trading/order-preview.js';
 
 const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'];
 const EXCHANGE_TIMEFRAMES = {
@@ -97,8 +102,8 @@ export default function TerminalOverview() {
   );
 
   useEffect(() => {
-    if (!selectedAccountId && accounts.length > 0) {
-      setSelectedAccountId(accounts[0].id);
+    if (!accounts.some((account) => account.id === selectedAccountId && account.status === 'active')) {
+      setSelectedAccountId(accounts.find((account) => account.status === 'active')?.id ?? null);
     }
   }, [accounts, selectedAccountId]);
 
@@ -184,6 +189,65 @@ export default function TerminalOverview() {
   });
   const marketData = marketDataQuery.data;
   const connectionDetailQuery = useConnection(activeConnection?.id, selectedAccountId);
+  const quoteConversionMarket = findUsdConversionMarket(
+    selectedInstrument?.quoteAsset,
+    instruments,
+  );
+  const quoteConversionMarketDataQuery = useTerminalMarketData(activeWorkspaceId, {
+    exchangeCode: activeConnection?.exchange,
+    symbol: quoteConversionMarket?.instrument.exchangeSymbol ??
+      quoteConversionMarket?.instrument.symbol,
+    marketType: 'spot',
+    timeframe: '1h',
+    limit: 25,
+  });
+  const usdConversionRate = getUsdConversionRate(
+    selectedInstrument?.quoteAsset,
+    quoteConversionMarket,
+    quoteConversionMarketDataQuery.data?.overview?.lastPrice,
+  );
+  const usdConversionApproximate = ['USDT', 'USDC'].includes(
+    String(selectedInstrument?.quoteAsset || '').toUpperCase(),
+  );
+  const selectedBaseBalance = connectionDetailQuery.balances?.find(
+    (balance) => balance.asset === selectedInstrument?.baseAsset,
+  )?.available;
+  const selectedQuoteBalance = connectionDetailQuery.balances?.find(
+    (balance) => balance.asset === selectedInstrument?.quoteAsset,
+  )?.available;
+  const selectedMarketType = selectedInstrument?.marketType ?? 'spot';
+  const isSelectedFutures =
+    selectedMarketType === 'futures' || selectedMarketType === 'perpetual';
+  const selectedAvailableFunds = isSelectedFutures
+    ? connectionDetailQuery.availableMargin
+    : selectedQuoteBalance;
+  const selectedBalanceFreshness = isSelectedFutures
+    ? connectionDetailQuery.accountSnapshotFreshness
+    : connectionDetailQuery.balanceFreshness;
+  const pendingOrderPreview = useMemo(
+    () =>
+      pendingOrder && selectedInstrument
+        ? calculateOrderPreview({
+            ...pendingOrder,
+            orderType: pendingOrder.type,
+            marketType: selectedMarketType,
+            referencePrice:
+              marketData?.overview?.markPrice ?? marketData?.overview?.lastPrice,
+            baseAsset: selectedInstrument.baseAsset,
+            quoteAsset: selectedInstrument.quoteAsset,
+            baseBalance: selectedBaseBalance,
+            quoteBalance: selectedAvailableFunds,
+          })
+        : null,
+    [
+      pendingOrder,
+      selectedInstrument,
+      selectedMarketType,
+      marketData,
+      selectedBaseBalance,
+      selectedAvailableFunds,
+    ],
+  );
 
   const handleSubmitOrder = (order) => {
     setPendingOrder({ ...order, idempotencyKey: createOrderIdempotencyKey() });
@@ -565,16 +629,15 @@ export default function TerminalOverview() {
                 account={accounts.find((a) => a.id === selectedAccountId)}
                 marketType={selectedInstrument.marketType ?? 'spot'}
                 defaultOrderType={tradingPreferences?.defaultOrderType ?? 'limit'}
-                availableBalance={
-                  connectionDetailQuery.balances?.find(
-                    (b) => b.asset === selectedInstrument.baseAsset,
-                  )?.available ?? 0
+                availableBalance={selectedBaseBalance}
+                availableMargin={selectedAvailableFunds}
+                balanceFreshness={selectedBalanceFreshness}
+                isBalancesLoading={connectionDetailQuery.isBalancesLoading}
+                referencePrice={
+                  marketData?.overview?.markPrice ?? marketData?.overview?.lastPrice
                 }
-                availableMargin={
-                  connectionDetailQuery.balances?.find(
-                    (b) => b.asset === selectedInstrument.quoteAsset,
-                  )?.available ?? 0
-                }
+                usdConversionRate={usdConversionRate}
+                usdConversionApproximate={usdConversionApproximate}
                 maxLeverage={1}
                 onSubmit={handleSubmitOrder}
               />
@@ -640,6 +703,10 @@ export default function TerminalOverview() {
         order={pendingOrder}
         instrument={selectedInstrument}
         account={accounts.find((a) => a.id === selectedAccountId)}
+        orderPreview={pendingOrderPreview}
+        usdConversionRate={usdConversionRate}
+        usdConversionApproximate={usdConversionApproximate}
+        balanceFreshness={selectedBalanceFreshness}
         onConfirm={handleConfirmOrder}
         isSubmitting={submitting}
         approvalRequired={Boolean(approvalRequestId)}

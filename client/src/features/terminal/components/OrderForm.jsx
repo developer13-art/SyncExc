@@ -17,6 +17,10 @@ import { SegmentedControl } from '../../../components/navigation/SegmentedContro
 import { Slider } from '../../../components/ui/Slider.jsx';
 import { formatQuantity } from '../../../lib/formatters/number.formatter.js';
 import { formatCurrency } from '../../../lib/formatters/currency.formatter.js';
+import {
+  calculateOrderPreview,
+  getUsdConversionRate,
+} from '../../../lib/trading/order-preview.js';
 import { cn } from '../../../lib/utils/cn.util.js';
 
 const SPOT_ORDER_TYPES = [
@@ -46,6 +50,11 @@ export function OrderForm({
   availableBalance,
   availableMargin,
   availableBalances,
+  balanceFreshness,
+  isBalancesLoading = false,
+  referencePrice,
+  usdConversionRate,
+  usdConversionApproximate = false,
   maxLeverage,
   defaultOrderType = 'limit',
   className,
@@ -98,13 +107,42 @@ export function OrderForm({
         ? availableMargin
         : availableBalance;
 
-  const notional = useMemo(() => {
-    if (!quantity) {
-      return 0;
-    }
-    const refPrice = isMarketOrder ? Number(instrument?.markPrice ?? instrument?.lastPrice ?? 0) : Number(price);
-    return Number(quantity) * (Number.isFinite(refPrice) ? refPrice : 0);
-  }, [quantity, price, isMarketOrder, instrument]);
+  const orderPreview = useMemo(
+    () =>
+      calculateOrderPreview({
+        side,
+        marketType,
+        orderType: type,
+        quantity,
+        price,
+        referencePrice: referencePrice ?? instrument?.markPrice ?? instrument?.lastPrice,
+        baseAsset: instrument?.baseAsset,
+        quoteAsset: instrument?.quoteAsset,
+        baseBalance: availableBalance,
+        quoteBalance: availableMargin,
+        leverage,
+      }),
+    [
+      side,
+      marketType,
+      type,
+      quantity,
+      price,
+      referencePrice,
+      instrument,
+      availableBalance,
+      availableMargin,
+      leverage,
+    ],
+  );
+  const notional = orderPreview.notional ?? 0;
+  const resolvedUsdConversionRate =
+    usdConversionRate ?? getUsdConversionRate(instrument?.quoteAsset, null, null);
+  const approximateUsdConversion =
+    usdConversionApproximate ||
+    ['USDT', 'USDC'].includes(String(instrument?.quoteAsset || '').toUpperCase());
+  const balanceKnownInsufficient =
+    balanceFreshness === 'current' && orderPreview.sufficient === false;
 
   const applyPercent = (nextPercent) => {
     setPercent(nextPercent);
@@ -112,7 +150,9 @@ export function OrderForm({
     if (!base || !instrument) {
       return;
     }
-    const refPrice = isMarketOrder ? Number(instrument.markPrice ?? instrument.lastPrice ?? 0) : Number(price);
+    const refPrice = isMarketOrder
+      ? Number(referencePrice ?? instrument.markPrice ?? instrument.lastPrice ?? 0)
+      : Number(price);
     if (!Number.isFinite(refPrice) || refPrice <= 0) {
       return;
     }
@@ -339,11 +379,45 @@ export function OrderForm({
         <p className="mt-1 text-sm font-semibold text-foreground">
           {formatCurrency(notional, instrument?.quoteAsset ?? 'USD')}
         </p>
+        <p className="mt-1 text-2xs text-muted-foreground">
+          {resolvedUsdConversionRate
+            ? `${approximateUsdConversion ? 'Approx. ' : ''}${formatCurrency(
+                notional * resolvedUsdConversionRate,
+                'USD',
+              )} USD`
+            : 'USD estimate unavailable for this quote asset'}
+        </p>
+        <div
+          className={cn(
+            'mt-2 border-t border-border pt-2 text-2xs',
+            orderPreview.sufficient === true
+              ? 'text-success'
+              : orderPreview.sufficient === false
+                ? 'text-destructive'
+                : 'text-muted-foreground',
+          )}
+          role="status"
+        >
+          {isBalancesLoading
+            ? 'Refreshing account balances…'
+            : orderPreview.sufficient === true
+              ? `Sufficient ${orderPreview.requiredAsset} balance: ${formatQuantity(
+                  orderPreview.availableBalance,
+                  6,
+                )} available; ${formatQuantity(orderPreview.requiredBalance, 6)} estimated required.`
+              : orderPreview.sufficient === false
+                ? `Insufficient ${orderPreview.requiredAsset} balance: ${formatQuantity(
+                    orderPreview.availableBalance,
+                    6,
+                  )} available; ${formatQuantity(orderPreview.requiredBalance, 6)} estimated required.`
+                : 'Balance could not be estimated from the latest sync; the exchange will verify funds before submission.'}
+          {balanceFreshness === 'stale' ? ' Balance snapshot is stale.' : null}
+        </div>
       </div>
 
       <Button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || balanceKnownInsufficient}
         variant={side === 'buy' ? 'success' : 'destructive'}
         className="w-full"
       >

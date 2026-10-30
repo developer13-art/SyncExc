@@ -358,6 +358,20 @@ export function createConnectionsQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async getLatestAccountSnapshot(accountId) {
+      const result = await db.query(
+        `
+        SELECT *
+        FROM exchange_account_snapshots
+        WHERE account_id = $1
+        ORDER BY observed_at DESC
+        LIMIT 1
+        `,
+        [accountId]
+      );
+      return result.rows[0] || null;
+    },
+
     async listBalanceItemsForSnapshot(snapshotId) {
       const result = await db.query(
         `SELECT * FROM exchange_balance_items WHERE snapshot_id = $1 ORDER BY asset ASC`,
