@@ -437,9 +437,9 @@ export function createMarketplaceQueries({ db }) {
       if (rows.length > 0) {
         const migrationResult = await db.query(
           `SELECT EXISTS (
-             SELECT 1 FROM schema_migrations WHERE name = $1
+             SELECT 1 FROM schema_migrations WHERE filename = $1
            ) AS applied`,
-          ['042_marketplace_signal_pnl_asset.sql'],
+          ['045_marketplace_trade_lifecycle.sql'],
         );
         if (migrationResult.rows[0]?.applied) {
           const pnlResult = await db.query(
@@ -449,16 +449,56 @@ export function createMarketplaceQueries({ db }) {
                 signal.provider_id,
                 execution.id AS execution_id,
                 COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-                SUM(closed_trade.realized_pnl) AS realized_pnl
+                SUM(exchange_trade.realized_pnl) AS realized_pnl
               FROM marketplace_signal_closed_trades closed_trade
+              JOIN trading_closed_trades exchange_trade
+                ON exchange_trade.id = closed_trade.closed_trade_id
               JOIN marketplace_trader_signal_executions execution
                 ON execution.id = closed_trade.signal_execution_id
               JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
               WHERE signal.provider_id = ANY($1::uuid[])
+                AND signal.source_account_id IS NULL
               GROUP BY
                 signal.provider_id,
                 execution.id,
                 COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+            ),
+            source_signal_pnl AS (
+              SELECT
+                signal.provider_id,
+                signal.id AS execution_id,
+                COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+                SUM(exchange_trade.realized_pnl) AS realized_pnl
+              FROM marketplace_published_signals signal
+              JOIN trading_closed_trades exchange_trade
+                ON (
+                  (
+                    signal.source_closed_trade_id IS NOT NULL
+                    AND exchange_trade.id = signal.source_closed_trade_id
+                  )
+                  OR (
+                    signal.source_closed_trade_id IS NULL
+                    AND (signal.source_order_id IS NOT NULL OR signal.source_position_snapshot_id IS NOT NULL)
+                    AND exchange_trade.account_id = signal.source_account_id
+                    AND exchange_trade.instrument = signal.instrument
+                    AND exchange_trade.side = signal.direction
+                    AND exchange_trade.closed_at >= signal.entry_time
+                    AND exchange_trade.closed_at <= signal.closed_at
+                  )
+                )
+              WHERE signal.provider_id = ANY($1::uuid[])
+                AND signal.source_account_id IS NOT NULL
+                AND signal.status = 'closed'
+                AND signal.closed_at IS NOT NULL
+              GROUP BY
+                signal.provider_id,
+                signal.id,
+                COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN')
+            ),
+            all_pnl AS (
+              SELECT * FROM execution_pnl
+              UNION ALL
+              SELECT * FROM source_signal_pnl
             )
             SELECT
               provider_id,
@@ -466,7 +506,7 @@ export function createMarketplaceQueries({ db }) {
               SUM(realized_pnl)::text AS net_pnl,
               count(*)::int AS observed_executions,
               count(*) FILTER (WHERE realized_pnl > 0)::int AS wins
-            FROM execution_pnl
+            FROM all_pnl
             GROUP BY provider_id, pnl_asset
             ORDER BY provider_id, pnl_asset
             `,

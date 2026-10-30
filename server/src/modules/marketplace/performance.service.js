@@ -57,27 +57,48 @@ export function createPerformanceService({ db, queries, logger }) {
         SELECT
           execution.id AS execution_id,
           COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-          SUM(closed_trade.realized_pnl) AS realized_pnl
+          SUM(exchange_trade.realized_pnl) AS realized_pnl
         FROM marketplace_signal_closed_trades closed_trade
+        JOIN trading_closed_trades exchange_trade
+          ON exchange_trade.id = closed_trade.closed_trade_id
         JOIN marketplace_trader_signal_executions execution
           ON execution.id = closed_trade.signal_execution_id
         JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
         WHERE signal.provider_id = $1
           AND signal.source_account_id IS NULL
-          AND closed_trade.closed_at >= $2
-          AND closed_trade.closed_at <= $3
+          AND exchange_trade.closed_at >= $2
+          AND exchange_trade.closed_at <= $3
         GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
       ),
       source_signal_pnl AS (
         SELECT
           signal.id AS execution_id,
           COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-          signal.realized_pnl
+          SUM(exchange_trade.realized_pnl) AS realized_pnl
         FROM marketplace_published_signals signal
+        JOIN trading_closed_trades exchange_trade
+          ON (
+            (
+              signal.source_closed_trade_id IS NOT NULL
+              AND exchange_trade.id = signal.source_closed_trade_id
+            )
+            OR (
+              signal.source_closed_trade_id IS NULL
+              AND (signal.source_order_id IS NOT NULL OR signal.source_position_snapshot_id IS NOT NULL)
+              AND exchange_trade.account_id = signal.source_account_id
+              AND exchange_trade.instrument = signal.instrument
+              AND exchange_trade.side = signal.direction
+              AND exchange_trade.closed_at >= signal.entry_time
+              AND exchange_trade.closed_at <= signal.closed_at
+            )
+          )
         WHERE signal.provider_id = $1
-          AND signal.closed_at >= $2
-          AND signal.closed_at <= $3
-          AND signal.realized_pnl IS NOT NULL
+          AND signal.source_account_id IS NOT NULL
+          AND signal.status = 'closed'
+          AND signal.closed_at IS NOT NULL
+          AND exchange_trade.closed_at >= $2
+          AND exchange_trade.closed_at <= $3
+        GROUP BY signal.id, COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN')
       ),
       all_pnl AS (
         SELECT * FROM execution_pnl
@@ -183,10 +204,12 @@ export function createPerformanceService({ db, queries, logger }) {
         `
         WITH execution_pnl AS (
           SELECT
+            execution.id AS execution_id,
             COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-            SUM(closed_trade.realized_pnl) AS realized_pnl,
-            execution.id AS execution_id
+            SUM(exchange_trade.realized_pnl) AS realized_pnl
           FROM marketplace_signal_closed_trades closed_trade
+          JOIN trading_closed_trades exchange_trade
+            ON exchange_trade.id = closed_trade.closed_trade_id
           JOIN marketplace_trader_signal_executions execution
             ON execution.id = closed_trade.signal_execution_id
           JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
@@ -198,12 +221,29 @@ export function createPerformanceService({ db, queries, logger }) {
           SELECT
             signal.id AS execution_id,
             COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-            signal.realized_pnl
+            SUM(exchange_trade.realized_pnl) AS realized_pnl
           FROM marketplace_published_signals signal
+          JOIN trading_closed_trades exchange_trade
+            ON (
+              (
+                signal.source_closed_trade_id IS NOT NULL
+                AND exchange_trade.id = signal.source_closed_trade_id
+              )
+              OR (
+                signal.source_closed_trade_id IS NULL
+                AND (signal.source_order_id IS NOT NULL OR signal.source_position_snapshot_id IS NOT NULL)
+                AND exchange_trade.account_id = signal.source_account_id
+                AND exchange_trade.instrument = signal.instrument
+                AND exchange_trade.side = signal.direction
+                AND exchange_trade.closed_at >= signal.entry_time
+                AND exchange_trade.closed_at <= signal.closed_at
+              )
+            )
           WHERE signal.provider_id = $1
+            AND signal.source_account_id IS NOT NULL
             AND signal.status = 'closed'
             AND signal.closed_at IS NOT NULL
-            AND signal.realized_pnl IS NOT NULL
+          GROUP BY signal.id, COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN')
         ),
         all_pnl AS (
           SELECT * FROM execution_pnl
@@ -228,9 +268,11 @@ export function createPerformanceService({ db, queries, logger }) {
         WITH daily_pnl AS (
           SELECT
             COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-            date_trunc('day', closed_trade.closed_at) AS day,
-            SUM(closed_trade.realized_pnl) AS pnl
+            date_trunc('day', exchange_trade.closed_at) AS day,
+            SUM(exchange_trade.realized_pnl) AS pnl
           FROM marketplace_signal_closed_trades closed_trade
+          JOIN trading_closed_trades exchange_trade
+            ON exchange_trade.id = closed_trade.closed_trade_id
           JOIN marketplace_trader_signal_executions execution
             ON execution.id = closed_trade.signal_execution_id
           JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
@@ -238,20 +280,36 @@ export function createPerformanceService({ db, queries, logger }) {
             AND signal.source_account_id IS NULL
           GROUP BY
             COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN'),
-            date_trunc('day', closed_trade.closed_at)
+            date_trunc('day', exchange_trade.closed_at)
           UNION ALL
           SELECT
             COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
-            date_trunc('day', signal.closed_at) AS day,
-            SUM(signal.realized_pnl) AS pnl
+            date_trunc('day', exchange_trade.closed_at) AS day,
+            SUM(exchange_trade.realized_pnl) AS pnl
           FROM marketplace_published_signals signal
+          JOIN trading_closed_trades exchange_trade
+            ON (
+              (
+                signal.source_closed_trade_id IS NOT NULL
+                AND exchange_trade.id = signal.source_closed_trade_id
+              )
+              OR (
+                signal.source_closed_trade_id IS NULL
+                AND (signal.source_order_id IS NOT NULL OR signal.source_position_snapshot_id IS NOT NULL)
+                AND exchange_trade.account_id = signal.source_account_id
+                AND exchange_trade.instrument = signal.instrument
+                AND exchange_trade.side = signal.direction
+                AND exchange_trade.closed_at >= signal.entry_time
+                AND exchange_trade.closed_at <= signal.closed_at
+              )
+            )
           WHERE signal.provider_id = $1
+            AND signal.source_account_id IS NOT NULL
             AND signal.status = 'closed'
             AND signal.closed_at IS NOT NULL
-            AND signal.realized_pnl IS NOT NULL
           GROUP BY
             COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN'),
-            date_trunc('day', signal.closed_at)
+            date_trunc('day', exchange_trade.closed_at)
         )
         SELECT
           pnl_asset,
@@ -308,9 +366,9 @@ export function createPerformanceService({ db, queries, logger }) {
       seriesByAsset,
       methodology: {
         source: 'independent',
-        description: 'Realized PnL includes only closed trades linked to the exact exchange entry order.',
-        exclusions: 'Trades without an exact exchange order match are excluded. PnL is kept separate by settlement asset.',
-        dataRange: observedExecutions ? 'All exact linked closed-trade observations' : 'No exact linked closed-trade observations',
+        description: 'Realized PnL is calculated from closed exchange trades linked to each published signal or copied execution.',
+        exclusions: 'Unlinked closed trades are excluded. PnL is kept separate by settlement asset.',
+        dataRange: observedExecutions ? 'All linked closed-trade observations' : 'No linked closed-trade observations',
         methodologyVersion: METHODOLOGY_VERSION,
       },
     };

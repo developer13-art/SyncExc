@@ -4,6 +4,7 @@ import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { PerformanceChart } from './components/PerformanceChart.jsx';
 import { useMarketplaceProvider } from '../../hooks/useMarketplace.js';
 import { formatPercent } from '../../lib/formatters/percent.formatter.js';
+import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
 
 export function ProviderPerformance({ providerId }) {
   const providerQuery = useMarketplaceProvider(providerId);
