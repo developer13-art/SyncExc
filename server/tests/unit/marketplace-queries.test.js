@@ -52,5 +52,6 @@ test('provider listings include realized PnL from linked exchange closed trades'
   assert.match(pnlCall.sql, /exchange_trade\.id = closed_trade\.closed_trade_id/);
   assert.match(pnlCall.sql, /exchange_trade\.id = signal\.source_closed_trade_id/);
   assert.match(pnlCall.sql, /SUM\(exchange_trade\.realized_pnl\)/);
+  assert.match(pnlCall.sql, /NULLIF\(exchange_trade\.fee_asset, ''\)/);
   assert.match(pnlCall.sql, /FROM all_pnl/);
 });

@@ -28,9 +28,9 @@ export function ProviderPerformance({ providerId }) {
 
       <PerformanceChart
         performance={performance}
-        isLoading={providerQuery.isLoading}
-        error={providerQuery.error}
-        onRetry={providerQuery.refetch}
+        isLoading={providerQuery.performanceIsLoading}
+        error={providerQuery.performanceError}
+        onRetry={providerQuery.refetchPerformance}
       />
 
       {performance?.metrics ? (

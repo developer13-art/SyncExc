@@ -56,7 +56,7 @@ export function createPerformanceService({ db, queries, logger }) {
       WITH execution_pnl AS (
         SELECT
           execution.id AS execution_id,
-          COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+          COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN') AS pnl_asset,
           SUM(exchange_trade.realized_pnl) AS realized_pnl
         FROM marketplace_signal_closed_trades closed_trade
         JOIN trading_closed_trades exchange_trade
@@ -68,12 +68,12 @@ export function createPerformanceService({ db, queries, logger }) {
           AND signal.source_account_id IS NULL
           AND exchange_trade.closed_at >= $2
           AND exchange_trade.closed_at <= $3
-        GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+        GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN')
       ),
       source_signal_pnl AS (
         SELECT
           signal.id AS execution_id,
-          COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+          COALESCE(NULLIF(signal.pnl_asset, ''), MAX(NULLIF(exchange_trade.fee_asset, '')), 'UNKNOWN') AS pnl_asset,
           SUM(exchange_trade.realized_pnl) AS realized_pnl
         FROM marketplace_published_signals signal
         JOIN trading_closed_trades exchange_trade
@@ -98,7 +98,7 @@ export function createPerformanceService({ db, queries, logger }) {
           AND signal.closed_at IS NOT NULL
           AND exchange_trade.closed_at >= $2
           AND exchange_trade.closed_at <= $3
-        GROUP BY signal.id, COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN')
+        GROUP BY signal.id, signal.pnl_asset
       ),
       all_pnl AS (
         SELECT * FROM execution_pnl
@@ -205,7 +205,7 @@ export function createPerformanceService({ db, queries, logger }) {
         WITH execution_pnl AS (
           SELECT
             execution.id AS execution_id,
-            COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+            COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN') AS pnl_asset,
             SUM(exchange_trade.realized_pnl) AS realized_pnl
           FROM marketplace_signal_closed_trades closed_trade
           JOIN trading_closed_trades exchange_trade
@@ -215,12 +215,12 @@ export function createPerformanceService({ db, queries, logger }) {
           JOIN marketplace_published_signals signal ON signal.id = execution.signal_id
           WHERE signal.provider_id = $1
             AND signal.source_account_id IS NULL
-          GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+          GROUP BY execution.id, COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN')
         ),
         source_signal_pnl AS (
           SELECT
             signal.id AS execution_id,
-            COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+            COALESCE(NULLIF(signal.pnl_asset, ''), MAX(NULLIF(exchange_trade.fee_asset, '')), 'UNKNOWN') AS pnl_asset,
             SUM(exchange_trade.realized_pnl) AS realized_pnl
           FROM marketplace_published_signals signal
           JOIN trading_closed_trades exchange_trade
@@ -243,7 +243,7 @@ export function createPerformanceService({ db, queries, logger }) {
             AND signal.source_account_id IS NOT NULL
             AND signal.status = 'closed'
             AND signal.closed_at IS NOT NULL
-          GROUP BY signal.id, COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN')
+          GROUP BY signal.id, signal.pnl_asset
         ),
         all_pnl AS (
           SELECT * FROM execution_pnl
@@ -267,7 +267,7 @@ export function createPerformanceService({ db, queries, logger }) {
         `
         WITH daily_pnl AS (
           SELECT
-            COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+            COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN') AS pnl_asset,
             date_trunc('day', exchange_trade.closed_at) AS day,
             SUM(exchange_trade.realized_pnl) AS pnl
           FROM marketplace_signal_closed_trades closed_trade
@@ -279,11 +279,11 @@ export function createPerformanceService({ db, queries, logger }) {
           WHERE signal.provider_id = $1
             AND signal.source_account_id IS NULL
           GROUP BY
-            COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN'),
+            COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN'),
             date_trunc('day', exchange_trade.closed_at)
           UNION ALL
           SELECT
-            COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+            COALESCE(NULLIF(signal.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN') AS pnl_asset,
             date_trunc('day', exchange_trade.closed_at) AS day,
             SUM(exchange_trade.realized_pnl) AS pnl
           FROM marketplace_published_signals signal
@@ -308,7 +308,7 @@ export function createPerformanceService({ db, queries, logger }) {
             AND signal.status = 'closed'
             AND signal.closed_at IS NOT NULL
           GROUP BY
-            COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN'),
+            COALESCE(NULLIF(signal.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN'),
             date_trunc('day', exchange_trade.closed_at)
         )
         SELECT
@@ -316,7 +316,6 @@ export function createPerformanceService({ db, queries, logger }) {
           day AS timestamp,
           SUM(pnl) OVER (PARTITION BY pnl_asset ORDER BY day)::text AS value
         FROM daily_pnl
-        WHERE pnl_asset <> 'UNKNOWN'
         ORDER BY pnl_asset, day
         `,
         [providerId],

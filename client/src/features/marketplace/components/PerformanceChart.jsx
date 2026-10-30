@@ -44,7 +44,7 @@ export function PerformanceChart({ performance, currency = 'USD', isLoading, err
       onRetry={onRetry}
       isEmpty={series.length === 0}
       emptyTitle="No exact performance data"
-      emptyDescription="Realized performance appears after a closed trade is matched to its exact exchange entry order."
+      emptyDescription="Realized performance appears after a closed trade is linked to a provider signal or copied execution."
       height={320}
     >
       <AreaChart
@@ -55,7 +55,7 @@ export function PerformanceChart({ performance, currency = 'USD', isLoading, err
         xKey="timestamp"
         height={300}
         showLegend={false}
-        valueFormatter={(v) => formatCurrency(v, asset || currency)}
+        valueFormatter={(v) => formatCurrency(v, asset === 'UNKNOWN' ? '' : asset || currency)}
         className="border-0 shadow-none"
       />
     </ChartContainer>

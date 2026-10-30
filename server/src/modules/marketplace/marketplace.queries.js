@@ -453,7 +453,7 @@ export function createMarketplaceQueries({ db }) {
               SELECT
                 signal.provider_id,
                 execution.id AS execution_id,
-                COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+                COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN') AS pnl_asset,
                 SUM(exchange_trade.realized_pnl) AS realized_pnl
               FROM marketplace_signal_closed_trades closed_trade
               JOIN trading_closed_trades exchange_trade
@@ -466,13 +466,13 @@ export function createMarketplaceQueries({ db }) {
               GROUP BY
                 signal.provider_id,
                 execution.id,
-                COALESCE(NULLIF(closed_trade.pnl_asset, ''), 'UNKNOWN')
+                COALESCE(NULLIF(closed_trade.pnl_asset, ''), NULLIF(exchange_trade.fee_asset, ''), 'UNKNOWN')
             ),
             source_signal_pnl AS (
               SELECT
                 signal.provider_id,
                 signal.id AS execution_id,
-                COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN') AS pnl_asset,
+                COALESCE(NULLIF(signal.pnl_asset, ''), MAX(NULLIF(exchange_trade.fee_asset, '')), 'UNKNOWN') AS pnl_asset,
                 SUM(exchange_trade.realized_pnl) AS realized_pnl
               FROM marketplace_published_signals signal
               JOIN trading_closed_trades exchange_trade
@@ -498,7 +498,7 @@ export function createMarketplaceQueries({ db }) {
               GROUP BY
                 signal.provider_id,
                 signal.id,
-                COALESCE(NULLIF(signal.pnl_asset, ''), 'UNKNOWN')
+                signal.pnl_asset
             ),
             all_pnl AS (
               SELECT * FROM execution_pnl
