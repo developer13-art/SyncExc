@@ -12,6 +12,7 @@ export function useWebSocket({ channels = [], autoConnect = true } = {}) {
   const wsRef = useRef(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef(null);
+  const connectionStartTimerRef = useRef(null);
   const heartbeatTimerRef = useRef(null);
   const listenersRef = useRef(new Map());
   const subscribedChannelsRef = useRef(new Set(channels));
@@ -41,17 +42,21 @@ export function useWebSocket({ channels = [], autoConnect = true } = {}) {
   const subscribe = useCallback(
     (channel) => {
       subscribedChannelsRef.current.add(channel);
-      send({ type: 'subscribe', channel });
+      if (status === 'connected') {
+        send({ type: 'subscribe', channel });
+      }
     },
-    [send],
+    [send, status],
   );
 
   const unsubscribe = useCallback(
     (channel) => {
       subscribedChannelsRef.current.delete(channel);
-      send({ type: 'unsubscribe', channel });
+      if (status === 'connected') {
+        send({ type: 'unsubscribe', channel });
+      }
     },
-    [send],
+    [send, status],
   );
 
   const on = useCallback((event, handler) => {
@@ -102,26 +107,11 @@ export function useWebSocket({ channels = [], autoConnect = true } = {}) {
 
     setStatus('connecting');
 
-    const url = new URL(apiConfig.wsURL);
-    url.searchParams.set('token', token);
-
-    const ws = new WebSocket(url.toString());
+    const ws = new WebSocket(apiConfig.wsURL);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      reconnectAttemptRef.current = 0;
-      setStatus('connected');
-      emit('connected', null);
-
-      subscribedChannelsRef.current.forEach((channel) => {
-        send({ type: 'subscribe', channel });
-      });
-
-      heartbeatTimerRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, HEARTBEAT_INTERVAL_MS);
+      ws.send(JSON.stringify({ type: 'auth', token }));
     };
 
     ws.onmessage = (event) => {
@@ -130,6 +120,21 @@ export function useWebSocket({ channels = [], autoConnect = true } = {}) {
         message = JSON.parse(event.data);
       } catch {
         return;
+      }
+      if (message.type === 'auth_ack') {
+        reconnectAttemptRef.current = 0;
+        setStatus('connected');
+        emit('connected', null);
+        subscribedChannelsRef.current.forEach((channel) => {
+          ws.send(JSON.stringify({ type: 'subscribe', channel }));
+        });
+        heartbeatTimerRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, HEARTBEAT_INTERVAL_MS);
+      } else if (message.type === 'auth_error') {
+        setStatus('unauthenticated');
       }
       if (message.type === 'pong') {
         return;
@@ -151,7 +156,7 @@ export function useWebSocket({ channels = [], autoConnect = true } = {}) {
       if (event.code === 1000) {
         return;
       }
-      if (event.code === 4001 || event.code === 4003) {
+      if ([4001, 4003, 4401, 4403].includes(event.code)) {
         setStatus('unauthenticated');
         return;
       }
@@ -161,6 +166,10 @@ export function useWebSocket({ channels = [], autoConnect = true } = {}) {
 
   const disconnect = useCallback(() => {
     clearTimers();
+    if (connectionStartTimerRef.current) {
+      clearTimeout(connectionStartTimerRef.current);
+      connectionStartTimerRef.current = null;
+    }
     if (wsRef.current) {
       try {
         wsRef.current.close(1000, 'client_disconnect');
@@ -181,7 +190,10 @@ export function useWebSocket({ channels = [], autoConnect = true } = {}) {
     if (!autoConnect) {
       return undefined;
     }
-    connect();
+    connectionStartTimerRef.current = setTimeout(() => {
+      connectionStartTimerRef.current = null;
+      connectRef.current?.();
+    }, 0);
     return () => {
       disconnect();
     };

@@ -292,7 +292,7 @@ export const apiConfig = Object.freeze({
       myPlans: '/marketplace/me/plans',
       subscriberDashboard: '/marketplace/subscriber-dashboard',
       follow: (id) => `/marketplace/providers/${id}/follow`,
-      follows: '/marketplace/following',
+      follows: '/marketplace/follows',
       subscriptions: '/marketplace/subscriptions',
       subscription: (id) => `/marketplace/subscriptions/${id}`,
       cancelSubscription: (id) => `/marketplace/subscriptions/${id}/cancel`,

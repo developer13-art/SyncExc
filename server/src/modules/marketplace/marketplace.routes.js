@@ -448,11 +448,12 @@ export function createMarketplaceRoutes(services) {
     middleware.asyncHandler(controller.unfollow)
   );
 
-  router.get(
-    '/following',
+  const listFollowingRoute = [
     middleware.requireAuth(),
-    middleware.asyncHandler(controller.listFollowing)
-  );
+    middleware.asyncHandler(controller.listFollowing),
+  ];
+  router.get('/following', ...listFollowingRoute);
+  router.get('/follows', ...listFollowingRoute);
 
   /* ---------------------------------------------------------------------------
    * Subscriptions
