@@ -437,7 +437,12 @@ export function createMarketplaceQueries({ db }) {
       if (rows.length > 0) {
         const migrationResult = await db.query(
           `SELECT EXISTS (
-             SELECT 1 FROM schema_migrations WHERE filename = $1
+             SELECT 1
+             FROM schema_migrations
+             WHERE COALESCE(
+               to_jsonb(schema_migrations)->>'filename',
+               to_jsonb(schema_migrations)->>'name'
+             ) = $1
            ) AS applied`,
           ['045_marketplace_trade_lifecycle.sql'],
         );

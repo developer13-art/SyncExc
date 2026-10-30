@@ -43,7 +43,8 @@ test('provider listings include realized PnL from linked exchange closed trades'
     },
   ]);
   const migrationCall = calls.find(({ sql }) => sql.includes('schema_migrations'));
-  assert.ok(migrationCall.sql.includes('filename = $1'));
+  assert.match(migrationCall.sql, /to_jsonb\(schema_migrations\)->>'filename'/);
+  assert.match(migrationCall.sql, /to_jsonb\(schema_migrations\)->>'name'/);
   assert.deepEqual(migrationCall.params, ['045_marketplace_trade_lifecycle.sql']);
 
   const pnlCall = calls.find(({ sql }) => sql.includes('WITH execution_pnl'));
