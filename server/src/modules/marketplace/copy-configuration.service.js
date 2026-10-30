@@ -25,6 +25,8 @@ export function createCopyConfigurationService({
     marketTypes,
     instrumentFilters,
     sizingRule,
+    stopLossPercent,
+    takeProfitPercent,
     executionMode,
   }) {
     const provider = await queries.findProviderById(providerId);
@@ -51,6 +53,11 @@ export function createCopyConfigurationService({
       throw new ValidationError('Invalid execution mode');
     }
 
+    const protectionOverrides = {
+      stopLossPercent: validateProtectionPercentage(stopLossPercent, 'Stop-loss'),
+      takeProfitPercent: validateProtectionPercentage(takeProfitPercent, 'Take-profit'),
+    };
+
     return db.tx(async (tx) => {
       const config = await queries.insertCopyConfiguration(tx, {
         workspaceId,
@@ -60,6 +67,7 @@ export function createCopyConfigurationService({
         sizingRule,
         instrumentFilters,
         marketTypes,
+        ...protectionOverrides,
         executionMode,
       });
 
@@ -178,6 +186,20 @@ export function createCopyConfigurationService({
     listConfigurations,
     getConfiguration,
   };
+}
+
+function validateProtectionPercentage(value, label) {
+  if (value === undefined || value === null || value === '') return null;
+  const percentage = Number(value);
+  if (
+    !Number.isFinite(percentage) ||
+    percentage <= 0 ||
+    percentage >= 100 ||
+    Number(percentage.toFixed(4)) !== percentage
+  ) {
+    throw new ValidationError(`${label} percentage must be greater than 0 and less than 100, with up to 4 decimal places`);
+  }
+  return percentage;
 }
 
 export default createCopyConfigurationService;

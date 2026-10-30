@@ -656,6 +656,8 @@ export function serializeCopyConfiguration(row) {
     providerId: row.provider_id,
     workspaceId: row.workspace_id,
     sizingRule: row.sizing_rule || {},
+    stopLossPercent: row.stop_loss_percent == null ? null : Number(row.stop_loss_percent),
+    takeProfitPercent: row.take_profit_percent == null ? null : Number(row.take_profit_percent),
     executionMode: row.execution_mode,
     status: row.status,
     createdAt: row.created_at,

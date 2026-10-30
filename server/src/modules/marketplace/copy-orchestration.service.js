@@ -351,7 +351,17 @@ export function createCopyOrchestrationService({
       });
     }
 
+    const hasProtectionOverride =
+      config.stop_loss_percent != null || config.take_profit_percent != null;
+    const isLimitOrder = (signal.order_type || 'market') === 'limit';
     let referencePrice = signal.entry == null ? null : Number(signal.entry);
+    if (
+      !Number.isFinite(referencePrice) ||
+      referencePrice <= 0 ||
+      (hasProtectionOverride && !isLimitOrder)
+    ) {
+      referencePrice = null;
+    }
     if (referencePrice == null) {
       try {
         referencePrice = await fetchReferencePrice(
@@ -366,9 +376,26 @@ export function createCopyOrchestrationService({
           signal,
           destination,
           reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
-          message: `Could not get a market price for sizing and balance validation: ${err.message}`,
+          message: `Could not get a market price for sizing, protection, and balance validation: ${err.message}`,
         });
       }
+    }
+
+    let protection;
+    try {
+      protection = resolveCopyProtectionLevels({
+        config,
+        signal,
+        referencePrice,
+      });
+    } catch (err) {
+      return recordSkip({
+        config,
+        signal,
+        destination,
+        reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
+        message: `Copy protection settings are invalid: ${err.message}`,
+      });
     }
 
     // Compute the sizing
@@ -376,7 +403,9 @@ export function createCopyOrchestrationService({
     try {
       allocation = computeAllocation({
         sizingRule: config.sizing_rule,
-        signal,
+        signal: hasProtectionOverride && !isLimitOrder
+          ? { ...signal, entry: null }
+          : signal,
         referencePrice,
       });
     } catch (err) {
@@ -404,6 +433,7 @@ export function createCopyOrchestrationService({
       signal,
       quantity: allocation.quantity,
       referencePrice,
+      protection,
     });
     if (!destinationCheck.valid) {
       return recordSkip({
@@ -412,6 +442,23 @@ export function createCopyOrchestrationService({
         destination,
         reason: destinationCheck.reason,
         message: destinationCheck.message,
+      });
+    }
+
+    try {
+      protection = alignCopyProtectionLevels({
+        protection,
+        tickSize: destinationCheck.instrument?.tick_size,
+        direction: signal.direction,
+        referencePrice,
+      });
+    } catch (err) {
+      return recordSkip({
+        config,
+        signal,
+        destination,
+        reason: COPY_SKIP_REASON.INVALID_ALLOCATION,
+        message: `Copy protection does not align with the destination price rules: ${err.message}`,
       });
     }
 
@@ -430,9 +477,11 @@ export function createCopyOrchestrationService({
           type: signal.order_type || 'market',
           quantity: allocation.quantity,
           leverage: signal.leverage,
-          price: signal.entry ?? referencePrice,
-          stopLoss: signal.stop_loss ?? null,
-          takeProfit: resolveTakeProfit(signal.targets),
+          price: hasProtectionOverride && !isLimitOrder
+            ? referencePrice
+            : signal.entry ?? referencePrice,
+          stopLoss: protection.stopLoss,
+          takeProfit: protection.takeProfit,
         },
       });
     } catch (err) {
@@ -511,9 +560,9 @@ export function createCopyOrchestrationService({
             type: signal.order_type || 'market',
             quantity: allocation.quantity,
             leverage: signal.leverage,
-            stopLoss: signal.stop_loss ?? null,
-            takeProfit: resolveTakeProfit(signal.targets),
-            ...(signal.order_type === 'limit' ? { price: signal.entry } : {}),
+            stopLoss: protection.stopLoss,
+            takeProfit: protection.takeProfit,
+            ...(isLimitOrder ? { price: signal.entry } : {}),
             idempotencyKey: fnv1aHash(`copy-submit:${operationKey}`),
           },
           idempotencyKey: fnv1aHash(`copy-intent:${operationKey}`),
@@ -544,7 +593,13 @@ export function createCopyOrchestrationService({
     return record;
   }
 
-  async function validateDestination({ destination, signal, quantity, referencePrice }) {
+  async function validateDestination({
+    destination,
+    signal,
+    quantity,
+    referencePrice,
+    protection,
+  }) {
     if (!connections) {
       return {
         valid: false,
@@ -585,8 +640,8 @@ export function createCopyOrchestrationService({
       capabilities: adapter.capabilities,
       marketType,
       orderType,
-      stopLoss: signal.stop_loss,
-      takeProfit: resolveTakeProfit(signal.targets),
+      stopLoss: protection.stopLoss,
+      takeProfit: protection.takeProfit,
     });
     if (!protectionPlan.supported) {
       return {
@@ -959,6 +1014,133 @@ function resolveTakeProfit(targets) {
   const first = Array.isArray(parsed) ? parsed[0] : null;
   const value = first && typeof first === 'object' ? first.price : first;
   return value == null ? null : String(value);
+}
+
+export function resolveCopyProtectionLevels({ config, signal, referencePrice }) {
+  const stopLossPercent = config.stop_loss_percent == null
+    ? null
+    : Number(config.stop_loss_percent);
+  const takeProfitPercent = config.take_profit_percent == null
+    ? null
+    : Number(config.take_profit_percent);
+  const hasOverride = stopLossPercent !== null || takeProfitPercent !== null;
+  const price = Number(referencePrice);
+  const direction = String(signal.direction || '').toLowerCase();
+  const isLong = ['long', 'buy'].includes(direction);
+
+  if (
+    hasOverride &&
+    (!Number.isFinite(price) || price <= 0 || !['long', 'buy', 'short', 'sell'].includes(direction))
+  ) {
+    throw new Error('A valid direction and execution/reference price are required for percentage overrides');
+  }
+  for (const [label, percentage] of [
+    ['Stop-loss', stopLossPercent],
+    ['Take-profit', takeProfitPercent],
+  ]) {
+    if (
+      percentage !== null &&
+      (!Number.isFinite(percentage) || percentage <= 0 || percentage >= 100)
+    ) {
+      throw new Error(`${label} percentage must be greater than 0 and less than 100`);
+    }
+  }
+
+  return {
+    stopLoss: stopLossPercent === null
+      ? signal.stop_loss ?? null
+      : String(price * (isLong ? 1 - stopLossPercent / 100 : 1 + stopLossPercent / 100)),
+    takeProfit: takeProfitPercent === null
+      ? resolveTakeProfit(signal.targets)
+      : String(price * (isLong ? 1 + takeProfitPercent / 100 : 1 - takeProfitPercent / 100)),
+    stopLossOverridden: stopLossPercent !== null,
+    takeProfitOverridden: takeProfitPercent !== null,
+  };
+}
+
+export function alignCopyProtectionLevels({ protection, tickSize, direction, referencePrice }) {
+  if (!protection.stopLossOverridden && !protection.takeProfitOverridden) {
+    return protection;
+  }
+
+  const normalizedDirection = String(direction || '').toLowerCase();
+  const isLong = ['long', 'buy'].includes(normalizedDirection);
+  const isShort = ['short', 'sell'].includes(normalizedDirection);
+  if (!isLong && !isShort) {
+    throw new Error('A valid long or short direction is required');
+  }
+
+  const stopLoss = protection.stopLossOverridden
+    ? alignPriceToTick(protection.stopLoss, tickSize, isLong)
+    : protection.stopLoss;
+  const takeProfit = protection.takeProfitOverridden
+    ? alignPriceToTick(protection.takeProfit, tickSize, !isLong)
+    : protection.takeProfit;
+  const reference = Number(referencePrice);
+
+  if (
+    protection.stopLossOverridden &&
+    (isLong ? Number(stopLoss) >= reference : Number(stopLoss) <= reference)
+  ) {
+    throw new Error('Stop-loss distance is smaller than the destination price tick');
+  }
+  if (
+    protection.takeProfitOverridden &&
+    (isLong ? Number(takeProfit) <= reference : Number(takeProfit) >= reference)
+  ) {
+    throw new Error('Take-profit distance is smaller than the destination price tick');
+  }
+
+  return { ...protection, stopLoss, takeProfit };
+}
+
+function alignPriceToTick(value, tickSize, roundUp) {
+  if (tickSize == null) throw new Error('Destination price tick is unavailable');
+  const price = decimalParts(value);
+  const step = decimalParts(tickSize);
+  if (!price || !step) throw new Error('Price or destination tick is invalid');
+
+  const scale = Math.max(price.fraction.length, step.fraction.length);
+  if (scale > 18) throw new Error('Price precision exceeds the supported limit');
+
+  const priceValue = toScaledInteger(price, scale);
+  const stepValue = toScaledInteger(step, scale);
+  if (priceValue <= 0n || stepValue <= 0n) {
+    throw new Error('Price and destination tick must be positive');
+  }
+
+  let ticks = priceValue / stepValue;
+  if (roundUp && priceValue % stepValue > 0n) ticks += 1n;
+  const alignedValue = ticks * stepValue;
+  if (alignedValue <= 0n) throw new Error('Aligned protection price must be positive');
+  return formatScaledInteger(alignedValue, scale);
+}
+
+function decimalParts(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  let text = String(value).trim();
+  if (!/^\d+(?:\.\d+)?$/.test(text)) {
+    text = numeric.toFixed(18);
+  }
+  text = text
+    .replace(/(\.\d*?[1-9])0+$/, '$1')
+    .replace(/\.0+$/, '');
+  if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
+  const [integer, fraction = ''] = text.split('.');
+  return { integer, fraction };
+}
+
+function toScaledInteger({ integer, fraction }, scale) {
+  return BigInt(`${integer}${fraction.padEnd(scale, '0')}`);
+}
+
+function formatScaledInteger(value, scale) {
+  if (scale === 0) return value.toString();
+  const digits = value.toString().padStart(scale + 1, '0');
+  const whole = digits.slice(0, -scale);
+  const fraction = digits.slice(-scale).replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole;
 }
 
 async function fetchReferencePrice(marketData, exchangeCode, symbol, marketType) {

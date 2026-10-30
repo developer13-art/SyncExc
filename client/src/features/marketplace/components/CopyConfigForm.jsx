@@ -51,6 +51,8 @@ export function CopyConfigForm({
       destinationAccountIds: value?.destinationAccountIds ?? [],
       sizingType: value?.sizingType ?? 'fixed_amount',
       sizingValue: value?.sizingValue ?? '',
+      stopLossPercent: value?.stopLossPercent ?? '',
+      takeProfitPercent: value?.takeProfitPercent ?? '',
       executionMode: value?.executionMode ?? 'confirm_before_execution',
       maxOpenPositions: value?.maxOpenPositions ?? 5,
       notes: value?.notes ?? '',
@@ -164,6 +166,64 @@ export function CopyConfigForm({
             error={errors.sizingValue?.message}
           />
         </FormField>
+
+        <div className="grid gap-4 rounded-lg border border-border p-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Protection overrides</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Set optional distances from the execution/reference price. Leave a field blank to
+              use the provider signal&apos;s protection for that leg.
+            </p>
+          </div>
+          <FormField
+            label="Stop-loss distance (%)"
+            htmlFor="copy-stop-loss-percent"
+            hint="For example, 2 means 2% from the execution/reference price."
+          >
+            <Input
+              id="copy-stop-loss-percent"
+              type="number"
+              min="0.0001"
+              max="99.9999"
+              step="0.0001"
+              inputMode="decimal"
+              placeholder="Use provider value"
+              {...register('stopLossPercent', {
+                validate: (value) =>
+                  value === '' ||
+                  (/^\d+(?:\.\d{1,4})?$/.test(value) &&
+                    Number(value) > 0 &&
+                    Number(value) < 100) ||
+                  'Enter a percentage greater than 0 and less than 100 (up to 4 decimals)',
+              })}
+              error={errors.stopLossPercent?.message}
+            />
+          </FormField>
+          <FormField
+            label="Take-profit distance (%)"
+            htmlFor="copy-take-profit-percent"
+            hint="For example, 4 means 4% from the execution/reference price."
+          >
+            <Input
+              id="copy-take-profit-percent"
+              type="number"
+              min="0.0001"
+              max="99.9999"
+              step="0.0001"
+              inputMode="decimal"
+              placeholder="Use provider value"
+              {...register('takeProfitPercent', {
+                validate: (value) =>
+                  value === '' ||
+                  (/^\d+(?:\.\d{1,4})?$/.test(value) &&
+                    Number(value) > 0 &&
+                    Number(value) < 100) ||
+                  'Enter a percentage greater than 0 and less than 100 (up to 4 decimals)',
+              })}
+              error={errors.takeProfitPercent?.message}
+            />
+          </FormField>
+        </div>
 
         <FormField label="Execution mode" htmlFor="copy-mode" required>
           <Controller

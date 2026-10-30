@@ -114,6 +114,12 @@ export default function CreateCopyConfiguration() {
             ? { percentage: Number(values.sizingValue) }
             : { amount: Number(values.sizingValue) },
         },
+        ...(values.stopLossPercent !== ''
+          ? { stopLossPercent: Number(values.stopLossPercent) }
+          : {}),
+        ...(values.takeProfitPercent !== ''
+          ? { takeProfitPercent: Number(values.takeProfitPercent) }
+          : {}),
         executionMode: values.executionMode,
         instrumentFilters: [],
       });

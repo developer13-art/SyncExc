@@ -27,6 +27,13 @@ neither is requested, normal entry validation still applies. Unsupported
 protection is rejected at the terminal API or recorded as a per-destination
 skip for signal and copy execution; the request is never submitted unprotected.
 
+Copy configurations may override the provider's stop-loss and take-profit with
+independent percentage distances from the execution/reference price. Market
+copies use a fresh market reference price; limit copies use the signal's limit
+price. Each generated level is aligned to the destination instrument tick.
+Leaving either override blank falls back to that leg from the provider signal.
+Risk and exchange capability checks still apply to the resulting bracket.
+
 ## Adapter capability contract
 
 Adapters should declare `capabilities.bracketProtection` by market:

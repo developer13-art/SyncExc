@@ -446,6 +446,8 @@ export function createMarketplaceController(services) {
         marketTypes: req.body.marketTypes,
         instrumentFilters: req.body.instrumentFilters,
         sizingRule: req.body.sizingRule,
+        stopLossPercent: req.body.stopLossPercent,
+        takeProfitPercent: req.body.takeProfitPercent,
         executionMode: req.body.executionMode,
       });
       return created(res, serializeCopyConfiguration(config));

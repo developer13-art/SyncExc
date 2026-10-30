@@ -600,6 +600,8 @@ export const CreateCopyConfigurationRequestSchema = Joi.object({
       .required(),
     config: Joi.object().unknown(true).required(),
   }).required(),
+  stopLossPercent: Joi.number().greater(0).less(100).precision(4).optional(),
+  takeProfitPercent: Joi.number().greater(0).less(100).precision(4).optional(),
   executionMode: Joi.string()
     .valid('monitor_only', 'confirm_before_execution', 'authorized_automation')
     .required(),

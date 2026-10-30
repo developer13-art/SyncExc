@@ -1287,9 +1287,10 @@ export function createMarketplaceQueries({ db }) {
         `
         INSERT INTO copy_configurations (
           workspace_id, provider_id, provider_plan_id, created_by, sizing_rule,
-          instrument_filters, market_types, execution_mode
+          instrument_filters, market_types, stop_loss_percent, take_profit_percent,
+          execution_mode
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
         `,
         [
@@ -1300,6 +1301,8 @@ export function createMarketplaceQueries({ db }) {
           JSON.stringify(data.sizingRule),
           data.instrumentFilters || [],
           data.marketTypes,
+          data.stopLossPercent ?? null,
+          data.takeProfitPercent ?? null,
           data.executionMode,
         ]
       );

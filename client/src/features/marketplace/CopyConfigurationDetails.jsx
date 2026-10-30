@@ -204,6 +204,18 @@ export default function CopyConfigurationDetails() {
             }
           />
           <Field
+            label="Stop-loss override"
+            value={configuration.stopLossPercent == null
+              ? 'Provider signal'
+              : `${configuration.stopLossPercent}% from reference price`}
+          />
+          <Field
+            label="Take-profit override"
+            value={configuration.takeProfitPercent == null
+              ? 'Provider signal'
+              : `${configuration.takeProfitPercent}% from reference price`}
+          />
+          <Field
             label="Execution mode"
             value={configuration.executionMode?.replace(/_/g, ' ') ?? '—'}
           />
