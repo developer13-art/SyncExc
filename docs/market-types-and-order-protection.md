@@ -81,3 +81,20 @@ match the fields their `placeOrder` implementation actually sends.
 Trader execution, marketplace copying, and direct terminal orders all use the
 same protection resolver before order dispatch. The exchange adapter repeats
 the check as a final guard.
+
+## Terminal synchronization destinations
+
+The terminal can mirror an order to up to ten explicitly selected connected
+accounts. Before submitting the source order, the server verifies each
+destination's market support, matching base and quote assets, live available
+funds, trading permission, and risk decision. If any selected destination
+fails preflight, the source order is not sent.
+
+Destination market orders are submitted only after the source order reaches a
+confirmed `filled` state. Each destination is validated again at dispatch.
+Destination orders use the source instrument, side, and filled quantity; a
+destination with a different instrument asset pair is not eligible. The
+source order detail shows each destination's submission state and any
+failure or reconciliation message. A demo source account only synchronizes
+to the explicitly selected destination accounts; it does not place orders in
+the corresponding live account unless that live account is selected.

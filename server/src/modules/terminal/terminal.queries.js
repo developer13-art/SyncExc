@@ -80,7 +80,16 @@ export function createTerminalQueries({ db }) {
     },
 
     async findOrderById(orderId) {
-      const result = await db.query(`SELECT * FROM trading_orders WHERE id = $1`, [orderId]);
+      const result = await db.query(
+        `
+        SELECT o.*, c.label AS connection_label, c.environment, a.account_type
+        FROM trading_orders o
+        JOIN exchange_connections c ON c.id = o.connection_id
+        JOIN exchange_accounts a ON a.id = o.account_id
+        WHERE o.id = $1
+        `,
+        [orderId],
+      );
       return result.rows[0] || null;
     },
 
@@ -147,27 +156,30 @@ export function createTerminalQueries({ db }) {
 
     async listOrders(workspaceId, { statuses = null, accountId = null, limit = 50, cursor = null } = {}) {
       const params = [workspaceId];
-      const conditions = ['workspace_id = $1'];
+      const conditions = ['o.workspace_id = $1'];
 
       if (statuses && statuses.length > 0) {
         params.push(statuses);
-        conditions.push(`status = ANY($${params.length})`);
+        conditions.push(`o.status = ANY($${params.length})`);
       }
       if (accountId) {
         params.push(accountId);
-        conditions.push(`account_id = $${params.length}`);
+        conditions.push(`o.account_id = $${params.length}`);
       }
       if (cursor) {
         params.push(cursor);
-        conditions.push(`created_at < $${params.length}`);
+        conditions.push(`o.created_at < $${params.length}`);
       }
       params.push(limit + 1);
 
       const result = await db.query(
         `
-        SELECT * FROM trading_orders
+        SELECT o.*, c.label AS connection_label, c.environment, a.account_type
+        FROM trading_orders o
+        JOIN exchange_connections c ON c.id = o.connection_id
+        JOIN exchange_accounts a ON a.id = o.account_id
         WHERE ${conditions.join(' AND ')}
-        ORDER BY created_at DESC
+        ORDER BY o.created_at DESC
         LIMIT $${params.length}
         `,
         params
@@ -694,11 +706,20 @@ export function createTerminalQueries({ db }) {
         UPDATE trading_execution_requests
         SET state = COALESCE($2, state),
             completed_at = COALESCE($3, completed_at),
+            payload = CASE
+              WHEN $4::jsonb IS NULL THEN payload
+              ELSE payload || $4::jsonb
+            END,
             updated_at = now()
         WHERE id = $1
         RETURNING *
         `,
-        [id, fields.state ?? null, fields.completedAt ?? null]
+        [
+          id,
+          fields.state ?? null,
+          fields.completedAt ?? null,
+          fields.payload ? JSON.stringify(fields.payload) : null,
+        ]
       );
       return result.rows[0] || null;
     },

@@ -65,6 +65,17 @@ export function createTerminalModule({ services }) {
     logger,
   });
 
+  services.events.subscribe(
+    'execution.order_filled',
+    async (envelope) => {
+      const orderId = envelope.payload?.orderId;
+      if (orderId) {
+        await orderSubmissionService.syncFilledOrder({ orderId });
+      }
+    },
+    { name: 'terminal:sync-filled-order' },
+  );
+
   const routes = createTerminalRoutes({
     service,
     orderSubmissionService,

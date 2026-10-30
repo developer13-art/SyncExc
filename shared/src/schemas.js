@@ -317,6 +317,7 @@ export const SubmitOrderRequestSchema = Joi.object({
   reduceOnly: Joi.boolean().default(false),
   clientOrderId: Joi.string().max(64).optional(),
   idempotencyKey: Joi.string().min(16).max(128).required(),
+  destinationAccountIds: Joi.array().items(UuidSchema).unique().max(10).default([]),
 });
 
 export const CancelOrderRequestSchema = Joi.object({

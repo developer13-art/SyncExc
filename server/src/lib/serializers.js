@@ -316,6 +316,9 @@ export function serializeOrder(row) {
     id: row.id,
     connectionId: row.connection_id,
     accountId: row.account_id,
+    accountLabel: [row.connection_label, row.environment, row.account_type]
+      .filter(Boolean)
+      .join(' · '),
     exchangeOrderId: row.exchange_order_id || null,
     clientOrderId: row.client_order_id || null,
     instrument: row.instrument,
@@ -329,6 +332,7 @@ export function serializeOrder(row) {
     averageFillPrice: row.average_fill_price || null,
     status: row.status,
     rejectionReason: row.rejection_reason || null,
+    syncDestinations: row.metadata?.terminalSync?.destinations || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

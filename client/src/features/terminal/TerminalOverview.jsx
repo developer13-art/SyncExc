@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
@@ -29,11 +29,12 @@ import {
   useTerminalOrders,
 } from '../../hooks/useTerminal.js';
 import { useConnections, useConnection } from '../../hooks/useConnections.js';
-import { identityApi, terminalApi } from '../../api/index.js';
+import { connectionsApi, identityApi, terminalApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { userPreferencesQueryKey } from '../settings/useUserPreferences.js';
+import { queryKeys } from '../../hooks/queryKeys.js';
 import {
   calculateOrderPreview,
   findUsdConversionMarket,
@@ -69,6 +70,7 @@ export default function TerminalOverview() {
   const [levels, setLevels] = useState([]);
   const [levelInput, setLevelInput] = useState('');
   const [pendingOrder, setPendingOrder] = useState(null);
+  const [selectedDestinationAccountIds, setSelectedDestinationAccountIds] = useState([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [approvalRequestId, setApprovalRequestId] = useState(null);
   const [approvalMessage, setApprovalMessage] = useState('');
@@ -93,6 +95,7 @@ export default function TerminalOverview() {
           type: a.type ?? a.accountType,
           connectionId: c.id,
           exchangeName: c.exchangeName,
+          exchange: c.exchange,
           environment: c.environment,
           healthStatus:
             c.status === 'degraded' ? 'degraded' : c.health?.status ?? c.status,
@@ -108,6 +111,18 @@ export default function TerminalOverview() {
   }, [accounts, selectedAccountId]);
 
   useEffect(() => {
+    const availableIds = new Set(
+      accounts
+        .filter((account) => account.status === 'active' && account.id !== selectedAccountId)
+        .map((account) => account.id),
+    );
+    setSelectedDestinationAccountIds((current) => {
+      const next = current.filter((accountId) => availableIds.has(accountId));
+      return next.length === current.length ? current : next;
+    });
+  }, [accounts, selectedAccountId]);
+
+  useEffect(() => {
     dispatch(uiActions.setPageTitle('Trading Terminal'));
     dispatch(uiActions.setBreadcrumbs([{ label: 'Terminal', path: '/app/terminal' }]));
   }, [dispatch]);
@@ -117,6 +132,20 @@ export default function TerminalOverview() {
     return connections.find((c) => c.id === account?.connectionId) ?? null;
   }, [accounts, connections, selectedAccountId]);
   const accountSyncQuery = useTerminalAccountSync(activeWorkspaceId, selectedAccountId);
+  const destinationAccounts = accounts.filter(
+    (account) => account.status === 'active' && account.id !== selectedAccountId,
+  );
+  const selectedDestinationAccounts = destinationAccounts.filter((account) =>
+    selectedDestinationAccountIds.includes(account.id),
+  );
+  const destinationBalanceQueries = useQueries({
+    queries: selectedDestinationAccounts.map((account) => ({
+      queryKey: queryKeys.connections.balances(account.id),
+      queryFn: () => connectionsApi.listBalances(account.id),
+      enabled: Boolean(activeWorkspaceId),
+      staleTime: 15_000,
+    })),
+  });
 
   const marketsQuery = useTerminalMarkets(activeWorkspaceId, {
     exchangeCode: activeConnection?.exchange,
@@ -248,9 +277,61 @@ export default function TerminalOverview() {
       selectedAvailableFunds,
     ],
   );
+  const destinationPreviews = useMemo(
+    () =>
+      selectedDestinationAccounts.map((account, index) => {
+        const balanceQuery = destinationBalanceQueries[index];
+        const balanceData = balanceQuery?.data;
+        const balances = balanceData?.items ?? [];
+        const availableForAsset = (asset) =>
+          balances.find(
+            (balance) => String(balance.asset).toUpperCase() === String(asset || '').toUpperCase(),
+          )?.available;
+        const isFutures =
+          selectedMarketType === 'futures' || selectedMarketType === 'perpetual';
+        const preview =
+          pendingOrder && selectedInstrument
+            ? calculateOrderPreview({
+                ...pendingOrder,
+                orderType: pendingOrder.type,
+                marketType: selectedMarketType,
+                referencePrice:
+                  marketData?.overview?.markPrice ?? marketData?.overview?.lastPrice,
+                baseAsset: selectedInstrument.baseAsset,
+                quoteAsset: selectedInstrument.quoteAsset,
+                baseBalance: availableForAsset(selectedInstrument.baseAsset),
+                quoteBalance: isFutures
+                  ? balanceData?.availableMargin
+                  : availableForAsset(selectedInstrument.quoteAsset),
+              })
+            : null;
+        return {
+          account,
+          preview,
+          freshness: isFutures
+            ? balanceData?.accountSnapshotFreshness ?? 'unknown'
+            : balanceData?.freshness ?? 'unknown',
+          isLoading: balanceQuery?.isLoading ?? false,
+          error: balanceQuery?.error ?? null,
+        };
+      }),
+    [
+      destinationBalanceQueries,
+      marketData?.overview?.lastPrice,
+      marketData?.overview?.markPrice,
+      pendingOrder,
+      selectedDestinationAccounts,
+      selectedInstrument,
+      selectedMarketType,
+    ],
+  );
 
   const handleSubmitOrder = (order) => {
-    setPendingOrder({ ...order, idempotencyKey: createOrderIdempotencyKey() });
+    setPendingOrder({
+      ...order,
+      destinationAccountIds: selectedDestinationAccountIds,
+      idempotencyKey: createOrderIdempotencyKey(),
+    });
     setApprovalRequestId(null);
     setApprovalMessage('');
     setConfirmOpen(true);
@@ -306,7 +387,9 @@ export default function TerminalOverview() {
       toast.success(result?.ambiguous ? 'Order status needs checking' : 'Order submitted', {
         description: result?.ambiguous
           ? 'The exchange response was uncertain. Check execution status before trying again.'
-          : `Order ${result?.order?.id ?? ''} is being processed.`,
+          : pendingOrder.destinationAccountIds?.length
+            ? `Order ${result?.order?.id ?? ''} is processing. Selected destinations will receive market orders only after the source order is confirmed filled.`
+            : `Order ${result?.order?.id ?? ''} is being processed.`,
       });
       setConfirmOpen(false);
       setPendingOrder(null);
@@ -638,6 +721,9 @@ export default function TerminalOverview() {
                 }
                 usdConversionRate={usdConversionRate}
                 usdConversionApproximate={usdConversionApproximate}
+                destinationAccounts={destinationAccounts}
+                selectedDestinationAccountIds={selectedDestinationAccountIds}
+                onDestinationAccountsChange={setSelectedDestinationAccountIds}
                 maxLeverage={1}
                 onSubmit={handleSubmitOrder}
               />
@@ -707,6 +793,7 @@ export default function TerminalOverview() {
         usdConversionRate={usdConversionRate}
         usdConversionApproximate={usdConversionApproximate}
         balanceFreshness={selectedBalanceFreshness}
+        destinationPreviews={destinationPreviews}
         onConfirm={handleConfirmOrder}
         isSubmitting={submitting}
         approvalRequired={Boolean(approvalRequestId)}

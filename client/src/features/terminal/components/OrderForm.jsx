@@ -3,6 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { Info } from 'lucide-react';
 
 import { Button } from '../../../components/ui/Button.jsx';
+import { Checkbox } from '../../../components/ui/Checkbox.jsx';
 import { Input } from '../../../components/ui/Input.jsx';
 import { Label } from '../../../components/ui/Label.jsx';
 import { Switch } from '../../../components/ui/Switch.jsx';
@@ -40,6 +41,7 @@ const TIME_IN_FORCE = [
   { value: 'IOC', label: 'IOC' },
   { value: 'FOK', label: 'FOK' },
 ];
+const MAX_SYNC_DESTINATIONS = 10;
 
 export function OrderForm({
   instrument,
@@ -55,6 +57,9 @@ export function OrderForm({
   referencePrice,
   usdConversionRate,
   usdConversionApproximate = false,
+  destinationAccounts = [],
+  selectedDestinationAccountIds = [],
+  onDestinationAccountsChange,
   maxLeverage,
   defaultOrderType = 'limit',
   className,
@@ -143,6 +148,13 @@ export function OrderForm({
     ['USDT', 'USDC'].includes(String(instrument?.quoteAsset || '').toUpperCase());
   const balanceKnownInsufficient =
     balanceFreshness === 'current' && orderPreview.sufficient === false;
+
+  const toggleDestinationAccount = (accountId, checked) => {
+    const next = checked
+      ? [...selectedDestinationAccountIds, accountId]
+      : selectedDestinationAccountIds.filter((id) => id !== accountId);
+    onDestinationAccountsChange?.(next);
+  };
 
   const applyPercent = (nextPercent) => {
     setPercent(nextPercent);
@@ -414,6 +426,47 @@ export function OrderForm({
           {balanceFreshness === 'stale' ? ' Balance snapshot is stale.' : null}
         </div>
       </div>
+
+      {destinationAccounts.length > 0 ? (
+        <fieldset className="rounded-md border border-border p-3">
+          <legend className="px-1 text-xs font-semibold text-foreground">
+            Sync to connected accounts
+          </legend>
+          <p className="mb-2 text-2xs text-muted-foreground">
+            Destination instruments, balances, permissions, and risk are checked before this
+            source order is sent. Destinations receive a market order only after the source order
+            is confirmed filled. Choose up to {MAX_SYNC_DESTINATIONS} accounts.
+          </p>
+          <div className="flex flex-col gap-2">
+            {destinationAccounts.map((destination) => {
+              const isSelected = selectedDestinationAccountIds.includes(destination.id);
+              return (
+                <label
+                  key={destination.id}
+                  className="flex cursor-pointer items-center gap-2 text-xs"
+                >
+                  <Checkbox
+                    checked={isSelected}
+                    disabled={
+                      destination.status !== 'active' ||
+                      (!isSelected &&
+                        selectedDestinationAccountIds.length >= MAX_SYNC_DESTINATIONS)
+                    }
+                    onCheckedChange={(checked) => toggleDestinationAccount(destination.id, checked)}
+                    aria-label={`Sync order to ${destination.label ?? destination.id}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-foreground">
+                    {destination.label ?? destination.id}
+                  </span>
+                  {destination.status !== 'active' ? (
+                    <span className="text-2xs text-muted-foreground">{destination.status}</span>
+                  ) : null}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      ) : null}
 
       <Button
         type="submit"

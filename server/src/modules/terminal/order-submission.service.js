@@ -50,7 +50,10 @@ export function createOrderSubmissionService({
    * @param {string} [params.clientOrderId]
    * @param {string} params.idempotencyKey
    */
-  async function submit(params, { confirmedExecutionRequestId = null } = {}) {
+  async function submit(
+    params,
+    { confirmedExecutionRequestId = null, source = 'terminal' } = {},
+  ) {
     const {
       userId,
       workspaceId,
@@ -70,6 +73,7 @@ export function createOrderSubmissionService({
       leverage,
       clientOrderId,
       idempotencyKey,
+      destinationAccountIds = [],
     } = params;
     const marketType = requestedMarketType === 'perpetual' ? 'futures' : requestedMarketType;
     const type = String(requestedOrderType || '').toLowerCase();
@@ -85,6 +89,12 @@ export function createOrderSubmissionService({
         const order = existing.payload?.orderId
           ? await queries.findOrderById(existing.payload.orderId)
           : null;
+        if (!order) {
+          throw new ConflictError(
+            'The accepted order could not be located. Reconcile execution status before retrying.',
+            'RECONCILIATION_REQUIRED',
+          );
+        }
         return { executionRequest: existing, order, replayed: true };
       }
       if (existing.state === 'awaiting_confirmation') {
@@ -102,6 +112,12 @@ export function createOrderSubmissionService({
       }
       if (existing.state === 'pending' || existing.state === 'submitting') {
         throw new ConflictError('An identical order is already in progress', 'ORDER_IN_PROGRESS');
+      }
+      if (['unknown', 'reconciliation_required'].includes(existing.state)) {
+        throw new ConflictError(
+          'The exchange outcome is uncertain. Reconcile execution status before retrying.',
+          'RECONCILIATION_REQUIRED',
+        );
       }
       if (['canceled', 'rejected', 'failed'].includes(existing.state)) {
         throw new ConflictError('This order request can no longer be submitted', 'INVALID_STATE');
@@ -226,6 +242,20 @@ export function createOrderSubmissionService({
       leverage,
     });
 
+    const syncDestinations = await validateSyncDestinations({
+      userId,
+      workspaceId,
+      sourceAccountId: accountId,
+      sourceInstrument: instrument,
+      instrumentId,
+      marketType,
+      side,
+      quantity,
+      reduceOnly,
+      leverage,
+      destinationAccountIds,
+    });
+
     // 4. Pre-trade risk evaluation
     const riskDecision = await risk.evaluation.evaluate({
       workspaceId,
@@ -266,6 +296,13 @@ export function createOrderSubmissionService({
         riskDecision.outcome === 'confirmation_required') &&
       !approvedRequest
     ) {
+      if (source === 'terminal_sync') {
+        throw new ConflictError(
+          'Destination risk policy requires separate approval; no destination order was sent.',
+          'SYNC_DESTINATION_APPROVAL_REQUIRED',
+        );
+      }
+
       // Create a pending execution request; a separate endpoint approves it
       const executionRequest = await db.tx(async (tx) => {
         const req = await queries.insertExecutionRequest(tx, {
@@ -290,6 +327,7 @@ export function createOrderSubmissionService({
             timeInForce,
             reduceOnly,
             clientOrderId,
+            destinationAccountIds,
           },
           riskEvaluationId: riskDecision.id,
           idempotencyKey,
@@ -331,6 +369,7 @@ export function createOrderSubmissionService({
               timeInForce,
               reduceOnly,
               clientOrderId,
+              destinationAccountIds,
             },
             riskEvaluationId: riskDecision.id,
             idempotencyKey,
@@ -361,9 +400,24 @@ export function createOrderSubmissionService({
         timeInForce,
         reduceOnly,
         status: ORDER_STATUS.PENDING_SUBMISSION,
-        source: 'terminal',
+        source,
         relatedExecutionId: executionRequest.id,
-        metadata: { ...(stopLoss ? { stopLoss } : {}), ...(takeProfit ? { takeProfit } : {}) },
+        metadata: {
+          ...(stopLoss ? { stopLoss } : {}),
+          ...(takeProfit ? { takeProfit } : {}),
+          ...(leverage ? { leverage } : {}),
+          ...(syncDestinations.length > 0
+            ? {
+                terminalSync: {
+                  status: 'waiting_for_source_fill',
+                  destinations: syncDestinations.map((destination) => ({
+                    ...destination,
+                    status: 'waiting_for_source_fill',
+                  })),
+                },
+              }
+            : {}),
+        },
       });
 
       await queries.insertOrderEvent(tx, {
@@ -445,6 +499,7 @@ export function createOrderSubmissionService({
           });
           await queries.updateExecutionRequest(executionRequest.id, {
             state: 'reconciliation_required',
+            payload: { orderId: order.id },
           });
         } else {
           const responseStatus = String(adapterResponse.status || '').toLowerCase();
@@ -519,6 +574,7 @@ export function createOrderSubmissionService({
             await queries.updateExecutionRequest(executionRequest.id, {
               state: 'acknowledged',
               completedAt: new Date(),
+              payload: { orderId: order.id },
             });
 
             await events.publish(
@@ -552,6 +608,7 @@ export function createOrderSubmissionService({
 
           await queries.updateExecutionRequest(executionRequest.id, {
             state: 'reconciliation_required',
+            payload: { orderId: order.id },
           });
 
           await events.publish(
@@ -645,6 +702,281 @@ export function createOrderSubmissionService({
       durationMs,
       ambiguous: isAmbiguousError(adapterError),
     };
+  }
+
+  async function validateSyncDestinations({
+    userId,
+    workspaceId,
+    sourceAccountId,
+    sourceInstrument,
+    instrumentId,
+    marketType,
+    side,
+    quantity,
+    reduceOnly,
+    leverage,
+    destinationAccountIds,
+  }) {
+    if (destinationAccountIds == null) {
+      return [];
+    }
+    if (!Array.isArray(destinationAccountIds) || destinationAccountIds.length > 10) {
+      throw new ValidationError('Select no more than 10 synchronization destinations');
+    }
+    if (destinationAccountIds.length === 0) {
+      return [];
+    }
+    if (new Set(destinationAccountIds).size !== destinationAccountIds.length) {
+      throw new ValidationError('Synchronization destinations must be unique');
+    }
+
+    const destinations = [];
+    const failures = [];
+
+    for (const destinationAccountId of destinationAccountIds) {
+      try {
+        if (destinationAccountId === sourceAccountId) {
+          throw new ConflictError('The source account cannot also be a synchronization destination');
+        }
+
+        const destinationAccount = await connections.requireAccountAccess({
+          accountId: destinationAccountId,
+          workspaceId,
+          operation: 'execute_trades',
+        });
+        if (destinationAccount.status !== 'active') {
+          throw new ConflictError('Destination account is not active', 'ACCOUNT_NOT_ACTIVE');
+        }
+        const destinationConnection = await connections.requireConnectionAccess({
+          connectionId: destinationAccount.connection_id,
+          workspaceId,
+          operation: 'execute_trades',
+        });
+        if (destinationConnection.status !== 'active') {
+          throw new ConflictError('Destination connection is not active', 'CONNECTION_NOT_ACTIVE');
+        }
+
+        const adapter = await connections.getAdapter(destinationConnection.exchange_code);
+        const normalizedMarketType = marketType === 'perpetual' ? 'futures' : marketType;
+        const marketSupported = normalizedMarketType === 'spot'
+          ? adapter?.capabilities?.hasSpot
+          : adapter?.capabilities?.hasFutures;
+        if (!adapter || !marketSupported) {
+          throw new ConflictError(
+            `Destination exchange does not support ${normalizedMarketType} trading`,
+            'MARKET_TYPE_UNSUPPORTED',
+          );
+        }
+        if (
+          Array.isArray(adapter.capabilities?.supportedOrderTypes) &&
+          !adapter.capabilities.supportedOrderTypes.includes('market')
+        ) {
+          throw new ConflictError('Destination exchange does not support market orders', 'ORDER_TYPE_UNSUPPORTED');
+        }
+        await connections.requireVerifiedPermission({
+          connectionId: destinationConnection.id,
+          permissionKey: 'trading',
+        });
+
+        const instrument = await connections.getInstrument({
+          exchangeCode: destinationConnection.exchange_code,
+          symbol: instrumentId,
+          marketType: normalizedMarketType,
+        });
+        if (!instrument || instrument.trading_status !== 'active') {
+          throw new ConflictError(
+            `Destination does not have an active ${instrumentId} instrument`,
+            'INSTRUMENT_UNAVAILABLE',
+          );
+        }
+        if (
+          String(instrument.base_asset).toUpperCase() !==
+            String(sourceInstrument.base_asset).toUpperCase() ||
+          String(instrument.quote_asset).toUpperCase() !==
+            String(sourceInstrument.quote_asset).toUpperCase()
+        ) {
+          throw new ConflictError(
+            `Destination ${instrumentId} uses different base or quote assets`,
+            'INSTRUMENT_ASSET_MISMATCH',
+          );
+        }
+        if (instrument.market_type !== normalizedMarketType) {
+          throw new ConflictError('Destination instrument does not support the selected market type', 'INSTRUMENT_MARKET_MISMATCH');
+        }
+
+        const destinationQuantity = normalizeOrderQuantity(
+          quantity,
+          instrument.quantity_step,
+          instrument.minimum_quantity,
+        );
+        const credentials = await connections.loadCredentials(destinationConnection.id);
+        await validateAvailableBalance({
+          adapter,
+          credentials,
+          accountType: destinationAccount.account_type,
+          environment: destinationConnection.environment,
+          exchangeCode: destinationConnection.exchange_code,
+          instrument,
+          instrumentId,
+          marketType: normalizedMarketType,
+          side,
+          quantity: destinationQuantity,
+          reduceOnly,
+          leverage,
+        });
+
+        const riskDecision = await risk.evaluation.evaluate({
+          workspaceId,
+          operationType: 'order_submission',
+          operationPayload: {
+            connectionId: destinationConnection.id,
+            accountId: destinationAccountId,
+            instrument: instrumentId,
+            instrumentScopeRef: instrument.id,
+            marketType: normalizedMarketType,
+            side,
+            type: 'market',
+            quantity: destinationQuantity,
+            leverage,
+            reduceOnly,
+          },
+        });
+        if (!['allowed', 'approved'].includes(riskDecision.outcome)) {
+          throw new ConflictError(
+            `Destination risk checks did not approve the order (${riskDecision.reasonCode || riskDecision.outcome})`,
+            'SYNC_DESTINATION_RISK_BLOCKED',
+          );
+        }
+
+        destinations.push({
+          accountId: destinationAccountId,
+          connectionId: destinationConnection.id,
+          quantity: destinationQuantity,
+          label: [
+            destinationConnection.label || destinationConnection.exchange_code,
+            destinationConnection.environment,
+            destinationAccount.account_type,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        });
+      } catch (error) {
+        failures.push(`${destinationAccountId}: ${error.message}`);
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new ConflictError(
+        `Synchronization destination preflight failed: ${failures.join('; ')}`,
+        'SYNC_DESTINATION_PREFLIGHT_FAILED',
+      );
+    }
+
+    return destinations;
+  }
+
+  async function syncFilledOrder({ orderId }) {
+    const order = await queries.findOrderById(orderId);
+    const terminalSync = order?.metadata?.terminalSync;
+    if (!order || !Array.isArray(terminalSync?.destinations) || terminalSync.destinations.length === 0) {
+      return { processed: 0 };
+    }
+    if (order.status !== ORDER_STATUS.FILLED) {
+      return { processed: 0, waitingForSourceFill: true };
+    }
+    if (terminalSync.status === 'completed' || terminalSync.status === 'completed_with_errors') {
+      return { processed: 0, alreadyProcessed: true };
+    }
+
+    const executionRequest = await queries.findExecutionRequestById(order.related_execution_id);
+    if (!executionRequest?.created_by) {
+      throw new NotFoundError('Source execution request');
+    }
+
+    let updatedSync = {
+      ...terminalSync,
+      status: 'processing',
+      destinations: terminalSync.destinations.map((destination) => ({ ...destination })),
+    };
+    await persistTerminalSync(order, updatedSync);
+
+    for (let index = 0; index < updatedSync.destinations.length; index += 1) {
+      const destination = updatedSync.destinations[index];
+      if (['submitted', 'filled', 'failed', 'reconciliation_required'].includes(destination.status)) {
+        continue;
+      }
+
+      destination.status = 'submitting';
+      await persistTerminalSync(order, updatedSync);
+
+      try {
+        const result = await submit(
+          {
+            userId: executionRequest.created_by,
+            workspaceId: order.workspace_id,
+            connectionId: destination.connectionId,
+            accountId: destination.accountId,
+            instrumentId: order.instrument,
+            marketType: order.market_type,
+            side: order.side,
+            type: 'market',
+            quantity:
+              Number(order.filled_quantity) > 0
+                ? order.filled_quantity
+                : destination.quantity || order.quantity,
+            reduceOnly: order.reduce_only,
+            leverage: order.metadata?.leverage,
+            idempotencyKey: `terminal-sync-${order.id.replaceAll('-', '')}-${destination.accountId.replaceAll('-', '')}`,
+          },
+          { source: 'terminal_sync' },
+        );
+
+        if (result.requiresConfirmation || !result.order) {
+          destination.status = 'failed';
+          destination.error = result.requiresConfirmation
+            ? 'Destination requires a separate approval; no destination order was sent.'
+            : 'Destination order was not created.';
+        } else if (result.ambiguous || result.order.status === ORDER_STATUS.RECONCILIATION_REQUIRED) {
+          destination.status = 'reconciliation_required';
+          destination.orderId = result.order.id;
+          destination.error = 'Destination exchange outcome is uncertain; reconcile before retrying.';
+        } else if ([ORDER_STATUS.FAILED, ORDER_STATUS.REJECTED].includes(result.order.status)) {
+          destination.status = 'failed';
+          destination.orderId = result.order.id;
+          destination.error = result.order.rejection_reason || 'Destination exchange rejected the order.';
+        } else {
+          destination.status =
+            result.order.status === ORDER_STATUS.FILLED ? 'filled' : 'submitted';
+          destination.orderId = result.order.id;
+          delete destination.error;
+        }
+      } catch (error) {
+        destination.status = 'failed';
+        destination.error = error instanceof Error ? error.message : String(error);
+        logger.error(
+          { err: error, sourceOrderId: order.id, destinationAccountId: destination.accountId },
+          'Terminal synchronization destination failed',
+        );
+      }
+      await persistTerminalSync(order, updatedSync);
+    }
+
+    updatedSync.status = updatedSync.destinations.every((destination) =>
+      ['submitted', 'filled'].includes(destination.status),
+    )
+      ? 'completed'
+      : 'completed_with_errors';
+    await persistTerminalSync(order, updatedSync);
+    return { processed: updatedSync.destinations.length, status: updatedSync.status };
+  }
+
+  async function persistTerminalSync(order, terminalSync) {
+    await queries.updateOrder(order.id, {
+      metadata: {
+        ...(order.metadata || {}),
+        terminalSync,
+      },
+    });
   }
 
   async function reconcileAfterSubmission({
@@ -821,6 +1153,7 @@ export function createOrderSubmissionService({
 
   return {
     submit,
+    syncFilledOrder,
     confirm,
     cancelConfirmation,
   };

@@ -16,6 +16,7 @@ export function OrderConfirmationModal({
   usdConversionRate,
   usdConversionApproximate = false,
   balanceFreshness = 'unknown',
+  destinationPreviews = [],
   onConfirm,
   isSubmitting,
   approvalRequired = false,
@@ -27,6 +28,9 @@ export function OrderConfirmationModal({
 
   const isBuy = order.side === 'buy';
   const notional = orderPreview?.notional ?? 0;
+  const hasFreshInsufficientDestination = destinationPreviews.some(
+    ({ preview, freshness }) => preview?.sufficient === false && freshness === 'current',
+  );
 
   return (
     <Modal
@@ -46,7 +50,7 @@ export function OrderConfirmationModal({
           <Button
             variant={isBuy ? 'success' : 'destructive'}
             onClick={onConfirm}
-            disabled={isSubmitting}
+            disabled={isSubmitting || hasFreshInsufficientDestination}
           >
             {isSubmitting
               ? approvalRequired
@@ -117,6 +121,33 @@ export function OrderConfirmationModal({
             }
           />
         ) : null}
+        {destinationPreviews.length > 0 ? (
+          <div className="mt-1 flex flex-col gap-2 border-t border-border pt-3">
+            <p className="font-semibold text-foreground">Synchronization destinations</p>
+            {destinationPreviews.map(({ account, preview, freshness, isLoading, error }) => {
+              const usdTotal = preview?.notional && usdConversionRate
+                ? formatCurrency(preview.notional * usdConversionRate, 'USD')
+                : 'USD estimate unavailable';
+              const balanceText = isLoading
+                ? 'Refreshing balance…'
+                : error
+                  ? 'Balance unavailable; the server will validate before submission'
+                  : preview?.sufficient === true
+                    ? `Sufficient ${preview.requiredAsset} balance (${freshness} snapshot)`
+                    : preview?.sufficient === false
+                      ? `Insufficient ${preview.requiredAsset} balance (${freshness} snapshot)`
+                      : 'Unable to estimate; the server will validate before submission';
+              return (
+                <div key={account.id} className="rounded-md border border-border p-2">
+                  <p className="font-medium text-foreground">{account.label ?? account.id}</p>
+                  <p className="mt-1 text-2xs text-muted-foreground">
+                    Approx. {usdTotal} · {balanceText}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">
@@ -124,7 +155,9 @@ export function OrderConfirmationModal({
         <p>
           {approvalRequired && approvalMessage
             ? `${approvalMessage} The exchange may still reject or partially fill the order.`
-            : 'Pre-trade risk checks run before dispatch. The exchange may still reject the order or partially fill it. Refer to the execution status after submission.'}
+            : destinationPreviews.length > 0
+              ? 'The source exchange can still reject or partially fill the order. Destination orders are sent only after a confirmed full fill, and destination checks run again before each submission.'
+              : 'Pre-trade risk checks run before dispatch. The exchange may still reject the order or partially fill it. Refer to the execution status after submission.'}
         </p>
       </div>
     </Modal>

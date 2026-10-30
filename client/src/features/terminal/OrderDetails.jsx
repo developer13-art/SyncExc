@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
+import { Badge } from '../../components/ui/Badge.jsx';
 import { Button } from '../../components/ui/Button.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
@@ -41,6 +42,7 @@ export function OrderDetails() {
   }
 
   const events = order.events ?? [];
+  const syncDestinations = order.syncDestinations ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -90,6 +92,51 @@ export function OrderDetails() {
           />
         </CardContent>
       </Card>
+
+      {syncDestinations.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Synchronization destinations</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Destination market orders are submitted after the source order is confirmed filled.
+            </p>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {syncDestinations.map((destination) => (
+              <div
+                key={destination.accountId}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3"
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {destination.label ?? `Account ${destination.accountId?.slice(0, 8) ?? '—'}`}
+                  </p>
+                  {destination.orderId ? (
+                    <p className="mt-1 font-mono text-2xs text-muted-foreground">
+                      Order {destination.orderId}
+                    </p>
+                  ) : null}
+                  {destination.error ? (
+                    <p className="mt-1 text-xs text-destructive">{destination.error}</p>
+                  ) : null}
+                </div>
+                <Badge
+                  variant={
+                    destination.status === 'filled' || destination.status === 'submitted'
+                      ? 'success'
+                      : destination.status === 'failed' ||
+                          destination.status === 'reconciliation_required'
+                        ? 'destructive'
+                        : 'muted'
+                  }
+                >
+                  {destination.status?.replaceAll('_', ' ') ?? 'pending'}
+                </Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {events.length > 0 ? (
         <Card>
