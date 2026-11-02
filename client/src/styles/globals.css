@@ -1316,6 +1316,39 @@
   }
 }
 
+.community-feed .client-card {
+  border-color: #1d3153;
+  background-color: #0a1730;
+  color: #e2e8f0;
+}
+
+.community-feed .text-foreground {
+  color: #e2e8f0;
+}
+
+.community-feed .text-muted-foreground {
+  color: #94a3b8;
+}
+
+.community-feed .bg-background {
+  background-color: #08142a;
+}
+
+.community-feed .border-border {
+  border-color: #1d3153;
+}
+
+.community-feed .community-feed-post {
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.community-feed .community-feed-post:hover {
+  border-color: #2b4a78;
+  transform: translateY(-1px);
+}
+
 @layer utilities {
   .animate-in {
     animation-duration: var(--transition-normal);

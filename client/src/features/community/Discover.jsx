@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 import { Compass } from 'lucide-react';
 
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
@@ -31,8 +32,13 @@ export default function Discover() {
   const dispatch = useDispatch();
   const toast = useToast();
   const [tab, setTab] = useState('posts');
+  const [searchParams] = useSearchParams();
   const [query, setQuery] = useState('');
   const searchTerm = query.trim();
+
+  useEffect(() => {
+    setQuery(searchParams.get('q') ?? '');
+  }, [searchParams]);
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Discover'));
