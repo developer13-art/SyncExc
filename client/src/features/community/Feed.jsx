@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
   CalendarDays,
   Hash,
+  Home,
   Image,
   Lightbulb,
   Link2,
@@ -16,6 +17,7 @@ import {
   Send,
   Sparkles,
   Users,
+  Wallet,
 } from 'lucide-react';
 
 import { Avatar } from '../../components/ui/Avatar.jsx';
@@ -76,7 +78,7 @@ function CommunityHeroArt() {
   return (
     <svg
       viewBox="0 0 640 260"
-      className="pointer-events-none absolute -right-10 -top-1 h-full w-[62%] min-w-[380px] opacity-90"
+      className="community-hero-art pointer-events-none absolute -right-10 -top-1 h-full w-[62%] min-w-[380px] opacity-90"
       role="img"
       aria-label="Glowing globe with a rising market chart"
       preserveAspectRatio="xMidYMid slice"
@@ -134,7 +136,7 @@ function CommunityHeroArt() {
 
 function CommunityStat({ value, label, icon: Icon }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2 backdrop-blur">
+    <div className="community-stat flex items-center gap-2.5 rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2 backdrop-blur">
       <Icon className="h-4 w-4 shrink-0 text-cyan-300" />
       <span className="min-w-0">
         <strong className="block text-sm leading-4 text-white">{value}</strong>
@@ -285,16 +287,16 @@ export default function Feed() {
         </div>
       </div>
 
-      <section className="relative isolate flex min-h-[218px] overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(112deg,#061328_0%,#071b3a_52%,#03102a_100%)] shadow-[0_18px_56px_-35px_rgba(0,140,255,0.65)]">
+      <section className="community-hero relative isolate flex min-h-[218px] overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(112deg,#061328_0%,#071b3a_52%,#03102a_100%)] shadow-[0_18px_56px_-35px_rgba(0,140,255,0.65)]">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_68%_55%,rgba(0,120,255,0.2),transparent_48%)]" />
         <CommunityHeroArt />
-        <div className="relative z-10 flex w-full flex-col justify-center gap-4 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <div className="max-w-[530px]">
+        <div className="community-hero-content relative z-10 flex w-full flex-col justify-center gap-4 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <div className="community-hero-copy max-w-[530px]">
             <p className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200">
               <Sparkles className="h-3 w-3" /> The trader network
             </p>
-            <h1 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl">
-              SyncExc <span className="text-sky-400">Community</span>
+            <h1 className="community-hero-title text-3xl font-bold leading-tight tracking-tight text-white sm:text-4xl">
+              SyncExc <span className="community-hero-title-accent text-sky-400">Community</span>
             </h1>
             <p className="mt-1 text-base font-semibold text-blue-100 sm:text-lg">
               Connect. Learn. Share. Grow.
@@ -302,7 +304,7 @@ export default function Feed() {
             <p className="mt-2 max-w-md text-xs leading-5 text-slate-300 sm:text-sm">
               Share your market perspective, learn from other traders, and grow together.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="community-hero-actions mt-4 flex flex-wrap gap-2">
               <Button
                 size="sm"
                 asChild
@@ -310,7 +312,7 @@ export default function Feed() {
               >
                 <Link to={ROUTES.app.community.groups}>
                   <Users className="mr-1.5 h-4 w-4" />
-                  Join a group
+                  <span className="community-join-label">Join a group</span>
                 </Link>
               </Button>
               <Button
@@ -326,7 +328,7 @@ export default function Feed() {
             </div>
           </div>
 
-          <div className="relative z-10 grid max-w-[190px] grid-cols-2 gap-2 lg:grid-cols-1">
+          <div className="community-hero-stats relative z-10 grid max-w-[190px] grid-cols-2 gap-2 lg:grid-cols-1">
             <CommunityStat value={postCount.toLocaleString()} label="Community posts" icon={MessageSquare} />
             <CommunityStat value={groupCount.toLocaleString()} label="Groups to explore" icon={Users} />
             <CommunityStat value={marketIdeasCount.toLocaleString()} label="Trading ideas in feed" icon={BarChart3} />
@@ -336,7 +338,7 @@ export default function Feed() {
 
       <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <main className="flex min-w-0 flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="community-feed-toolbar flex flex-nowrap items-center gap-2">
             <div className="community-feed-tabs flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-thin">
               {CATEGORIES.map(({ value, label, icon: Icon }) => (
                 <button
@@ -374,11 +376,11 @@ export default function Feed() {
             <Button
               size="sm"
               asChild
-              className="shrink-0 border-0 bg-blue-600 text-white hover:bg-blue-500"
+              className="community-create-post shrink-0 border-0 bg-blue-600 text-white hover:bg-blue-500"
             >
               <Link to={ROUTES.app.community.createPost}>
-                <span className="mr-1.5 text-base leading-none">＋</span>
-                Create post
+                <span className="community-create-post-icon mr-1.5 text-base leading-none">＋</span>
+                <span className="community-create-post-label">Create post</span>
               </Link>
             </Button>
           </div>
@@ -647,6 +649,45 @@ export default function Feed() {
         onOpenChange={(open) => { if (!open) setReportTarget(null); }}
         onSubmit={submitReport}
       />
+      <nav className="community-bottom-nav" aria-label="Mobile navigation">
+        <NavLink
+          to={ROUTES.app.dashboard}
+          className={({ isActive }) => `community-bottom-nav-item${isActive ? ' is-active' : ''}`}
+        >
+          <Home aria-hidden="true" />
+          <span>Home</span>
+        </NavLink>
+        <NavLink
+          to={ROUTES.app.community.overview}
+          aria-current="page"
+          className="community-bottom-nav-item is-active"
+        >
+          <Users aria-hidden="true" />
+          <span>Community</span>
+        </NavLink>
+        <NavLink
+          to={ROUTES.app.terminal.overview}
+          className={({ isActive }) => `community-bottom-nav-item${isActive ? ' is-active' : ''}`}
+        >
+          <BarChart3 aria-hidden="true" />
+          <span>Trade</span>
+        </NavLink>
+        <NavLink
+          to={ROUTES.app.referral.dashboard}
+          className={({ isActive }) => `community-bottom-nav-item${isActive ? ' is-active' : ''}`}
+        >
+          <Wallet aria-hidden="true" />
+          <span>Earnings</span>
+        </NavLink>
+        <button
+          type="button"
+          className="community-bottom-nav-item"
+          onClick={() => dispatch(uiActions.openMobileNav())}
+        >
+          <MoreHorizontal aria-hidden="true" />
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   );
 }
