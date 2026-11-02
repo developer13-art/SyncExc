@@ -22,6 +22,8 @@ import {
 } from '@syncexc/shared';
 import Joi from 'joi';
 import { createIdentityController } from './identity.controller.js';
+import config from '../../config.js';
+import { AuthenticationError } from '../../lib/errors.js';
 
 const UserPreferencesSchema = Joi.object({
   general: Joi.object({
@@ -75,6 +77,18 @@ export function createIdentityRoutes({ service, middleware }) {
     middleware.authLimiter,
     middleware.validateBody(MfaVerifyRequestSchema),
     middleware.asyncHandler(controller.verifyMfa)
+  );
+
+  authRouter.post(
+    '/refresh',
+    (req, _res, next) => {
+      if (!req.cookies?.[config.session.cookieName]) {
+        return next(new AuthenticationError());
+      }
+      return next();
+    },
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.refreshAccessToken)
   );
 
   authRouter.post(

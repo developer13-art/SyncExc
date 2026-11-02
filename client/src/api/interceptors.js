@@ -1,5 +1,5 @@
 import { store } from '../app/store.js';
-import { authActions, selectAccessToken, selectRefreshToken } from '../features/auth/authSlice.js';
+import { authActions, selectAccessToken } from '../features/auth/authSlice.js';
 import { STORAGE_KEYS, storage } from '../lib/utils/storage.util.js';
 
 import { parseAxiosError } from './errors.js';
@@ -47,16 +47,17 @@ export async function handleResponseSuccess(response) {
 
 export async function handleResponseError(error) {
   const parsed = parseAxiosError(error);
+  const originalRequest = error.config;
 
-  if (parsed.status === 401 && shouldAttemptRefresh(error.config)) {
-    const refreshed = await attemptTokenRefresh();
-    if (refreshed) {
-      const originalRequest = error.config;
-      const token = selectAccessToken(store.getState()) ?? storage.get(STORAGE_KEYS.AUTH_TOKEN);
-      originalRequest.headers.Authorization = `Bearer ${token}`;
-      originalRequest._retryAttempted = true;
-      const { default: axiosInstance } = await import('./client.js');
-      return axiosInstance.request(originalRequest);
+  if (parsed.status === 401 && !isPublicAuthRequest(originalRequest)) {
+    if (shouldAttemptRefresh(originalRequest)) {
+      const accessToken = await attemptTokenRefresh();
+      if (accessToken) {
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        originalRequest._retryAttempted = true;
+        const { default: axiosInstance } = await import('./client.js');
+        return axiosInstance.request(originalRequest);
+      }
     }
     store.dispatch(authActions.sessionExpired());
   }
@@ -64,22 +65,12 @@ export async function handleResponseError(error) {
   return Promise.reject(parsed);
 }
 
+function isPublicAuthRequest(config) {
+  return /\/auth\/(login|register|mfa\/verify|refresh)(?:[/?]|$)/.test(config?.url ?? '');
+}
+
 function shouldAttemptRefresh(config) {
-  if (!config) {
-    return false;
-  }
-  if (config._retryAttempted) {
-    return false;
-  }
-  if (config.url?.includes('/auth/refresh') || config.url?.includes('/auth/login')) {
-    return false;
-  }
-  if (config.skipAuthRefresh) {
-    return false;
-  }
-  const refreshToken =
-    selectRefreshToken(store.getState()) ?? storage.get(STORAGE_KEYS.AUTH_TOKEN + ':refresh');
-  return Boolean(refreshToken);
+  return Boolean(config && !config._retryAttempted && !config.skipAuthRefresh);
 }
 
 async function attemptTokenRefresh() {
@@ -89,31 +80,21 @@ async function attemptTokenRefresh() {
 
   refreshPromise = (async () => {
     try {
-      const refreshToken = selectRefreshToken(store.getState());
-      if (!refreshToken) {
-        return false;
-      }
-
       const { default: axiosInstance } = await import('./client.js');
       const response = await axiosInstance.post(
         '/auth/refresh',
-        { refreshToken },
+        {},
         { skipAuthRefresh: true, _retryAttempted: true },
       );
 
-      const { accessToken, refreshToken: newRefreshToken } = response.data?.data ?? {};
+      const accessToken = response.data?.data?.accessToken;
       if (accessToken) {
-        store.dispatch(
-          authActions.tokenRefreshed({
-            accessToken,
-            refreshToken: newRefreshToken ?? refreshToken,
-          }),
-        );
-        return true;
+        store.dispatch(authActions.tokenRefreshed({ accessToken }));
+        return accessToken;
       }
-      return false;
+      return null;
     } catch {
-      return false;
+      return null;
     } finally {
       refreshPromise = null;
     }

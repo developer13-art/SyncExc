@@ -52,9 +52,9 @@ const envSchema = Joi.object({
   JWT_REFRESH_TTL: Joi.string().default('30d'),
   SESSION_SECRET: Joi.string().min(32).required(),
   SESSION_COOKIE_NAME: Joi.string().default('syncexc_session'),
-  SESSION_COOKIE_DOMAIN: Joi.string().allow('').default('localhost'),
-  SESSION_COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').default(false),
-  SESSION_COOKIE_SAME_SITE: Joi.string().valid('strict', 'lax', 'none').default('lax'),
+  SESSION_COOKIE_DOMAIN: Joi.string().allow('').default(''),
+  SESSION_COOKIE_SECURE: Joi.boolean().truthy('true').falsy('false').optional(),
+  SESSION_COOKIE_SAME_SITE: Joi.string().valid('strict', 'lax', 'none').optional(),
   SESSION_TTL: Joi.string().default('30d'),
 
   // Password hashing
@@ -281,9 +281,9 @@ const config = {
   session: {
     secret: env.SESSION_SECRET,
     cookieName: env.SESSION_COOKIE_NAME,
-    cookieDomain: env.SESSION_COOKIE_DOMAIN || undefined,
-    cookieSecure: env.SESSION_COOKIE_SECURE,
-    cookieSameSite: env.SESSION_COOKIE_SAME_SITE,
+    cookieDomain: isProduction ? undefined : env.SESSION_COOKIE_DOMAIN || undefined,
+    cookieSecure: isProduction || env.SESSION_COOKIE_SECURE === true,
+    cookieSameSite: isProduction ? 'none' : env.SESSION_COOKIE_SAME_SITE || 'lax',
     ttl: env.SESSION_TTL,
     ttlMs: parseDuration(env.SESSION_TTL),
   },

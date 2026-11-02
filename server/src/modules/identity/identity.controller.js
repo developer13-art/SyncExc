@@ -13,6 +13,7 @@
 import config from '../../config.js';
 import { serializeUser, serializeSession, serializeSecurityEvent } from '../../lib/serializers.js';
 import { success, created, noContent, paginated } from '../../lib/response.js';
+import { issueAccessToken } from '../../lib/jwt.js';
 
 function setSessionCookie(res, token) {
   res.cookie(config.session.cookieName, token, {
@@ -119,6 +120,14 @@ export function createIdentityController({ service }) {
         session: serializeSession(result.session, result.session.id),
         accessToken: result.accessToken,
       });
+    },
+
+    async refreshAccessToken(req, res) {
+      const accessToken = issueAccessToken({
+        userId: req.auth.userId,
+        sessionId: req.auth.sessionId,
+      });
+      return success(res, { accessToken });
     },
 
     async logout(req, res) {
