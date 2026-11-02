@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Building2,
   KeyRound,
+  Radio,
   Shield,
   Sparkles,
 } from 'lucide-react';
@@ -36,10 +37,10 @@ const STEPS = [
       'Define order limits, position limits, and exposure rules. Every consequential operation passes through the same risk engine.',
   },
   {
-    icon: Activity,
-    title: 'Add signal sources or automate',
+    icon: Radio,
+    title: 'Review incoming signals',
     description:
-      'Register supported sources, build workflows, and coordinate eligible operations across your accounts.',
+      'Register supported sources and review structured signals before taking action.',
   },
 ];
 
@@ -75,8 +76,8 @@ export default function Welcome() {
         <Card>
           <CardContent className="p-6 pt-6">
             <p className="text-sm text-muted-foreground">
-              SyncExc coordinates exchange connections, signal intelligence, and authorized
-              automation behind consistent risk controls. Before you begin, here is what the
+              SyncExc coordinates exchange connections and signal intelligence behind consistent
+              risk controls. Before you begin, here is what the
               platform will and will not do:
             </p>
 
@@ -84,8 +85,7 @@ export default function Welcome() {
               <Point>Authorize only what you intend to use.</Point>
               <Point>Every consequential operation is subject to authorization, entitlement, capability, and risk checks.</Point>
               <Point>
-                Simulation is isolated from live execution. There is no one-click pathway from a
-                simulated order to a live one.
+                Review signal details and verify their source before taking action.
               </Point>
               <Point>
                 We do not collect identity documents, request withdrawal permissions, or promise

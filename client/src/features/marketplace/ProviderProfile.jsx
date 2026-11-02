@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Bookmark, Check, Copy, Users } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Users } from 'lucide-react';
 
-import { marketplaceApi } from '../../api/index.js';
 import { getErrorMessage, isNotFoundError } from '../../api/errors.js';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
@@ -17,10 +15,9 @@ import { ProviderSignals } from './ProviderSignals.jsx';
 import { ProviderPerformance } from './ProviderPerformance.jsx';
 import { ProviderDisclosures } from './ProviderDisclosures.jsx';
 import { PerformanceChart } from './components/PerformanceChart.jsx';
-import { MarketplaceStrategyCard } from './components/MarketplaceStrategyCard.jsx';
 import { SubscribeDialog } from './components/SubscribeDialog.jsx';
 import { PlanCard } from '../../components/domain/subscription/PlanCard.jsx';
-import { useMarketplaceProvider, useMarketplaceProviders } from '../../hooks/useMarketplace.js';
+import { useMarketplaceProvider } from '../../hooks/useMarketplace.js';
 import { useToast } from '../../hooks/useToast.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
@@ -35,14 +32,6 @@ export default function ProviderProfile() {
 
   const providerQuery = useMarketplaceProvider(providerId);
   const { provider, plans, isLoading, error } = providerQuery;
-
-  const { follow, unfollow } = useMarketplaceProviders();
-  const strategiesQuery = useQuery({
-    queryKey: ['marketplace', 'strategies', { providerId }],
-    queryFn: () => marketplaceApi.listStrategies({ providerId }),
-    enabled: providerQuery.hasProvider,
-    staleTime: 60_000,
-  });
 
   const [subscribePlan, setSubscribePlan] = useState(null);
   const [subscribing, setSubscribing] = useState(false);
@@ -85,25 +74,9 @@ export default function ProviderProfile() {
     );
   }
 
-  const isFollowing = provider.viewerIsFollowing;
   const initials = provider.displayName?.slice(0, 1)?.toUpperCase() || '?';
   const performance = providerQuery.performance;
   const metrics = performance?.metrics ?? {};
-
-  const handleFollow = async () => {
-    try {
-      if (isFollowing) {
-        await unfollow(provider.id);
-        toast.success('Unfollowed');
-      } else {
-        await follow({ providerId: provider.id });
-        toast.success('Following');
-      }
-      await providerQuery.refetch?.();
-    } catch (err) {
-      toast.error('Action failed', { description: getErrorMessage(err) });
-    }
-  };
 
   const handleSubscribe = async ({ planId }, { rethrow = true } = {}) => {
     setSubscribing(true);
@@ -180,9 +153,6 @@ export default function ProviderProfile() {
           </div>
 
           <div className="flex flex-wrap gap-2 xl:flex-col">
-            <Button variant="outline" onClick={handleFollow}>
-              <Bookmark className="h-4 w-4" /> {isFollowing ? 'Following' : 'Follow'}
-            </Button>
             <Button asChild>
               <Link to={`${ROUTES.app.marketplace.createCopyConfiguration}?provider=${provider.id}`}>
                 <Copy className="h-4 w-4" /> Copy trader
@@ -207,7 +177,6 @@ export default function ProviderProfile() {
         <TabsList className="w-full justify-start overflow-x-auto">
         <TabsTrigger value="overview">Overview</TabsTrigger>
         <TabsTrigger value="performance">Performance</TabsTrigger>
-        <TabsTrigger value="strategies">Strategies</TabsTrigger>
         <TabsTrigger value="signals">Signals</TabsTrigger>
         <TabsTrigger value="followers">Followers</TabsTrigger>
         <TabsTrigger value="subscription">Subscription</TabsTrigger>
@@ -243,25 +212,6 @@ export default function ProviderProfile() {
         </TabsContent>
         <TabsContent value="performance">
         <ProviderPerformance providerId={provider.id} />
-        </TabsContent>
-        <TabsContent value="strategies">
-        {strategiesQuery.isLoading ? (
-          <LoadingState label="Loading trader strategies" />
-        ) : strategiesQuery.isError ? (
-          <ErrorState
-            title="Strategies could not be loaded"
-            description={getErrorMessage(strategiesQuery.error)}
-            onRetry={strategiesQuery.refetch}
-          />
-        ) : Array.isArray(strategiesQuery.data) && strategiesQuery.data.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {strategiesQuery.data.map((strategy) => (
-              <MarketplaceStrategyCard key={strategy.id} strategy={strategy} />
-            ))}
-          </div>
-        ) : (
-          <Card><CardContent className="p-5 pt-5 text-sm text-muted-foreground">This trader has not published any strategies yet.</CardContent></Card>
-        )}
         </TabsContent>
         <TabsContent value="signals">
           <ProviderSignals

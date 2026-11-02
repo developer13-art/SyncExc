@@ -1,10 +1,8 @@
-import { useState } from 'react';
 import { Check, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { Avatar } from '../../../components/ui/Avatar.jsx';
 import { Badge } from '../../../components/ui/Badge.jsx';
-import { Button } from '../../../components/ui/Button.jsx';
 import { Card, CardContent } from '../../../components/ui/Card.jsx';
 import { ROUTES } from '../../../config/routes.config.js';
 import { formatPercent } from '../../../lib/formatters/percent.formatter.js';
@@ -15,22 +13,8 @@ export function MarketplaceTraderCard({
   observedExecutions = 0,
   isPerformanceLoading = false,
   isPerformanceError = false,
-  isFollowing = false,
-  onFollow,
-  onUnfollow,
 }) {
-  const [busy, setBusy] = useState(false);
   const initials = provider.displayName?.slice(0, 1)?.toUpperCase() || 'T';
-
-  const toggleFollow = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await (isFollowing ? onUnfollow?.(provider.id) : onFollow?.(provider.id));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <Card className="h-full overflow-hidden">
@@ -87,16 +71,7 @@ export function MarketplaceTraderCard({
           />
         </div>
 
-        <div className="mt-auto flex items-center justify-between gap-3">
-          <Button
-            type="button"
-            size="sm"
-            variant={isFollowing ? 'outline' : 'default'}
-            disabled={busy}
-            onClick={toggleFollow}
-          >
-            {busy ? 'Saving…' : isFollowing ? 'Following' : 'Follow'}
-          </Button>
+        <div className="mt-auto flex justify-end">
           <Link
             to={ROUTES.app.marketplace.provider(provider.id)}
             className="text-sm font-medium text-primary hover:underline"

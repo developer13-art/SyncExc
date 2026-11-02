@@ -6,10 +6,8 @@ import { cn } from '../../../lib/utils/cn.util.js';
 const ITEMS = [
   { id: 'discover', label: 'Discover', to: ROUTES.app.marketplace.browse },
   { id: 'traders', label: 'Traders', to: ROUTES.app.marketplace.traders },
-  { id: 'strategies', label: 'Strategies', to: ROUTES.app.marketplace.strategies },
   { id: 'signals', label: 'Signal Providers', to: ROUTES.app.marketplace.signalProviders },
   { id: 'copy', label: 'Copy Trading', to: ROUTES.app.marketplace.copyConfigurations },
-  { id: 'watchlist', label: 'Watchlist', to: ROUTES.app.marketplace.watchlist },
 ];
 
 export function MarketplaceNavigation({ active }) {

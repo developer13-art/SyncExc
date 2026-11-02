@@ -49,8 +49,8 @@ export default function About() {
           About SyncExc
         </h1>
         <p className="mt-4 text-base text-muted-foreground">
-          A unified operational layer between exchanges, signals, and automation — with
-          consistent risk controls and honest, traceable state.
+          A unified operational layer between exchanges and signals — with consistent risk
+          controls and honest, traceable state.
         </p>
       </div>
 
@@ -63,7 +63,7 @@ export default function About() {
                 SyncExc is a platform for traders who operate across multiple exchanges.
                 Instead of switching between dashboards, users coordinate eligible trading
                 activity from a single workspace with configurable synchronization, source
-                management, automation, simulation, and consistent risk evaluation.
+                management, and consistent risk evaluation.
               </p>
               <p>
                 The platform is designed for individual traders, experienced operators, signal

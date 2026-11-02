@@ -10,7 +10,6 @@ import {
   CircleDollarSign,
   Clock3,
   Globe2,
-  GitBranch,
   KeyRound,
   LineChart,
   Lock,
@@ -52,18 +51,6 @@ const FEATURES_PREVIEW = [
     title: 'AI Signal Intelligence',
     description:
       'Interpret messages from approved sources into structured records. Missing data is preserved as missing, never invented.',
-  },
-  {
-    icon: GitBranch,
-    title: 'Visual Automation Studio',
-    description:
-      'Build event-driven workflows with drag-and-drop nodes. Version them, test them, roll them back safely.',
-  },
-  {
-    icon: LineChart,
-    title: 'Simulation and Backtesting',
-    description:
-      'Test configurations against historical data with strict isolation from live execution. Every assumption is labelled.',
   },
   {
     icon: Users,
@@ -111,7 +98,7 @@ const SPOTLIGHT_FEATURES = [
   {
     icon: Users,
     title: 'Copy Trading Marketplace',
-    description: 'Discover trader strategies and manage subscriptions and copy settings.',
+    description: 'Discover trader profiles and manage subscriptions and copy settings.',
     link: ROUTES.app.marketplace.browse,
     action: 'Explore traders',
   },
@@ -121,13 +108,6 @@ const SPOTLIGHT_FEATURES = [
     description: 'Review structured signals and manage approved sources in one place.',
     link: ROUTES.app.signals.overview,
     action: 'View signal tools',
-  },
-  {
-    icon: Zap,
-    title: 'Automation Studio',
-    description: 'Build workflows with configurable triggers, actions, and risk controls.',
-    link: ROUTES.app.automation.overview,
-    action: 'Explore automation',
   },
 ];
 
@@ -231,7 +211,7 @@ export default function Home() {
               </h1>
               <p className="mt-5 max-w-lg text-sm leading-6 text-muted-foreground md:text-base">
                 Trade smarter with SyncExc — a unified platform for exchange connections,
-                signal intelligence, and authorized automation. Connect your accounts, set
+                signal intelligence, and consistent risk controls. Connect your accounts, set
                 your rules, and manage activity across your workspace.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
@@ -276,8 +256,7 @@ export default function Home() {
               </h2>
               <p className="mt-4 max-w-md text-sm leading-6 text-muted-foreground">
                 From multi-exchange synchronization to AI-powered signals, SyncExc brings
-                your trading tools together to help you manage, monitor, and automate your
-                workflows.
+                your trading tools together to help you manage and monitor trading activity.
               </p>
               <Button className="mt-6" variant="outline" asChild>
                 <Link to={ROUTES.public.features}>Explore all features <ArrowRight className="ml-1 h-4 w-4" /></Link>
@@ -337,7 +316,7 @@ export default function Home() {
               Built for traders who need control
             </h2>
             <p className="mt-3 text-sm text-muted-foreground md:text-base">
-              Unified operational layer between exchanges, signals, and automation — without
+              Unified operational layer between exchanges and signals — without
               promising profits.
             </p>
           </div>
@@ -418,7 +397,7 @@ export default function Home() {
                 Three execution modes, one safety model
               </h2>
               <p className="mt-4 text-sm text-muted-foreground md:text-base">
-                Whether you prefer to observe, approve each step, or run authorized automation,
+                Whether you prefer to observe or approve each step,
                 the platform's authorization, risk, and reconciliation boundaries stay the same.
               </p>
 
@@ -426,7 +405,7 @@ export default function Home() {
                 {[
                   'Monitor Only — observe and evaluate without submitting live orders',
                   'Confirm Before Execution — approve each eligible operation explicitly',
-                  'Authorized Automation — dispatch eligible operations under active risk controls',
+                  'Risk-checked activity — eligible operations follow active risk controls',
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-2 text-sm text-foreground">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
@@ -464,15 +443,6 @@ export default function Home() {
                   <p className="mt-1 text-sm text-foreground">
                     Timeouts are treated as ambiguous. The system reconciles before retrying.
                     Notifications never substitute for verified state.
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border bg-background/70 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Simulation vs live
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">
-                    Simulation runs in an isolated context. There is no one-click pathway from
-                    a simulated order to a live one.
                   </p>
                 </div>
               </CardContent>
@@ -546,7 +516,7 @@ export default function Home() {
                 Start with the workspace that fits you
               </h2>
               <p className="mt-3 text-sm text-muted-foreground md:text-base">
-                Personal or organization, monitoring or authorized automation — the platform
+                Personal or organization, monitoring or review — the platform
                 supports the mode you choose without weakening safety.
               </p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -585,7 +555,7 @@ function DashboardPreview() {
           <span><Repeat /> Synchronize</span>
           <span><Users /> Marketplace</span>
           <span><Activity /> Signals</span>
-          <span><Zap /> Automation</span>
+          <span><Zap /> Signals</span>
         </aside>
         <div className="client-dashboard-content">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -669,7 +639,7 @@ function MarketPreview() {
         </div>
         <div className="client-market-panel">
           <div className="client-market-panel-head">
-            <div><span className="client-eyebrow">Terminal preview</span><h3 className="mt-2 text-sm font-semibold text-foreground">Watchlist &amp; chart</h3></div>
+            <div><span className="client-eyebrow">Terminal preview</span><h3 className="mt-2 text-sm font-semibold text-foreground">Market overview</h3></div>
             <span className="client-preview-label"><Search className="h-3 w-3" /> Illustrative</span>
           </div>
           <div className="client-market-table">
@@ -695,7 +665,7 @@ function SecurityHighlights() {
     { icon: LockKeyhole, title: 'Encrypted credentials', description: 'Exchange credentials are protected and never exposed in the interface.' },
     { icon: KeyRound, title: 'Permission-first access', description: 'Authorize only the exchange permissions your use case requires.' },
     { icon: ShieldCheck, title: 'Risk controls', description: 'Execution requests are checked against policy and current capabilities.' },
-    { icon: Activity, title: 'Traceable activity', description: 'Review operation states and outcomes across connected workflows.' },
+    { icon: Activity, title: 'Traceable activity', description: 'Review operation states and outcomes across connected accounts.' },
   ];
 
   return (

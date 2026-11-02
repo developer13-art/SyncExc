@@ -33,24 +33,14 @@ export const NAV_SECTIONS = Object.freeze([
         icon: 'marketplace',
       },
       { id: 'marketplace-traders', label: 'Traders', path: '/app/marketplace/traders', icon: 'marketplace' },
-      { id: 'marketplace-strategies', label: 'Strategies', path: '/app/marketplace/strategies', icon: 'automation' },
       { id: 'marketplace-signals', label: 'Signal Providers', path: '/app/marketplace/signals', icon: 'signals' },
       { id: 'marketplace-copy', label: 'Copy Trading', path: '/app/marketplace/copy-configurations', icon: 'sync' },
-      { id: 'marketplace-watchlist', label: 'Watchlist', path: '/app/marketplace/watchlist', icon: 'marketplace' },
       {
         id: 'trader-studio',
         label: 'Trader Studio',
         path: '/app/marketplace/profile',
         icon: 'marketplace',
       },
-    ],
-  },
-  {
-    id: 'automation',
-    label: 'Automation',
-    items: [
-      { id: 'automation', label: 'Workflows', path: '/app/automation', icon: 'automation' },
-      { id: 'simulation', label: 'Simulation', path: '/app/simulation', icon: 'simulation' },
     ],
   },
   {
@@ -93,7 +83,6 @@ export const TRADER_NAV_SECTIONS = Object.freeze([
     label: 'Trader workspace',
     items: [
       { id: 'trader-dashboard', label: 'Dashboard', path: '/app/trader/dashboard', icon: 'dashboard' },
-      { id: 'trader-workflows', label: 'Workflows', path: '/app/automation', icon: 'automation' },
       {
         id: 'trader-terminal',
         label: 'Trading terminal',
@@ -109,8 +98,6 @@ export const TRADER_NAV_SECTIONS = Object.freeze([
       { id: 'trader-profile', label: 'Public profile', path: '/app/trader/profile', icon: 'marketplace' },
       { id: 'trader-marketplace', label: 'Marketplace', path: '/app/marketplace', icon: 'marketplace' },
       { id: 'trader-marketplace-workspace', label: 'My Marketplace', path: '/app/trader/marketplace', icon: 'marketplace' },
-      { id: 'trader-strategies', label: 'Strategies', path: '/app/marketplace/strategies', icon: 'automation' },
-      { id: 'trader-watchlist', label: 'Watchlist', path: '/app/marketplace/watchlist', icon: 'marketplace' },
     ],
   },
 ]);

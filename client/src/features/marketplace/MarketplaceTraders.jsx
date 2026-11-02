@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { Store } from 'lucide-react';
 
 import { marketplaceApi } from '../../api/index.js';
@@ -17,7 +17,6 @@ import { uiActions } from '../../app/slices/uiSlice.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { useMarketplaceProviders } from '../../hooks/useMarketplace.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
-import { useToast } from '../../hooks/useToast.js';
 import { MarketplaceNavigation } from './components/MarketplaceNavigation.jsx';
 import { MarketplaceTraderCard } from './components/MarketplaceTraderCard.jsx';
 
@@ -35,7 +34,6 @@ const MARKET_OPTIONS = [
 
 export default function MarketplaceTraders() {
   const dispatch = useDispatch();
-  const toast = useToast();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const isSignalDirectory = location.pathname === ROUTES.app.marketplace.signalProviders;
@@ -47,17 +45,10 @@ export default function MarketplaceTraders() {
     isLoading,
     error,
     refetch,
-    follow,
-    unfollow,
   } = useMarketplaceProviders({
     limit: 12,
     q: query.trim() || undefined,
     markets: markets.length ? markets.join(',') : undefined,
-  });
-  const followsQuery = useQuery({
-    queryKey: queryKeys.marketplace.follows({}),
-    queryFn: () => marketplaceApi.listFollows({}),
-    retry: false,
   });
   const performanceQueries = useQueries({
     queries: providers.map((provider) => ({
@@ -82,9 +73,6 @@ export default function MarketplaceTraders() {
     ]));
   }, [dispatch, isSignalDirectory]);
 
-  const followedIds = new Set((followsQuery.data?.items ?? []).map((item) =>
-    item.provider?.id ?? item.providerId ?? item.provider_id,
-  ));
   const providersWithMetrics = useMemo(() => providers.map((provider, index) => ({
     ...provider,
     winRate: performanceQueries[index]?.data?.metrics?.winRate ?? null,
@@ -107,23 +95,6 @@ export default function MarketplaceTraders() {
     return sorted;
   }, [providersWithMetrics, sort]);
 
-  const handleFollow = async (providerId) => {
-    try {
-      await follow({ providerId });
-      toast.success('Trader added to your watchlist');
-    } catch (followError) {
-      toast.error('Could not follow trader', { description: getErrorMessage(followError) });
-    }
-  };
-  const handleUnfollow = async (providerId) => {
-    try {
-      await unfollow(providerId);
-      toast.success('Trader removed from your watchlist');
-    } catch (unfollowError) {
-      toast.error('Could not unfollow trader', { description: getErrorMessage(unfollowError) });
-    }
-  };
-
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5">
       <MarketplaceNavigation active={isSignalDirectory ? 'signals' : 'traders'} />
@@ -134,7 +105,7 @@ export default function MarketplaceTraders() {
         <p className="mt-1 text-sm text-muted-foreground">
           {isSignalDirectory
             ? 'Find providers publishing live signals and review their independently reported history.'
-            : 'Find traders, compare exact closed-trade performance, and follow the profiles you trust.'}
+            : 'Find traders and compare exact closed-trade performance.'}
         </p>
       </header>
 
@@ -202,9 +173,6 @@ export default function MarketplaceTraders() {
               observedExecutions={provider.observedExecutions}
               isPerformanceLoading={provider.isPerformanceLoading}
               isPerformanceError={provider.isPerformanceError}
-              isFollowing={followedIds.has(provider.id)}
-              onFollow={handleFollow}
-              onUnfollow={handleUnfollow}
             />
           ))}
         </div>

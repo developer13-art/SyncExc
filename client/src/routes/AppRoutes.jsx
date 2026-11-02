@@ -22,25 +22,14 @@ const AddSource = lazy(() => import('../features/sources/AddSource.jsx'));
 const Signals = lazy(() => import('../features/signals/SignalsOverview.jsx'));
 const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.jsx'));
 const MarketplaceTraders = lazy(() => import('../features/marketplace/MarketplaceTraders.jsx'));
-const MarketplaceStrategies = lazy(() => import('../features/marketplace/MarketplaceStrategies.jsx'));
-const MarketplaceStrategyDetails = lazy(() => import('../features/marketplace/MarketplaceStrategyDetails.jsx'));
-const CreateStrategyListing = lazy(() => import('../features/marketplace/CreateStrategyListing.jsx'));
 const TraderProfile = lazy(() => import('../features/marketplace/TraderProfile.jsx'));
 const ProviderProfile = lazy(() => import('../features/marketplace/ProviderProfile.jsx'));
-const Following = lazy(() => import('../features/marketplace/Following.jsx'));
 const Subscriptions = lazy(() => import('../features/marketplace/Subscriptions.jsx'));
 const CopyConfigurations = lazy(() => import('../features/marketplace/CopyConfigurations.jsx'));
 const CreateCopyConfiguration = lazy(() => import('../features/marketplace/CreateCopyConfiguration.jsx'));
 const CopyConfigurationDetails = lazy(() => import('../features/marketplace/CopyConfigurationDetails.jsx'));
 const CopyResults = lazy(() => import('../features/marketplace/CopyResults.jsx'));
 const TraderRoutes = lazy(() => import('./TraderRoutes.jsx'));
-const Automation = lazy(() => import('../features/automation/WorkflowsOverview.jsx'));
-const WorkflowTemplates = lazy(() => import('../features/automation/Templates.jsx'));
-const CreateWorkflow = lazy(() => import('../features/automation/CreateWorkflow.jsx'));
-const WorkflowDetails = lazy(() => import('../features/automation/WorkflowDetails.jsx'));
-const WorkflowBuilder = lazy(() => import('../features/automation/WorkflowBuilder.jsx'));
-const Simulation = lazy(() => import('../features/simulation/Environments.jsx'));
-const CreateEnvironment = lazy(() => import('../features/simulation/CreateEnvironment.jsx'));
 const Developer = lazy(() => import('../features/developer/ApplicationsOverview.jsx'));
 const CommunityFeed = lazy(() => import('../features/community/Feed.jsx'));
 const CommunityLayout = lazy(() => import('../features/community/CommunityLayout.jsx'));
@@ -134,28 +123,19 @@ export function AppRoutes() {
         <Route path="sources/*" element={<Fallback><Sources /></Fallback>} />
         <Route path="signals/*" element={<Fallback><Signals /></Fallback>} />
         <Route path="marketplace/profile" element={<Fallback><TraderProfile /></Fallback>} />
-        <Route path="marketplace/strategies/new" element={<Fallback><CreateStrategyListing /></Fallback>} />
-        <Route path="marketplace/strategies/:strategyId" element={<Fallback><MarketplaceStrategyDetails /></Fallback>} />
-        <Route path="marketplace/strategies" element={<Fallback><MarketplaceStrategies /></Fallback>} />
+        <Route path="marketplace/strategies/*" element={<NotFoundRoute />} />
+        <Route path="marketplace/watchlist" element={<NotFoundRoute />} />
+        <Route path="marketplace/following" element={<NotFoundRoute />} />
         <Route path="marketplace/traders" element={<Fallback><MarketplaceTraders /></Fallback>} />
         <Route path="marketplace/signals" element={<Fallback><MarketplaceTraders /></Fallback>} />
-        <Route path="marketplace/watchlist" element={<Fallback><Following /></Fallback>} />
         <Route path="marketplace/providers/:providerId" element={<Fallback><ProviderProfile /></Fallback>} />
         <Route path="marketplace/copy-configurations/new" element={<Fallback><CreateCopyConfiguration /></Fallback>} />
         <Route path="marketplace/copy-configurations/:configId" element={<Fallback><CopyConfigurationDetails /></Fallback>} />
         <Route path="marketplace/copy-configurations" element={<Fallback><CopyConfigurations /></Fallback>} />
-        <Route path="marketplace/following" element={<Fallback><Following /></Fallback>} />
         <Route path="marketplace/subscriptions" element={<Fallback><Subscriptions /></Fallback>} />
         <Route path="marketplace/results" element={<Fallback><CopyResults /></Fallback>} />
         <Route path="marketplace/*" element={<Fallback><Marketplace /></Fallback>} />
         <Route path="trader/*" element={<Fallback><TraderRoutes /></Fallback>} />
-        <Route path="automation/templates" element={<Fallback><WorkflowTemplates /></Fallback>} />
-        <Route path="automation/new" element={<Fallback><CreateWorkflow /></Fallback>} />
-        <Route path="automation/:workflowId/edit" element={<Fallback><WorkflowBuilder /></Fallback>} />
-        <Route path="automation/:workflowId" element={<Fallback><WorkflowDetails /></Fallback>} />
-        <Route path="automation/*" element={<Fallback><Automation /></Fallback>} />
-        <Route path="simulation/environments/new" element={<Fallback><CreateEnvironment /></Fallback>} />
-        <Route path="simulation/*" element={<Fallback><Simulation /></Fallback>} />
         <Route path="developer/*" element={<Fallback><Developer /></Fallback>} />
         <Route element={<Fallback><CommunityLayout /></Fallback>}>
           <Route path="community" element={<Fallback><CommunityFeed /></Fallback>} />

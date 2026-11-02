@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Bookmark, ChartNoAxesCombined, Search, Store, Users } from 'lucide-react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { ArrowRight, ChartNoAxesCombined, Search, Store, Users } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
 
-import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { Button } from '../../components/ui/Button.jsx';
@@ -15,15 +14,12 @@ import { ROUTES } from '../../config/routes.config.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { marketplaceApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
-import { useToast } from '../../hooks/useToast.js';
 import { MarketplaceNavigation } from './components/MarketplaceNavigation.jsx';
-import { MarketplaceStrategyCard } from './components/MarketplaceStrategyCard.jsx';
 import { MarketplaceTraderCard } from './components/MarketplaceTraderCard.jsx';
 
 export default function BrowseProviders() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const toast = useToast();
   const { activeWorkspace } = useWorkspaceContext();
   const [query, setQuery] = useState('');
   const {
@@ -31,19 +27,7 @@ export default function BrowseProviders() {
     isLoading,
     error,
     refetch,
-    follow,
-    unfollow,
   } = useMarketplaceProviders({ limit: 12 });
-  const followsQuery = useQuery({
-    queryKey: queryKeys.marketplace.follows({}),
-    queryFn: () => marketplaceApi.listFollows({}),
-    retry: false,
-  });
-  const strategiesQuery = useQuery({
-    queryKey: queryKeys.marketplace.strategies({ limit: 4 }),
-    queryFn: () => marketplaceApi.listStrategies({ limit: 4 }),
-    staleTime: 60_000,
-  });
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('SyncExc Marketplace'));
@@ -64,10 +48,6 @@ export default function BrowseProviders() {
       retry: false,
     })),
   });
-  const followedIds = new Set((followsQuery.data?.items ?? []).map((item) =>
-    item.provider?.id ?? item.providerId ?? item.provider_id,
-  ));
-  const strategies = Array.isArray(strategiesQuery.data) ? strategiesQuery.data.slice(0, 3) : [];
   const submitSearch = (event) => {
     event.preventDefault();
     navigate(`${ROUTES.app.marketplace.traders}${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`);
@@ -78,13 +58,13 @@ export default function BrowseProviders() {
       <MarketplaceNavigation active="discover" />
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary/15 via-card to-card p-5 sm:p-8">
         <div className="relative z-10 max-w-2xl">
-          <p className="text-sm font-semibold text-primary">Discover · Follow · Trade</p>
+          <p className="text-sm font-semibold text-primary">Discover · Compare · Trade</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             SyncExc Marketplace
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            Discover traders, strategy workflows, and reliable signals. Review performance and
-            execution details before you follow, subscribe, or copy.
+            Discover traders and reliable signals. Review performance and execution details
+            before you subscribe or copy.
           </p>
           <form onSubmit={submitSearch} className="mt-5 flex max-w-xl gap-2">
             <label className="relative min-w-0 flex-1">
@@ -93,7 +73,7 @@ export default function BrowseProviders() {
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search traders, strategies, markets…"
+                placeholder="Search traders and markets…"
                 className="h-11 bg-background pl-9"
               />
             </label>
@@ -105,11 +85,9 @@ export default function BrowseProviders() {
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Marketplace shortcuts">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label="Marketplace shortcuts">
         <Shortcut to={ROUTES.app.marketplace.traders} icon={Users} title="Traders" description="Browse trader profiles" />
-        <Shortcut to={ROUTES.app.marketplace.strategies} icon={ChartNoAxesCombined} title="Strategies" description="Explore published workflows" />
         <Shortcut to={ROUTES.app.marketplace.signalProviders} icon={Store} title="Signal providers" description="View live signal publishers" />
-        <Shortcut to={ROUTES.app.marketplace.watchlist} icon={Bookmark} title="Watchlist" description="Your followed providers and strategies" />
       </section>
 
       {error ? (
@@ -140,23 +118,6 @@ export default function BrowseProviders() {
                     }
                     isPerformanceLoading={performanceQueries[index]?.isLoading ?? true}
                     isPerformanceError={performanceQueries[index]?.isError ?? false}
-                    isFollowing={followedIds.has(provider.id)}
-                    onFollow={async (providerId) => {
-                      try {
-                        await follow({ providerId });
-                        toast.success('Trader added to your watchlist');
-                      } catch (followError) {
-                        toast.error('Could not follow trader', { description: followError.message });
-                      }
-                    }}
-                    onUnfollow={async (providerId) => {
-                      try {
-                        await unfollow(providerId);
-                        toast.success('Trader removed from your watchlist');
-                      } catch (unfollowError) {
-                        toast.error('Could not unfollow trader', { description: unfollowError.message });
-                      }
-                    }}
                   />
                 ))}
               </div>
@@ -169,41 +130,6 @@ export default function BrowseProviders() {
             )}
           </section>
 
-          <section className="flex flex-col gap-4">
-            <SectionHeading
-              title="Trending strategies"
-              subtitle="Published from validated automation workflows"
-              to={ROUTES.app.marketplace.strategies}
-            />
-            {strategiesQuery.isError ? (
-              <ErrorState
-                title="Strategies are unavailable"
-                description="The strategy catalog could not be loaded."
-                onRetry={strategiesQuery.refetch}
-              />
-            ) : strategiesQuery.isLoading ? (
-              <div className="h-40 animate-pulse rounded-xl bg-muted/50" />
-            ) : strategies.length > 0 ? (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {strategies.map((strategy) => (
-                  <MarketplaceStrategyCard key={strategy.id} strategy={strategy} />
-                ))}
-              </div>
-            ) : (
-              <Card>
-                <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
-                  <p className="text-sm text-muted-foreground">
-                    No strategies have been published yet.
-                  </p>
-                  {activeWorkspace?.type === 'trader' ? (
-                    <Button asChild size="sm">
-                      <Link to={ROUTES.app.trader.createListing}>Create a listing</Link>
-                    </Button>
-                  ) : null}
-                </CardContent>
-              </Card>
-            )}
-          </section>
         </>
       )}
 

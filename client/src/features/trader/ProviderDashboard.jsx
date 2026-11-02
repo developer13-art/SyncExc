@@ -20,7 +20,7 @@ import { ProviderPerformance } from '../marketplace/ProviderPerformance.jsx';
 
 const TABS = [
   ['overview', 'Overview'],
-  ['listings', 'Listings'],
+  ['signals', 'Published signals'],
   ['subscribers', 'Subscribers'],
   ['analytics', 'Analytics'],
   ['payouts', 'Payouts'],
@@ -35,12 +35,6 @@ export default function ProviderDashboard() {
     queryKey: ['marketplace', 'provider-dashboard', activeWorkspaceId],
     queryFn: () => marketplaceApi.getProviderDashboard(),
     enabled: activeWorkspace?.type === 'trader',
-  });
-  const strategiesQuery = useQuery({
-    queryKey: ['marketplace', 'my-strategies', activeWorkspaceId],
-    queryFn: () => marketplaceApi.listMyStrategies(),
-    enabled: activeWorkspace?.type === 'trader' && Boolean(dashboardQuery.data?.provider),
-    staleTime: 30_000,
   });
   const signalsQuery = useQuery({
     queryKey: ['marketplace', 'my-signals', activeWorkspaceId],
@@ -82,7 +76,7 @@ export default function ProviderDashboard() {
       <EmptyState
         icon={UserRound}
         title="Set up your Trader profile"
-        description="Create a Trader profile for this workspace before publishing listings or managing subscribers."
+        description="Create a Trader profile for this workspace before publishing signals or managing subscribers."
         action={
           <Button asChild>
             <Link to={ROUTES.app.trader.profile}>Create Trader profile</Link>
@@ -93,38 +87,21 @@ export default function ProviderDashboard() {
   }
 
   const stats = dashboard.stats ?? {};
-  const strategies = Array.isArray(strategiesQuery.data) ? strategiesQuery.data : [];
   const signals = signalsQuery.data?.items ?? dashboard.recentSignals ?? [];
   const subscribers = subscribersQuery.data?.items ?? [];
-  const listings = [
-    ...strategies.map((strategy) => ({
-      id: strategy.id,
-      name: strategy.name,
-      type: 'Strategy',
-      price: getStrategyPrice(strategy.pricing),
-      audience: Number(strategy.followerCount || 0),
-      status: strategy.status,
-      updatedAt: strategy.updatedAt || strategy.createdAt,
-      href: ROUTES.app.marketplace.strategy(strategy.id),
-    })),
-    ...signals.map((signal) => ({
+  const publishedSignals = signals.map((signal) => ({
       id: signal.id,
       name: `${signal.instrument} · ${signal.direction}`,
-      type: 'Signal',
-      price: '—',
-      audience: Number(signal.copyCount || 0),
+      copyCount: Number(signal.copyCount || 0),
       status: signal.status,
       updatedAt: signal.updatedAt || signal.entryTime,
       href: ROUTES.app.trader.signalHistory,
-    })),
-  ];
-  const filteredListings = listings.filter((listing) =>
-    `${listing.name} ${listing.type} ${listing.status}`.toLowerCase().includes(search.trim().toLowerCase()),
+    }));
+  const filteredSignals = publishedSignals.filter((signal) =>
+    `${signal.name} ${signal.status}`.toLowerCase().includes(search.trim().toLowerCase()),
   );
   const totalSignals = Number(stats.total_signals ?? signals.length);
   const activeSignals = Number(stats.active_signals ?? signals.filter(isActiveSignal).length);
-  const totalListingCount = totalSignals + strategies.length;
-  const activeListingCount = activeSignals + strategies.filter(isActiveStrategy).length;
   const totalEarnings = stats.total_earnings ?? stats.totalEarnings;
   const earningsAmount = Number(totalEarnings);
   const hasEarnings = totalEarnings != null && Number.isFinite(earningsAmount);
@@ -150,10 +127,10 @@ export default function ProviderDashboard() {
       icon: UserRound,
     },
     {
-      label: 'Active listings',
-      value: `${activeListingCount.toLocaleString()} / ${totalListingCount.toLocaleString()}`,
-      detail: 'Published signals and strategies',
-      icon: Layers3,
+      label: 'Active signals',
+      value: `${activeSignals.toLocaleString()} / ${totalSignals.toLocaleString()}`,
+      detail: 'Published signals',
+      icon: Send,
     },
   ];
   const recentActivity = [
@@ -174,7 +151,7 @@ export default function ProviderDashboard() {
   ].filter((item) => item.date)
     .sort((left, right) => new Date(right.date) - new Date(left.date))
     .slice(0, 5);
-  const listingsError = strategiesQuery.error || signalsQuery.error;
+  const signalsError = signalsQuery.error;
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5">
@@ -183,23 +160,20 @@ export default function ProviderDashboard() {
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Trader workspace</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">My Marketplace</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage your listings, track performance, and grow your audience.
+            Manage your published signals, track performance, and grow your audience.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <label className="relative min-w-0 sm:w-72">
-            <span className="sr-only">Search listings</span>
+            <span className="sr-only">Search published signals</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search listings, signals, or strategies"
+              placeholder="Search published signals"
               className="pl-9"
             />
           </label>
-          <Button asChild>
-            <Link to={ROUTES.app.trader.createListing}><Layers3 className="h-4 w-4" /> Create strategy</Link>
-          </Button>
         </div>
       </header>
 
@@ -240,15 +214,14 @@ export default function ProviderDashboard() {
 
       {activeTab === 'overview' ? (
         <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,0.8fr)]">
-          <ListingsCard
-            listings={filteredListings.slice(0, 5)}
-            isLoading={strategiesQuery.isLoading || signalsQuery.isLoading}
-            error={listingsError}
+          <SignalsCard
+            signals={filteredSignals.slice(0, 5)}
+            isLoading={signalsQuery.isLoading}
+            error={signalsError}
             onRetry={() => {
-              strategiesQuery.refetch();
               signalsQuery.refetch();
             }}
-            onViewAll={() => setActiveTab('listings')}
+            onViewAll={() => setActiveTab('signals')}
           />
           <RecentActivity
             items={recentActivity}
@@ -257,13 +230,12 @@ export default function ProviderDashboard() {
         </div>
       ) : null}
 
-      {activeTab === 'listings' ? (
-        <ListingsCard
-          listings={filteredListings}
-          isLoading={strategiesQuery.isLoading || signalsQuery.isLoading}
-          error={listingsError}
+      {activeTab === 'signals' ? (
+        <SignalsCard
+          signals={filteredSignals}
+          isLoading={signalsQuery.isLoading}
+          error={signalsError}
           onRetry={() => {
-            strategiesQuery.refetch();
             signalsQuery.refetch();
           }}
           onViewAll={() => setSearch('')}
@@ -400,14 +372,14 @@ export default function ProviderDashboard() {
   );
 }
 
-function ListingsCard({ listings, isLoading, error, onRetry, onViewAll, showAll = false }) {
+function SignalsCard({ signals, isLoading, error, onRetry, onViewAll, showAll = false }) {
   return (
     <Card className="min-w-0">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <CardTitle>Your listings</CardTitle>
-            <CardDescription className="mt-1">Review and manage your Marketplace listings.</CardDescription>
+            <CardTitle>Published signals</CardTitle>
+            <CardDescription className="mt-1">Review and manage the signals you have published.</CardDescription>
           </div>
           <div className="flex items-center gap-2">
             {!showAll ? (
@@ -417,59 +389,52 @@ function ListingsCard({ listings, isLoading, error, onRetry, onViewAll, showAll 
             ) : (
               <Button variant="outline" size="sm" onClick={onViewAll}>Clear search</Button>
             )}
-            <Button size="sm" asChild>
-              <Link to={ROUTES.app.trader.createListing}><Layers3 className="h-4 w-4" /> Create strategy</Link>
-            </Button>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        {isLoading ? <LoadingState label="Loading listings" /> : null}
+        {isLoading ? <LoadingState label="Loading published signals" /> : null}
         {error ? (
           <ErrorState
-            title="Listings unavailable"
+            title="Published signals unavailable"
             description={getErrorMessage(error)}
             onRetry={onRetry}
           />
         ) : null}
-        {!isLoading && !error && listings.length === 0 ? (
+        {!isLoading && !error && signals.length === 0 ? (
           <EmptyState
-            icon={Layers3}
-            title="No listings yet"
-            description="Create a strategy listing or publish a signal to start building your Marketplace presence."
-            action={<Button asChild><Link to={ROUTES.app.trader.createListing}>Create strategy</Link></Button>}
+            icon={Send}
+            title="No published signals yet"
+            description="Publish a signal to start building your Marketplace presence."
+            action={<Button asChild><Link to={ROUTES.app.trader.publishSignal}>Publish a signal</Link></Button>}
             size="sm"
             className="border-0 bg-transparent py-6"
           />
         ) : null}
-        {!isLoading && !error && listings.length > 0 ? (
+        {!isLoading && !error && signals.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left text-sm">
+            <table className="w-full min-w-[520px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-3 py-3 font-medium">Name</th>
-                  <th className="px-3 py-3 font-medium">Type</th>
-                  <th className="px-3 py-3 font-medium">Price</th>
-                  <th className="px-3 py-3 text-right font-medium">Audience</th>
+                  <th className="px-3 py-3 font-medium">Signal</th>
+                  <th className="px-3 py-3 text-right font-medium">Copies</th>
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {listings.map((listing) => (
-                  <tr key={`${listing.type}-${listing.id}`} className="hover:bg-muted/30">
-                    <td className="max-w-56 truncate px-3 py-3 font-medium text-foreground">{listing.name}</td>
-                    <td className="px-3 py-3 text-muted-foreground">{listing.type}</td>
-                    <td className="px-3 py-3 text-muted-foreground">{listing.price}</td>
-                    <td className="px-3 py-3 text-right text-muted-foreground">{listing.audience.toLocaleString()}</td>
+                {signals.map((signal) => (
+                  <tr key={signal.id} className="hover:bg-muted/30">
+                    <td className="max-w-56 truncate px-3 py-3 font-medium text-foreground">{signal.name}</td>
+                    <td className="px-3 py-3 text-right text-muted-foreground">{signal.copyCount.toLocaleString()}</td>
                     <td className="px-3 py-3">
-                      <Badge variant={isPublished(listing.status) ? 'success' : 'muted'}>
-                        {listing.status?.replaceAll('_', ' ') || 'draft'}
+                      <Badge variant={isPublished(signal.status) ? 'success' : 'muted'}>
+                        {signal.status?.replaceAll('_', ' ') || 'draft'}
                       </Badge>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <Button variant="ghost" size="sm" asChild>
-                        <Link to={listing.href}>View</Link>
+                        <Link to={signal.href}>View</Link>
                       </Button>
                     </td>
                   </tr>
@@ -488,7 +453,7 @@ function RecentActivity({ items, isLoading }) {
     <Card className="min-w-0">
       <CardHeader>
         <CardTitle>Recent activity</CardTitle>
-        <CardDescription>Latest updates from your audience and listings.</CardDescription>
+        <CardDescription>Latest updates from your audience and published signals.</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? <LoadingState label="Loading recent activity" /> : null}
@@ -524,20 +489,8 @@ function RecentActivity({ items, isLoading }) {
   );
 }
 
-function getStrategyPrice(pricing) {
-  if (!pricing) return '—';
-  const amount = Number(pricing.amountMinor);
-  if (!Number.isFinite(amount)) return '—';
-  if (amount === 0) return 'Free';
-  return `${formatCurrency(amount / 100, pricing.currency || 'USD')} / ${pricing.billingInterval || 'month'}`;
-}
-
 function isActiveSignal(signal) {
   return ['published', 'updated'].includes(signal.status);
-}
-
-function isActiveStrategy(strategy) {
-  return ['active', 'published'].includes(strategy.status);
 }
 
 function isPublished(status) {

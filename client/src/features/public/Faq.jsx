@@ -48,19 +48,11 @@ const CATEGORIES = [
     ],
   },
   {
-    title: 'Signal sources and automation',
+    title: 'Signal sources',
     items: [
       {
         q: 'How does AI signal interpretation work?',
         a: 'Deterministic parsers are tried first against known templates. When a message needs contextual interpretation, a constrained AI step extracts structured output. The output is schema-validated and, if uncertain, routed to human review. Missing data is preserved as missing — never invented.',
-      },
-      {
-        q: 'Can a workflow execute a trade directly?',
-        a: 'No. Workflows request operations from the appropriate downstream service. That service independently performs authentication, authorization, entitlement, capability, risk, and idempotency checks before considering dispatch.',
-      },
-      {
-        q: 'Is simulation the same as live trading?',
-        a: 'No. Simulation runs in an isolated execution context with a virtual account ledger. Live execution adapters are not accessible from simulation, and there is no one-click pathway from a simulated order to a live one.',
       },
     ],
   },
@@ -100,7 +92,7 @@ export default function Faq() {
           Frequently asked questions
         </h1>
         <p className="mt-4 text-base text-muted-foreground">
-          Answers about accounts, trading, signals, automation, and billing.
+          Answers about accounts, trading, signals, and billing.
         </p>
       </div>
 

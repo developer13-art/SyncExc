@@ -7,9 +7,7 @@ import {
   Code2,
   Coins,
   FileSearch,
-  GitBranch,
   Headphones,
-  LineChart,
   Lock,
   MessageSquare,
   Radio,
@@ -19,7 +17,6 @@ import {
   Sparkles,
   Store,
   Users,
-  Workflow,
   Zap,
 } from 'lucide-react';
 
@@ -98,31 +95,6 @@ const FEATURE_GROUPS = [
         title: 'Traceability by Design',
         description:
           'Every extracted field links back to evidence. Missing data is preserved as missing; corrections create new versions.',
-      },
-    ],
-  },
-  {
-    title: 'Automation and Simulation',
-    description:
-      'Build, test, and version workflows without shortcutting execution safeguards.',
-    features: [
-      {
-        icon: Workflow,
-        title: 'Visual Workflow Builder',
-        description:
-          'Drag-and-drop canvas with triggers, conditions, approvals, and downstream service calls — never direct exchange access.',
-      },
-      {
-        icon: GitBranch,
-        title: 'Versioned Deployment',
-        description:
-          'Draft, validate, publish, activate, pause, and roll back workflows without rewriting historical runs.',
-      },
-      {
-        icon: LineChart,
-        title: 'Simulation and Backtesting',
-        description:
-          'Isolated simulation contexts with dataset versioning, fill models, and clearly labelled assumptions.',
       },
     ],
   },

@@ -18,7 +18,7 @@ describe('WorkspaceRouteGuard', () => {
     });
   });
 
-  it('allows Trader workspaces to open Automation workflows', () => {
+  it('redirects Trader workspaces away from removed Automation workflows', () => {
     render(
       <MemoryRouter initialEntries={['/app/automation/new']}>
         <Routes>
@@ -30,7 +30,7 @@ describe('WorkspaceRouteGuard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Create workflow page')).toBeInTheDocument();
+    expect(screen.getByText('Trader dashboard')).toBeInTheDocument();
   });
 
   it('continues redirecting Trader workspaces away from unrelated app sections', () => {
