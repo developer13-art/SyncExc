@@ -93,6 +93,7 @@ export const TRADER_NAV_SECTIONS = Object.freeze([
     label: 'Trader workspace',
     items: [
       { id: 'trader-dashboard', label: 'Dashboard', path: '/app/trader/dashboard', icon: 'dashboard' },
+      { id: 'trader-workflows', label: 'Workflows', path: '/app/automation', icon: 'automation' },
       {
         id: 'trader-terminal',
         label: 'Trading terminal',

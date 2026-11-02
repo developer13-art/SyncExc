@@ -223,6 +223,15 @@ export default function CreateStrategyListing() {
                     <option key={workflow.id} value={workflow.id}>{workflow.name} · v{workflow.currentVersion}</option>
                   ))}
                 </select>
+                {workflows.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Create a workflow in this Trader workspace, then activate it and publish a version before listing it.
+                    {' '}
+                    <Link className="font-medium text-primary underline" to={ROUTES.app.automation.create}>
+                      Create workflow
+                    </Link>
+                  </p>
+                ) : null}
                 <p className="text-xs text-muted-foreground">
                   Workflows must include a strategy market-data node and at least one strategy order node.
                 </p>
