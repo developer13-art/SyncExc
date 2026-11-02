@@ -198,7 +198,7 @@ export default function ProviderDashboard() {
             />
           </label>
           <Button asChild>
-            <Link to={ROUTES.app.trader.createListing}><Layers3 className="h-4 w-4" /> Create listing</Link>
+            <Link to={ROUTES.app.trader.createListing}><Layers3 className="h-4 w-4" /> Create strategy</Link>
           </Button>
         </div>
       </header>
@@ -418,7 +418,7 @@ function ListingsCard({ listings, isLoading, error, onRetry, onViewAll, showAll 
               <Button variant="outline" size="sm" onClick={onViewAll}>Clear search</Button>
             )}
             <Button size="sm" asChild>
-              <Link to={ROUTES.app.trader.createListing}><Layers3 className="h-4 w-4" /> Create listing</Link>
+              <Link to={ROUTES.app.trader.createListing}><Layers3 className="h-4 w-4" /> Create strategy</Link>
             </Button>
           </div>
         </div>
@@ -437,7 +437,7 @@ function ListingsCard({ listings, isLoading, error, onRetry, onViewAll, showAll 
             icon={Layers3}
             title="No listings yet"
             description="Create a strategy listing or publish a signal to start building your Marketplace presence."
-            action={<Button asChild><Link to={ROUTES.app.trader.createListing}>Create listing</Link></Button>}
+            action={<Button asChild><Link to={ROUTES.app.trader.createListing}>Create strategy</Link></Button>}
             size="sm"
             className="border-0 bg-transparent py-6"
           />

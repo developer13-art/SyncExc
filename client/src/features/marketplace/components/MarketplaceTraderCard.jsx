@@ -12,6 +12,9 @@ import { formatPercent } from '../../../lib/formatters/percent.formatter.js';
 export function MarketplaceTraderCard({
   provider,
   winRate,
+  observedExecutions = 0,
+  isPerformanceLoading = false,
+  isPerformanceError = false,
   isFollowing = false,
   onFollow,
   onUnfollow,
@@ -59,7 +62,23 @@ export function MarketplaceTraderCard({
         </p>
 
         <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/40 p-3">
-          <Metric label="Win rate" value={winRate == null ? '—' : formatPercent(winRate, { already100: true, decimals: 1 })} />
+          <Metric
+            label="Win rate"
+            value={isPerformanceLoading
+              ? '…'
+              : isPerformanceError
+                ? 'N/A'
+              : winRate == null
+                ? 'N/A'
+                : formatPercent(winRate, { already100: true, decimals: 1 })}
+            title={isPerformanceLoading
+              ? 'Loading verified closed-trade performance.'
+              : isPerformanceError
+                ? 'Closed-trade performance could not be loaded.'
+              : observedExecutions > 0
+                ? `Based on ${observedExecutions} linked, closed trade${observedExecutions === 1 ? '' : 's'}.`
+                : 'No linked, closed trades yet; a win rate is not available.'}
+          />
           <Metric label="Signals" value={Number(provider.signalCount || 0).toLocaleString()} />
           <Metric
             label="Followers"
@@ -90,9 +109,9 @@ export function MarketplaceTraderCard({
   );
 }
 
-function Metric({ label, value, icon }) {
+function Metric({ label, value, icon, title }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" title={title}>
       <p className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-1 truncate text-sm font-semibold text-foreground">
         {icon}{value}

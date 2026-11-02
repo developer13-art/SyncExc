@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Bookmark, ChartNoAxesCombined, Search, Store, Users } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
@@ -55,6 +55,15 @@ export default function BrowseProviders() {
   }, [dispatch]);
 
   const featuredProviders = useMemo(() => providers.slice(0, 4), [providers]);
+  const performanceQueries = useQueries({
+    queries: featuredProviders.map((provider) => ({
+      queryKey: queryKeys.marketplace.providerPerformance(provider.id, {}),
+      queryFn: () => marketplaceApi.getProviderPerformance(provider.id),
+      enabled: Boolean(provider.id),
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
   const followedIds = new Set((followsQuery.data?.items ?? []).map((item) =>
     item.provider?.id ?? item.providerId ?? item.provider_id,
   ));
@@ -121,10 +130,16 @@ export default function BrowseProviders() {
               <div className="h-40 animate-pulse rounded-xl bg-muted/50" />
             ) : featuredProviders.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {featuredProviders.map((provider) => (
+                {featuredProviders.map((provider, index) => (
                   <MarketplaceTraderCard
                     key={provider.id}
                     provider={provider}
+                    winRate={performanceQueries[index]?.data?.metrics?.winRate ?? null}
+                    observedExecutions={
+                      performanceQueries[index]?.data?.metrics?.observedExecutions ?? 0
+                    }
+                    isPerformanceLoading={performanceQueries[index]?.isLoading ?? true}
+                    isPerformanceError={performanceQueries[index]?.isError ?? false}
                     isFollowing={followedIds.has(provider.id)}
                     onFollow={async (providerId) => {
                       try {

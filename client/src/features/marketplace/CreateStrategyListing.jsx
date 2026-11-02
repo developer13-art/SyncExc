@@ -152,7 +152,7 @@ export default function CreateStrategyListing() {
       <header>
         <p className="text-sm font-medium text-primary">Trader workspace</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-          Create a marketplace listing
+          Create a strategy listing
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Publish a validated, active automation workflow as a strategy.

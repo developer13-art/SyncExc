@@ -89,6 +89,8 @@ export default function MarketplaceTraders() {
     ...provider,
     winRate: performanceQueries[index]?.data?.metrics?.winRate ?? null,
     observedExecutions: performanceQueries[index]?.data?.metrics?.observedExecutions ?? 0,
+    isPerformanceLoading: performanceQueries[index]?.isLoading ?? true,
+    isPerformanceError: performanceQueries[index]?.isError ?? false,
   })), [providers, performanceQueries]);
   const sortedProviders = useMemo(() => {
     const sorted = [...providersWithMetrics];
@@ -197,6 +199,9 @@ export default function MarketplaceTraders() {
               key={provider.id}
               provider={provider}
               winRate={provider.winRate}
+              observedExecutions={provider.observedExecutions}
+              isPerformanceLoading={provider.isPerformanceLoading}
+              isPerformanceError={provider.isPerformanceError}
               isFollowing={followedIds.has(provider.id)}
               onFollow={handleFollow}
               onUnfollow={handleUnfollow}
