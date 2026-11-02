@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Bookmark, Check, Copy, Users } from 'lucide-react';
 
 import { marketplaceApi } from '../../api/index.js';
-import { getErrorMessage } from '../../api/errors.js';
+import { getErrorMessage, isNotFoundError } from '../../api/errors.js';
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Avatar } from '../../components/ui/Avatar.jsx';
@@ -40,7 +40,7 @@ export default function ProviderProfile() {
   const strategiesQuery = useQuery({
     queryKey: ['marketplace', 'strategies', { providerId }],
     queryFn: () => marketplaceApi.listStrategies({ providerId }),
-    enabled: Boolean(providerId),
+    enabled: providerQuery.hasProvider,
     staleTime: 60_000,
   });
 
@@ -68,11 +68,19 @@ export default function ProviderProfile() {
   }
 
   if (error || !provider) {
+    const providerNotFound = isNotFoundError(error);
     return (
       <ErrorState
-        title="Unable to load provider"
-        description="This provider could not be retrieved."
-        onRetry={providerQuery.refetch}
+        title={providerNotFound ? 'Provider not found' : 'Unable to load provider'}
+        description={providerNotFound
+          ? 'This provider profile is no longer available. Browse traders to find a current profile.'
+          : getErrorMessage(error)}
+        onRetry={providerNotFound ? undefined : providerQuery.refetch}
+        action={providerNotFound ? (
+          <Button asChild>
+            <Link to={ROUTES.app.marketplace.traders}>Browse traders</Link>
+          </Button>
+        ) : null}
       />
     );
   }

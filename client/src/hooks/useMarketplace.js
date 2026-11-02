@@ -51,14 +51,14 @@ export function useMarketplaceProvider(providerId) {
   const plansQuery = useQuery({
     queryKey: queryKeys.marketplace.providerPlans(providerId),
     queryFn: () => marketplaceApi.listProviderPlans(providerId),
-    enabled: Boolean(providerId),
+    enabled: Boolean(providerId) && detailQuery.isSuccess,
     staleTime: 60_000,
   });
 
   const performanceQuery = useQuery({
     queryKey: queryKeys.marketplace.providerPerformance(providerId, {}),
     queryFn: () => marketplaceApi.getProviderPerformance(providerId),
-    enabled: Boolean(providerId),
+    enabled: Boolean(providerId) && detailQuery.isSuccess,
     staleTime: 60_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
@@ -67,7 +67,7 @@ export function useMarketplaceProvider(providerId) {
   const disclosuresQuery = useQuery({
     queryKey: queryKeys.marketplace.providerDisclosures(providerId),
     queryFn: () => marketplaceApi.getProviderDisclosures(providerId),
-    enabled: Boolean(providerId),
+    enabled: Boolean(providerId) && detailQuery.isSuccess,
     staleTime: 5 * 60_000,
   });
 
@@ -78,6 +78,7 @@ export function useMarketplaceProvider(providerId) {
 
   return {
     provider: detailQuery.data ?? null,
+    hasProvider: detailQuery.isSuccess,
     plans: plansQuery.data ?? [],
     performance: performanceQuery.data ?? null,
     disclosures: disclosuresQuery.data ?? [],
