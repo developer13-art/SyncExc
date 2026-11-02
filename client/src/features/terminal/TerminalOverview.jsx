@@ -15,7 +15,10 @@ import {
 } from '../../components/ui/Select.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
-import { InstrumentSelector } from './components/InstrumentSelector.jsx';
+import {
+  getInstrumentValue,
+  InstrumentSelector,
+} from './components/InstrumentSelector.jsx';
 import { OrderForm } from './components/OrderForm.jsx';
 import { OrderConfirmationModal } from './components/OrderConfirmationModal.jsx';
 import { PriceChart } from './components/PriceChart.jsx';
@@ -39,7 +42,10 @@ import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { userPreferencesQueryKey } from '../settings/useUserPreferences.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
-import { findCompatibleInstrument } from './market-matching.util.js';
+import {
+  findCompatibleInstrument,
+  normalizeMarketType,
+} from './market-matching.util.js';
 import {
   calculateOrderPreview,
   findUsdConversionMarket,
@@ -65,7 +71,10 @@ function findAvailableBalance(balances, asset) {
 export default function TerminalOverview() {
   const dispatch = useDispatch();
   const toast = useToast();
-  const { activeWorkspaceId } = useWorkspaceContext();
+  const {
+    activeWorkspaceId,
+    isLoading: isWorkspaceLoading,
+  } = useWorkspaceContext();
 
   const preferencesQuery = useQuery({
     queryKey: userPreferencesQueryKey,
@@ -182,10 +191,12 @@ export default function TerminalOverview() {
     const currentSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;
     if (currentSymbol && instruments.some((item) =>
       (item.exchangeSymbol ?? item.symbol) === currentSymbol &&
-      (item.marketType ?? preferredMarketType) === (selectedInstrument?.marketType ?? preferredMarketType)
+      normalizeMarketType(item.marketType) === normalizeMarketType(selectedInstrument?.marketType)
     )) return;
     setSelectedInstrument(
-      instruments.find((item) => item.marketType === preferredMarketType) ?? instruments[0],
+      instruments.find(
+        (item) => normalizeMarketType(item.marketType) === normalizeMarketType(preferredMarketType),
+      ) ?? instruments[0],
     );
   }, [instruments, selectedInstrument, tradingPreferences?.defaultMarketType]);
 
@@ -462,13 +473,39 @@ export default function TerminalOverview() {
         </Select>
         <InstrumentSelector
           instruments={instruments}
-          value={selectedInstrument?.id ?? selectedInstrument?.symbol}
+          value={getInstrumentValue(selectedInstrument)}
           onChange={setSelectedInstrument}
-          isLoading={marketsQuery.isLoading}
+          isLoading={marketsQuery.isLoading || (isWorkspaceLoading && !activeWorkspaceId)}
           isError={marketsQuery.isError}
           onRetry={marketsQuery.refetch}
           className="h-9 w-full min-w-[220px] border-0 bg-muted/40 sm:w-auto"
         />
+        {!activeWorkspaceId ? (
+          <span className="text-xs text-warning">
+            {isWorkspaceLoading
+              ? 'Loading the active workspace market catalog…'
+              : 'Select an active workspace to load market pairs.'}
+          </span>
+        ) : marketsQuery.isLoading ? (
+          <span className="text-xs text-muted-foreground">
+            Loading all spot and futures pairs…
+          </span>
+        ) : marketsQuery.isError ? (
+          <div className="flex items-center gap-2 text-xs text-destructive" role="status">
+            <span>Market pairs could not be loaded: {getErrorMessage(marketsQuery.error)}</span>
+            <Button type="button" size="sm" variant="outline" onClick={marketsQuery.refetch}>
+              Retry
+            </Button>
+          </div>
+        ) : instruments.length > 0 ? (
+          <span className="text-xs text-muted-foreground">
+            {instruments.length.toLocaleString()} spot and futures pairs loaded
+          </span>
+        ) : (
+          <span className="text-xs text-warning">
+            No active pairs were returned for {chartExchange?.name ?? chartExchangeCode}.
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2 px-2 text-xs">
           <span
             className={`h-2 w-2 rounded-full ${

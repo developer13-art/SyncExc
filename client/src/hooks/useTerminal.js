@@ -232,6 +232,7 @@ export function useTerminalMarkets(workspaceId, params = {}) {
     queryFn: () => terminalApi.listMarkets(workspaceId, params),
     enabled: Boolean(workspaceId && params.exchangeCode),
     staleTime: 10_000,
+    retry: 2,
   });
 }
 

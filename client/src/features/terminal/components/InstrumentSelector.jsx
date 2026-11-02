@@ -20,23 +20,12 @@ export function InstrumentSelector({
   const [query, setQuery] = useState('');
 
   const selected = useMemo(
-    () => instruments.find((i) => i.id === value || i.symbol === value) ?? null,
+    () => instruments.find((instrument) => matchesValue(instrument, value)) ?? null,
     [instruments, value],
   );
 
   const filtered = useMemo(() => {
-    if (!query) {
-      return instruments.slice(0, 100);
-    }
-    const q = query.toLowerCase();
-    return instruments
-      .filter(
-        (i) =>
-          i.symbol?.toLowerCase().includes(q) ||
-          i.baseAsset?.toLowerCase().includes(q) ||
-          i.quoteAsset?.toLowerCase().includes(q),
-      )
-      .slice(0, 100);
+    return filterInstruments(instruments, query);
   }, [instruments, query]);
 
   return (
@@ -66,6 +55,11 @@ export function InstrumentSelector({
       <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
         <div className="border-b border-border p-2">
           <SearchInput value={query} onChange={setQuery} placeholder="Search instruments…" delayMs={150} />
+          <p className="px-2 pt-2 text-2xs text-muted-foreground">
+            {query
+              ? `${filtered.length.toLocaleString()} matching pairs`
+              : `${instruments.length.toLocaleString()} spot and futures pairs`}
+          </p>
         </div>
         <div className="max-h-72 overflow-y-auto scrollbar-thin p-1">
           {isLoading ? (
@@ -105,10 +99,10 @@ export function InstrumentSelector({
             />
           ) : (
             filtered.map((instrument) => {
-              const isSelected = instrument.id === value || instrument.symbol === value;
+              const isSelected = matchesValue(instrument, value);
               return (
                 <button
-                  key={instrument.id ?? instrument.symbol}
+                  key={`${instrument.id ?? instrument.symbol}-${instrument.marketType ?? 'spot'}`}
                   type="button"
                   onClick={() => {
                     onChange?.(instrument);
@@ -137,5 +131,25 @@ export function InstrumentSelector({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function getInstrumentValue(instrument) {
+  if (!instrument) return undefined;
+  return instrument.id ?? `${instrument.exchangeSymbol ?? instrument.symbol}:${instrument.marketType ?? 'spot'}`;
+}
+
+function matchesValue(instrument, value) {
+  return getInstrumentValue(instrument) === value || instrument.symbol === value;
+}
+
+export function filterInstruments(instruments, query = '') {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return instruments;
+  return instruments.filter(
+    (instrument) =>
+      instrument.symbol?.toLowerCase().includes(normalizedQuery) ||
+      instrument.baseAsset?.toLowerCase().includes(normalizedQuery) ||
+      instrument.quoteAsset?.toLowerCase().includes(normalizedQuery),
   );
 }

@@ -1,4 +1,4 @@
-function normalizeMarketType(marketType) {
+export function normalizeMarketType(marketType) {
   return marketType === 'perpetual' ? 'futures' : marketType ?? 'spot';
 }
 
