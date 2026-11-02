@@ -10,6 +10,7 @@ import { resolveBracketProtectionPlan } from '../bracket-protection.policy.js';
 const BASE_URL = 'https://api.bybit.com';
 const TESTNET_BASE_URL = 'https://api-testnet.bybit.com';
 const DEMO_BASE_URL = 'https://api-demo.bybit.com';
+const RECV_WINDOW_MS = 10_000;
 
 function getBaseUrl(environment) {
   if (environment === 'testnet') return TESTNET_BASE_URL;
@@ -25,7 +26,14 @@ export function createBybitAdapter({ config, logger }) {
     logger,
   });
 
-  function signRequest({ apiKey, apiSecret, params, timestamp, recvWindow = 5000, method = 'GET' }) {
+  function signRequest({
+    apiKey,
+    apiSecret,
+    params,
+    timestamp,
+    recvWindow = RECV_WINDOW_MS,
+    method = 'GET',
+  }) {
     const paramStr = typeof params === 'string'
       ? params
       : method === 'GET'
@@ -42,7 +50,7 @@ export function createBybitAdapter({ config, logger }) {
       'X-BAPI-API-KEY': apiKey,
       'X-BAPI-TIMESTAMP': String(timestamp),
       'X-BAPI-SIGN': signature,
-      'X-BAPI-RECV-WINDOW': '5000',
+      'X-BAPI-RECV-WINDOW': String(RECV_WINDOW_MS),
       'Content-Type': 'application/json',
     };
   }

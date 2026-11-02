@@ -177,8 +177,10 @@ test('fetches and normalizes Bybit closed P&L history', async () => {
       exchangeTradeId: 'close-order:1720000000000:0.25',
       exchangeOrderId: 'close-order',
       instrument: 'BTCUSDT',
+      marketType: 'perpetual',
       side: 'long',
       quantity: '0.25',
+      entryTime: '1720000000000',
       entryPrice: '60000',
       exitPrice: '61000',
       realizedPnl: '250',
@@ -202,6 +204,45 @@ test('fetches and normalizes Bybit closed P&L history', async () => {
     });
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('allows six seconds of local clock skew in signed Bybit requests', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const localTime = originalNow();
+  const serverTime = localTime + 6_000;
+  let requestHeaders;
+  globalThis.fetch = async (_url, options) => {
+    requestHeaders = options.headers;
+    const requestTime = Number(requestHeaders['X-BAPI-TIMESTAMP']);
+    const recvWindow = Number(requestHeaders['X-BAPI-RECV-WINDOW']);
+    assert.ok(Math.abs(serverTime - requestTime) <= recvWindow);
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ retCode: 0, result: { list: [] } }),
+    };
+  };
+  Date.now = () => localTime;
+
+  try {
+    const adapter = createBybitAdapter({ config: {}, logger: {} });
+    await adapter.fetchClosedPnl({
+      apiKey: 'api-key',
+      apiSecret: 'api-secret',
+      environment: 'demo',
+    });
+
+    assert.equal(requestHeaders['X-BAPI-RECV-WINDOW'], '10000');
+    assert.equal(requestHeaders['X-BAPI-SIGN'], expectedSignature({
+      apiKey: 'api-key',
+      apiSecret: 'api-secret',
+      timestamp: requestHeaders['X-BAPI-TIMESTAMP'],
+      query: 'category=linear&limit=100',
+    }));
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalNow;
   }
 });
 
@@ -745,7 +786,7 @@ test('returns Bybit wallet equity with the account balances', async () => {
   }
 });
 
-function expectedSignature({ apiKey, apiSecret, timestamp, query, recvWindow = '5000' }) {
+function expectedSignature({ apiKey, apiSecret, timestamp, query, recvWindow = '10000' }) {
   return crypto
     .createHmac('sha256', apiSecret)
     .update(`${timestamp}${apiKey}${recvWindow}${query}`)
