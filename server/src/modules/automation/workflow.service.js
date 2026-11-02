@@ -22,7 +22,7 @@ export function createWorkflowService({ db, queries, events, logger }) {
         isPublished: false,
       });
 
-      await queries.updateWorkflow(workflow.id, { currentVersion: 1 });
+      await queries.updateWorkflow(workflow.id, { currentVersion: 1 }, tx);
 
       await events.publish(
         tx,

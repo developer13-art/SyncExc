@@ -6,18 +6,24 @@ import { NotFoundError, ConflictError } from '../../lib/errors.js';
 
 export function createVersionService({ db, queries, events, logger }) {
   async function createDraftVersion({ userId, workspaceId, workflowId, definition }) {
-    const workflow = await queries.findWorkflowById(workflowId);
-    if (!workflow || workflow.workspace_id !== workspaceId) throw new NotFoundError('Workflow');
-
-    const nextVersion = workflow.current_version + 1;
-
     return db.tx(async (tx) => {
+      const workflow = await queries.findWorkflowByIdForUpdate(tx, workflowId);
+      if (!workflow || workflow.workspace_id !== workspaceId) throw new NotFoundError('Workflow');
+
+      const latestVersion = await queries.findLatestVersion(workflowId, tx);
+      const nextVersion = Math.max(
+        Number(workflow.current_version) || 0,
+        Number(latestVersion?.version) || 0,
+      ) + 1;
       const version = await queries.insertVersion(tx, {
         workflowId,
         version: nextVersion,
         definition,
         isPublished: false,
       });
+      if (!version) {
+        throw new ConflictError('Unable to create the next workflow version. Please retry.');
+      }
 
       // Write nodes and edges
       const nodes = definition.nodes || [];
@@ -43,7 +49,7 @@ export function createVersionService({ db, queries, events, logger }) {
         });
       }
 
-      await queries.updateWorkflow(workflowId, { currentVersion: nextVersion });
+      await queries.updateWorkflow(workflowId, { currentVersion: nextVersion }, tx);
 
       return version;
     });
@@ -57,9 +63,9 @@ export function createVersionService({ db, queries, events, logger }) {
     if (!version || version.workflow_id !== workflowId) throw new NotFoundError('Version');
 
     return db.tx(async (tx) => {
-      const published = await queries.markVersionPublished(versionId, userId);
+      const published = await queries.markVersionPublished(versionId, userId, tx);
 
-      await queries.updateWorkflow(workflowId, { status: 'active' });
+      await queries.updateWorkflow(workflowId, { status: 'active' }, tx);
 
       await events.publish(
         tx,

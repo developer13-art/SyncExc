@@ -57,8 +57,8 @@ export function createAutomationQueries({ db }) {
       return result.rows;
     },
 
-    async updateWorkflow(workflowId, fields) {
-      const result = await db.query(
+    async updateWorkflow(workflowId, fields, client = db) {
+      const result = await client.query(
         `
         UPDATE automation_workflows
         SET name = COALESCE($2, name),
@@ -83,6 +83,14 @@ export function createAutomationQueries({ db }) {
     /* =========================================================================
      * VERSIONS
      * ====================================================================== */
+
+    async findWorkflowByIdForUpdate(client, workflowId) {
+      const result = await client.query(
+        `SELECT * FROM automation_workflows WHERE id = $1 FOR UPDATE`,
+        [workflowId]
+      );
+      return result.rows[0] || null;
+    },
 
     async insertVersion(client, data) {
       const result = await client.query(
@@ -127,8 +135,8 @@ export function createAutomationQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async findLatestVersion(workflowId) {
-      const result = await db.query(
+    async findLatestVersion(workflowId, client = db) {
+      const result = await client.query(
         `
         SELECT * FROM automation_workflow_versions
         WHERE workflow_id = $1
@@ -152,8 +160,8 @@ export function createAutomationQueries({ db }) {
       return result.rows;
     },
 
-    async markVersionPublished(versionId, userId) {
-      const result = await db.query(
+    async markVersionPublished(versionId, userId, client = db) {
+      const result = await client.query(
         `
         UPDATE automation_workflow_versions
         SET is_published = true, published_at = now(), published_by = $2

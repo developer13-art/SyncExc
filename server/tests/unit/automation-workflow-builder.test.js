@@ -72,6 +72,39 @@ describe('automation workflow builder API', () => {
     assert.equal(response.body.data.errors[0].code, 'NO_NODES');
   });
 
+  it('passes a valid workflow definition to the draft-version service', async () => {
+    const definition = {
+      nodes: [{ id: 'signal-1', type: 'signal_published', config: {}, position: { x: 1, y: 2 } }],
+      edges: [],
+      input: {},
+    };
+    let receivedDraft;
+    const app = express();
+    app.use(express.json());
+    app.use('/automation', createAutomationRoutes({
+      middleware: createTestMiddleware(),
+      versionService: {
+        async createDraftVersion(draft) {
+          receivedDraft = draft;
+          return { id: 'version-2', version: 2 };
+        },
+      },
+    }));
+
+    const response = await request(app)
+      .post('/automation/workflows/workflow-1/versions')
+      .send(definition)
+      .expect(201);
+
+    assert.deepEqual(receivedDraft, {
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      workflowId: 'workflow-1',
+      definition,
+    });
+    assert.equal(response.body.data.id, 'version-2');
+  });
+
   it('accepts trigger registrations with a version and configured trigger list', async () => {
     const requestBody = {
       versionId: '00000000-0000-4000-8000-000000000001',
