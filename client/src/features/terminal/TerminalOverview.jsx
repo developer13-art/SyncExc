@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useDispatch } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
 
 import { Card, CardContent } from '../../components/ui/Card.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/Tabs.jsx';
 import { EmptyState } from '../../components/ui/EmptyState.jsx';
 import { Button } from '../../components/ui/Button.jsx';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/Select.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
-import { AccountSelector } from './components/AccountSelector.jsx';
 import { InstrumentSelector } from './components/InstrumentSelector.jsx';
 import { OrderForm } from './components/OrderForm.jsx';
 import { OrderConfirmationModal } from './components/OrderConfirmationModal.jsx';
@@ -23,18 +28,18 @@ import { ExecutionStatus } from './ExecutionStatus.jsx';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import {
-  useTerminalAccountSync,
   useTerminalMarkets,
   useTerminalMarketData,
   useTerminalOrders,
 } from '../../hooks/useTerminal.js';
-import { useConnections, useConnection } from '../../hooks/useConnections.js';
+import { useConnections, useExchangeRegistry } from '../../hooks/useConnections.js';
 import { connectionsApi, identityApi, terminalApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
 import { getErrorMessage } from '../../api/errors.js';
 import { ROUTES } from '../../config/routes.config.js';
 import { userPreferencesQueryKey } from '../settings/useUserPreferences.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
+import { findCompatibleInstrument } from './market-matching.util.js';
 import {
   calculateOrderPreview,
   findUsdConversionMarket,
@@ -51,9 +56,14 @@ function formatMarketValue(value, maximumFractionDigits = 6) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits });
 }
 
+function findAvailableBalance(balances, asset) {
+  return balances.find(
+    (balance) => String(balance.asset).toUpperCase() === String(asset || '').toUpperCase(),
+  )?.available;
+}
+
 export default function TerminalOverview() {
   const dispatch = useDispatch();
-  const navigate = useNavigate();
   const toast = useToast();
   const { activeWorkspaceId } = useWorkspaceContext();
 
@@ -62,15 +72,16 @@ export default function TerminalOverview() {
     queryFn: () => identityApi.getPreferences(),
   });
   const connectionsQuery = useConnections({ status: 'active' });
+  const exchangeRegistryQuery = useExchangeRegistry();
 
-  const [selectedAccountId, setSelectedAccountId] = useState(null);
+  const [chartExchangeCode, setChartExchangeCode] = useState(null);
   const [selectedInstrument, setSelectedInstrument] = useState(null);
   const [timeframe, setTimeframe] = useState('1h');
   const [indicators, setIndicators] = useState(['sma20']);
   const [levels, setLevels] = useState([]);
   const [levelInput, setLevelInput] = useState('');
   const [pendingOrder, setPendingOrder] = useState(null);
-  const [selectedDestinationAccountIds, setSelectedDestinationAccountIds] = useState([]);
+  const [destinationAccountId, setDestinationAccountId] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [approvalRequestId, setApprovalRequestId] = useState(null);
   const [approvalMessage, setApprovalMessage] = useState('');
@@ -82,6 +93,11 @@ export default function TerminalOverview() {
     if (TIMEFRAMES.includes(preferredTimeframe)) setTimeframe(preferredTimeframe);
   }, [tradingPreferences?.defaultChartTimeframe]);
 
+  useEffect(() => {
+    const availableTimeframes = EXCHANGE_TIMEFRAMES[chartExchangeCode] ?? TIMEFRAMES;
+    if (!availableTimeframes.includes(timeframe)) setTimeframe('1d');
+  }, [chartExchangeCode, timeframe]);
+
   const connections = connectionsQuery.data?.items ?? [];
 
   const accounts = useMemo(
@@ -89,7 +105,7 @@ export default function TerminalOverview() {
       connections.flatMap((c) =>
         (c.accounts ?? []).map((a) => ({
           ...a,
-          label: [c.label, c.environment, a.accountType ?? a.type]
+          label: [c.exchangeName ?? c.exchange, c.label, c.environment, a.accountType ?? a.type]
             .filter(Boolean)
             .join(' · '),
           type: a.type ?? a.accountType,
@@ -105,58 +121,57 @@ export default function TerminalOverview() {
   );
 
   useEffect(() => {
-    if (!accounts.some((account) => account.id === selectedAccountId && account.status === 'active')) {
-      setSelectedAccountId(accounts.find((account) => account.status === 'active')?.id ?? null);
-    }
-  }, [accounts, selectedAccountId]);
+    const exchanges = exchangeRegistryQuery.exchanges;
+    if (!exchanges.length) return;
+    setChartExchangeCode((current) =>
+      exchanges.some((exchange) => exchange.id === current) ? current : exchanges[0].id,
+    );
+  }, [exchangeRegistryQuery.exchanges]);
 
   useEffect(() => {
-    const availableIds = new Set(
-      accounts
-        .filter((account) => account.status === 'active' && account.id !== selectedAccountId)
-        .map((account) => account.id),
-    );
-    setSelectedDestinationAccountIds((current) => {
-      const next = current.filter((accountId) => availableIds.has(accountId));
-      return next.length === current.length ? current : next;
-    });
-  }, [accounts, selectedAccountId]);
+    if (
+      destinationAccountId &&
+      !accounts.some(
+        (account) => account.id === destinationAccountId && account.status === 'active',
+      )
+    ) {
+      setDestinationAccountId(null);
+    }
+  }, [accounts, destinationAccountId]);
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Trading Terminal'));
     dispatch(uiActions.setBreadcrumbs([{ label: 'Terminal', path: '/app/terminal' }]));
   }, [dispatch]);
 
-  const activeConnection = useMemo(() => {
-    const account = accounts.find((a) => a.id === selectedAccountId);
-    return connections.find((c) => c.id === account?.connectionId) ?? null;
-  }, [accounts, connections, selectedAccountId]);
-  const accountSyncQuery = useTerminalAccountSync(activeWorkspaceId, selectedAccountId);
-  const destinationAccounts = accounts.filter(
-    (account) => account.status === 'active' && account.id !== selectedAccountId,
+  const chartExchange = exchangeRegistryQuery.exchanges.find(
+    (exchange) => exchange.id === chartExchangeCode,
   );
-  const selectedDestinationAccounts = destinationAccounts.filter((account) =>
-    selectedDestinationAccountIds.includes(account.id),
+  const destinationAccounts = accounts.filter((account) => account.status === 'active');
+  const destinationAccount = destinationAccounts.find(
+    (account) => account.id === destinationAccountId,
   );
-  const destinationBalanceQueries = useQueries({
-    queries: selectedDestinationAccounts.map((account) => ({
-      queryKey: queryKeys.connections.balances(account.id),
-      queryFn: () => connectionsApi.listBalances(account.id),
-      enabled: Boolean(activeWorkspaceId),
-      staleTime: 15_000,
-    })),
-  });
+  const destinationConnection = connections.find(
+    (connection) => connection.id === destinationAccount?.connectionId,
+  );
 
   const marketsQuery = useTerminalMarkets(activeWorkspaceId, {
-    exchangeCode: activeConnection?.exchange,
+    exchangeCode: chartExchangeCode,
+  });
+  const destinationMarketsQuery = useTerminalMarkets(activeWorkspaceId, {
+    exchangeCode: destinationConnection?.exchange,
+  });
+  const destinationBalancesQuery = useQuery({
+    queryKey: queryKeys.connections.balances(destinationAccountId ?? 'no-destination'),
+    queryFn: () => connectionsApi.listBalances(destinationAccountId),
+    enabled: Boolean(confirmOpen && activeWorkspaceId && destinationAccountId),
+    staleTime: 15_000,
   });
 
-  const ordersQuery = useTerminalOrders(activeWorkspaceId, {
-    accountId: selectedAccountId ?? undefined,
-    status: 'open',
-  });
+  const ordersQuery = useTerminalOrders(activeWorkspaceId, { status: 'open' });
 
   const instruments = marketsQuery.data ?? [];
+  const destinationInstruments = destinationMarketsQuery.data ?? [];
 
   useEffect(() => {
     if (!instruments.length) {
@@ -175,8 +190,8 @@ export default function TerminalOverview() {
   }, [instruments, selectedInstrument, tradingPreferences?.defaultMarketType]);
 
   const selectedSymbol = selectedInstrument?.exchangeSymbol ?? selectedInstrument?.symbol;
-  const analysisStorageKey = activeWorkspaceId && activeConnection?.exchange && selectedSymbol
-    ? `syncexc:terminal:analysis:${activeWorkspaceId}:${activeConnection.exchange}:${selectedSymbol}`
+  const analysisStorageKey = activeWorkspaceId && chartExchangeCode && selectedSymbol
+    ? `syncexc:terminal:analysis:${activeWorkspaceId}:${chartExchangeCode}:${selectedSymbol}`
     : null;
 
   useEffect(() => {
@@ -210,20 +225,19 @@ export default function TerminalOverview() {
   };
 
   const marketDataQuery = useTerminalMarketData(activeWorkspaceId, {
-    exchangeCode: activeConnection?.exchange,
+    exchangeCode: chartExchangeCode,
     symbol: selectedSymbol,
     marketType: selectedInstrument?.marketType ?? 'spot',
     timeframe,
     limit: 120,
   });
   const marketData = marketDataQuery.data;
-  const connectionDetailQuery = useConnection(activeConnection?.id, selectedAccountId);
   const quoteConversionMarket = findUsdConversionMarket(
     selectedInstrument?.quoteAsset,
     instruments,
   );
   const quoteConversionMarketDataQuery = useTerminalMarketData(activeWorkspaceId, {
-    exchangeCode: activeConnection?.exchange,
+    exchangeCode: chartExchangeCode,
     symbol: quoteConversionMarket?.instrument.exchangeSymbol ??
       quoteConversionMarket?.instrument.symbol,
     marketType: 'spot',
@@ -238,107 +252,78 @@ export default function TerminalOverview() {
   const usdConversionApproximate = ['USDT', 'USDC'].includes(
     String(selectedInstrument?.quoteAsset || '').toUpperCase(),
   );
-  const selectedBaseBalance = connectionDetailQuery.balances?.find(
-    (balance) => balance.asset === selectedInstrument?.baseAsset,
-  )?.available;
-  const selectedQuoteBalance = connectionDetailQuery.balances?.find(
-    (balance) => balance.asset === selectedInstrument?.quoteAsset,
-  )?.available;
   const selectedMarketType = selectedInstrument?.marketType ?? 'spot';
-  const isSelectedFutures =
-    selectedMarketType === 'futures' || selectedMarketType === 'perpetual';
-  const selectedAvailableFunds = isSelectedFutures
-    ? connectionDetailQuery.availableMargin
-    : selectedQuoteBalance;
-  const selectedBalanceFreshness = isSelectedFutures
-    ? connectionDetailQuery.accountSnapshotFreshness
-    : connectionDetailQuery.balanceFreshness;
+  const destinationInstrument = useMemo(
+    () => findCompatibleInstrument(destinationInstruments, selectedInstrument),
+    [destinationInstruments, selectedInstrument],
+  );
+  const destinationMarketType = destinationInstrument?.marketType ?? selectedMarketType;
+  const destinationSymbol =
+    destinationInstrument?.exchangeSymbol ?? destinationInstrument?.symbol;
+  const destinationMarketDataQuery = useTerminalMarketData(activeWorkspaceId, {
+    exchangeCode: destinationConnection?.exchange,
+    symbol: destinationSymbol,
+    marketType: destinationMarketType,
+    timeframe,
+    limit: 25,
+  });
+  const destinationBalanceItems = destinationBalancesQuery.data?.items ?? [];
+  const destinationIsFutures = ['futures', 'perpetual'].includes(destinationMarketType);
+  const destinationBalanceFreshness = destinationIsFutures
+    ? destinationBalancesQuery.data?.accountSnapshotFreshness ?? 'unknown'
+    : destinationBalancesQuery.data?.freshness ?? 'unknown';
   const pendingOrderPreview = useMemo(
     () =>
-      pendingOrder && selectedInstrument
+      pendingOrder && destinationInstrument
         ? calculateOrderPreview({
             ...pendingOrder,
             orderType: pendingOrder.type,
-            marketType: selectedMarketType,
+            marketType: destinationMarketType,
             referencePrice:
-              marketData?.overview?.markPrice ?? marketData?.overview?.lastPrice,
-            baseAsset: selectedInstrument.baseAsset,
-            quoteAsset: selectedInstrument.quoteAsset,
-            baseBalance: selectedBaseBalance,
-            quoteBalance: selectedAvailableFunds,
+              destinationMarketDataQuery.data?.overview?.markPrice ??
+              destinationMarketDataQuery.data?.overview?.lastPrice,
+            baseAsset: destinationInstrument.baseAsset,
+            quoteAsset: destinationInstrument.quoteAsset,
+            baseBalance: findAvailableBalance(
+              destinationBalanceItems,
+              destinationInstrument.baseAsset,
+            ),
+            quoteBalance: destinationIsFutures
+              ? destinationBalancesQuery.data?.availableMargin
+              : findAvailableBalance(
+                  destinationBalanceItems,
+                  destinationInstrument.quoteAsset,
+                ),
           })
         : null,
     [
       pendingOrder,
-      selectedInstrument,
-      selectedMarketType,
-      marketData,
-      selectedBaseBalance,
-      selectedAvailableFunds,
-    ],
-  );
-  const destinationPreviews = useMemo(
-    () =>
-      selectedDestinationAccounts.map((account, index) => {
-        const balanceQuery = destinationBalanceQueries[index];
-        const balanceData = balanceQuery?.data;
-        const balances = balanceData?.items ?? [];
-        const availableForAsset = (asset) =>
-          balances.find(
-            (balance) => String(balance.asset).toUpperCase() === String(asset || '').toUpperCase(),
-          )?.available;
-        const isFutures =
-          selectedMarketType === 'futures' || selectedMarketType === 'perpetual';
-        const preview =
-          pendingOrder && selectedInstrument
-            ? calculateOrderPreview({
-                ...pendingOrder,
-                orderType: pendingOrder.type,
-                marketType: selectedMarketType,
-                referencePrice:
-                  marketData?.overview?.markPrice ?? marketData?.overview?.lastPrice,
-                baseAsset: selectedInstrument.baseAsset,
-                quoteAsset: selectedInstrument.quoteAsset,
-                baseBalance: availableForAsset(selectedInstrument.baseAsset),
-                quoteBalance: isFutures
-                  ? balanceData?.availableMargin
-                  : availableForAsset(selectedInstrument.quoteAsset),
-              })
-            : null;
-        return {
-          account,
-          preview,
-          freshness: isFutures
-            ? balanceData?.accountSnapshotFreshness ?? 'unknown'
-            : balanceData?.freshness ?? 'unknown',
-          isLoading: balanceQuery?.isLoading ?? false,
-          error: balanceQuery?.error ?? null,
-        };
-      }),
-    [
-      destinationBalanceQueries,
-      marketData?.overview?.lastPrice,
-      marketData?.overview?.markPrice,
-      pendingOrder,
-      selectedDestinationAccounts,
-      selectedInstrument,
-      selectedMarketType,
+      destinationInstrument,
+      destinationMarketType,
+      destinationMarketDataQuery.data,
+      destinationBalancesQuery.data,
+      destinationIsFutures,
+      destinationBalanceItems,
     ],
   );
 
   const handleSubmitOrder = (order) => {
-    setPendingOrder({
-      ...order,
-      destinationAccountIds: selectedDestinationAccountIds,
-      idempotencyKey: createOrderIdempotencyKey(),
-    });
+    setPendingOrder({ ...order, idempotencyKey: createOrderIdempotencyKey() });
+    setDestinationAccountId(null);
     setApprovalRequestId(null);
     setApprovalMessage('');
     setConfirmOpen(true);
   };
 
   const handleConfirmOrder = async () => {
-    if (!pendingOrder || !selectedInstrument || !selectedAccountId) {
+    if (!pendingOrder) {
+      return;
+    }
+    if (!activeWorkspaceId || !destinationAccount || !destinationInstrument) {
+      toast.error('Order destination could not be verified', {
+        description:
+          'Select an active destination with a matching instrument before submitting this order.',
+      });
       return;
     }
 
@@ -353,10 +338,10 @@ export default function TerminalOverview() {
         delete payload.stopPrice;
         delete payload.leverage;
         result = await terminalApi.submitOrder(activeWorkspaceId, {
-          accountId: selectedAccountId,
-          connectionId: activeConnection.id,
-          instrumentId: selectedInstrument.exchangeSymbol ?? selectedInstrument.symbol,
-          marketType: selectedInstrument.marketType ?? 'spot',
+          accountId: destinationAccount.id,
+          connectionId: destinationAccount.connectionId,
+          instrumentId: destinationInstrument.exchangeSymbol ?? destinationInstrument.symbol,
+          marketType: destinationMarketType,
           ...payload,
           triggerPrice,
         });
@@ -375,6 +360,7 @@ export default function TerminalOverview() {
       if (result?.order?.status === 'rejected' || result?.order?.status === 'failed') {
         setConfirmOpen(false);
         setPendingOrder(null);
+        setDestinationAccountId(null);
         setApprovalRequestId(null);
         setApprovalMessage('');
         await ordersQuery.refetch();
@@ -387,12 +373,11 @@ export default function TerminalOverview() {
       toast.success(result?.ambiguous ? 'Order status needs checking' : 'Order submitted', {
         description: result?.ambiguous
           ? 'The exchange response was uncertain. Check execution status before trying again.'
-          : pendingOrder.destinationAccountIds?.length
-            ? `Order ${result?.order?.id ?? ''} is processing. Selected destinations will receive market orders only after the source order is confirmed filled.`
-            : `Order ${result?.order?.id ?? ''} is being processed.`,
+          : `Order ${result?.order?.id ?? ''} is being processed on ${destinationAccount.exchangeName ?? destinationAccount.exchange}.`,
       });
       setConfirmOpen(false);
       setPendingOrder(null);
+      setDestinationAccountId(null);
       setApprovalRequestId(null);
       setApprovalMessage('');
       await ordersQuery.refetch();
@@ -422,55 +407,59 @@ export default function TerminalOverview() {
     }
     setConfirmOpen(false);
     setPendingOrder(null);
+    setDestinationAccountId(null);
     setApprovalRequestId(null);
     setApprovalMessage('');
   };
 
-  if (connectionsQuery.isLoading) {
-    return <LoadingState label="Loading connections" />;
+  if (exchangeRegistryQuery.isLoading) {
+    return <LoadingState label="Loading market venues" />;
   }
 
-  if (connectionsQuery.isError) {
+  if (exchangeRegistryQuery.error) {
     return (
       <ErrorState
-        title="Unable to load connections"
-        description="We could not fetch your connected exchanges. Please try again."
-        onRetry={connectionsQuery.refetch}
-      />
-    );
-  }
-
-  if (accounts.length === 0) {
-    return (
-      <EmptyState
-        title="No connected accounts"
-        description="Connect a supported exchange to access the trading terminal."
-        action={
-          <Button asChild>
-            <a href={ROUTES.app.connections.create}>Connect exchange</a>
-          </Button>
-        }
+        title="Unable to load market venues"
+        description="We could not fetch the supported market-data venues. Please try again."
+        onRetry={exchangeRegistryQuery.refetch}
       />
     );
   }
 
   const change24h = Number(marketData?.overview?.priceChangePercent);
-  const availableTimeframes = EXCHANGE_TIMEFRAMES[activeConnection?.exchange] ?? TIMEFRAMES;
+  const availableTimeframes = EXCHANGE_TIMEFRAMES[chartExchangeCode] ?? TIMEFRAMES;
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {accountSyncQuery.error ? (
-        <p className="text-xs text-destructive">
-          Exchange sync failed: {getErrorMessage(accountSyncQuery.error)}
-        </p>
+      {connectionsQuery.isError ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
+          <span className="text-destructive">
+            Connected accounts are unavailable. Market data is still viewable, but orders cannot be routed.
+          </span>
+          <Button type="button" size="sm" variant="outline" onClick={connectionsQuery.refetch}>
+            Retry accounts
+          </Button>
+        </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2">
-        <AccountSelector
-          accounts={accounts}
-          value={selectedAccountId}
-          onChange={setSelectedAccountId}
-          className="h-9 w-full min-w-[220px] border-0 bg-muted/40 sm:w-auto"
-        />
+        <Select
+          value={chartExchangeCode ?? undefined}
+          onValueChange={(exchangeCode) => {
+            setSelectedInstrument(null);
+            setChartExchangeCode(exchangeCode);
+          }}
+        >
+          <SelectTrigger className="h-9 w-full min-w-[190px] border-0 bg-muted/40 sm:w-auto">
+            <SelectValue placeholder="Select market venue" />
+          </SelectTrigger>
+          <SelectContent>
+            {exchangeRegistryQuery.exchanges.map((exchange) => (
+              <SelectItem key={exchange.id} value={exchange.id}>
+                {exchange.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <InstrumentSelector
           instruments={instruments}
           value={selectedInstrument?.id ?? selectedInstrument?.symbol}
@@ -575,7 +564,7 @@ export default function TerminalOverview() {
                   {selectedInstrument?.symbol ?? 'Price chart'}
                 </p>
                 <p className="truncate text-2xs text-muted-foreground">
-                  {marketData?.source ?? activeConnection?.exchangeName ?? 'Exchange market data'}
+                  {marketData?.source ?? chartExchange?.name ?? 'Exchange market data'}
                   {marketData?.retrievedAt
                     ? ` · ${new Date(marketData.retrievedAt).toLocaleTimeString()}`
                     : ''}
@@ -654,6 +643,7 @@ export default function TerminalOverview() {
             )}
             <div className="p-2">
               <PriceChart
+                key={`${chartExchangeCode}:${selectedSymbol}`}
                 candles={marketData?.candles ?? []}
                 currentPrice={marketData?.overview?.lastPrice}
                 indicators={indicators}
@@ -700,37 +690,57 @@ export default function TerminalOverview() {
           <div className="border-b border-border px-4 py-3">
             <p className="text-sm font-semibold text-foreground">Place order</p>
             <p className="text-2xs text-muted-foreground">
-              {activeConnection?.exchangeName ?? activeConnection?.exchange ?? 'Exchange'}
-              {' · '}
-              {accounts.find((account) => account.id === selectedAccountId)?.environment ?? 'Account'}
+              Market: {chartExchange?.name ?? chartExchangeCode ?? 'Select a venue'} · choose an execution account after entering order details
+            </p>
+            <p className="mt-1 text-2xs text-muted-foreground">
+              Chart prices are a reference. Orders route to the selected account's matching market; the server validates exchange rules before dispatch.
             </p>
           </div>
           <CardContent className="p-4">
-            {selectedInstrument && activeConnection ? (
+            {connectionsQuery.isLoading ? (
+              <LoadingState label="Loading destination accounts" />
+            ) : connectionsQuery.isError ? (
+              <EmptyState
+                title="Destination accounts unavailable"
+                description="Retry the account list before placing an order. Market browsing remains available."
+                action={
+                  <Button type="button" size="sm" variant="outline" onClick={connectionsQuery.refetch}>
+                    Retry accounts
+                  </Button>
+                }
+                size="sm"
+                className="border-0 bg-transparent py-6"
+              />
+            ) : !destinationAccounts.length ? (
+              <EmptyState
+                title="Connect an execution account"
+                description="You can browse markets without an account. Connect an exchange to route an order."
+                action={
+                  <Button asChild size="sm">
+                    <a href={ROUTES.app.connections.create}>Connect exchange</a>
+                  </Button>
+                }
+                size="sm"
+                className="border-0 bg-transparent py-6"
+              />
+            ) : selectedInstrument ? (
               <OrderForm
                 instrument={selectedInstrument}
-                account={accounts.find((a) => a.id === selectedAccountId)}
                 marketType={selectedInstrument.marketType ?? 'spot'}
                 defaultOrderType={tradingPreferences?.defaultOrderType ?? 'limit'}
-                availableBalance={selectedBaseBalance}
-                availableMargin={selectedAvailableFunds}
-                balanceFreshness={selectedBalanceFreshness}
-                isBalancesLoading={connectionDetailQuery.isBalancesLoading}
                 referencePrice={
                   marketData?.overview?.markPrice ?? marketData?.overview?.lastPrice
                 }
                 usdConversionRate={usdConversionRate}
                 usdConversionApproximate={usdConversionApproximate}
-                destinationAccounts={destinationAccounts}
-                selectedDestinationAccountIds={selectedDestinationAccountIds}
-                onDestinationAccountsChange={setSelectedDestinationAccountIds}
+                universalMode
                 maxLeverage={1}
                 onSubmit={handleSubmitOrder}
               />
             ) : (
               <EmptyState
                 title="Select an instrument"
-                description="Choose an account and instrument to begin trading."
+                description="Choose a market venue and instrument to enter an order."
                 size="sm"
                 className="border-0 bg-transparent py-6"
               />
@@ -762,24 +772,21 @@ export default function TerminalOverview() {
         <TabsContent value="positions" className="mt-3">
           <Positions
             workspaceId={activeWorkspaceId}
-            accountId={selectedAccountId}
-            accountType={accounts.find((account) => account.id === selectedAccountId)?.type}
+            accountId={undefined}
             marketType={selectedInstrument?.marketType ?? 'spot'}
-            balances={connectionDetailQuery.balances}
-            isBalancesLoading={connectionDetailQuery.isBalancesLoading}
           />
         </TabsContent>
         <TabsContent value="orders" className="mt-3">
-          <OpenOrders workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
+          <OpenOrders workspaceId={activeWorkspaceId} />
         </TabsContent>
         <TabsContent value="history" className="mt-3">
-          <OpenOrders workspaceId={activeWorkspaceId} accountId={selectedAccountId} status="all" />
+          <OpenOrders workspaceId={activeWorkspaceId} status="all" />
         </TabsContent>
         <TabsContent value="trades" className="mt-3">
-          <TradeHistory workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
+          <TradeHistory workspaceId={activeWorkspaceId} />
         </TabsContent>
         <TabsContent value="executions" className="mt-3">
-          <ExecutionStatus workspaceId={activeWorkspaceId} accountId={selectedAccountId} />
+          <ExecutionStatus workspaceId={activeWorkspaceId} />
         </TabsContent>
       </Tabs>
 
@@ -788,12 +795,24 @@ export default function TerminalOverview() {
         onOpenChange={handleConfirmationOpenChange}
         order={pendingOrder}
         instrument={selectedInstrument}
-        account={accounts.find((a) => a.id === selectedAccountId)}
+        destinationAccounts={destinationAccounts}
+        account={destinationAccount}
+        destinationAccountId={destinationAccountId}
+        onDestinationAccountChange={setDestinationAccountId}
+        destinationInstrument={destinationInstrument}
+        destinationMarketsLoading={destinationMarketsQuery.isLoading}
+        destinationMarketsError={destinationMarketsQuery.isError}
+        onRetryDestinationMarkets={destinationMarketsQuery.refetch}
+        destinationMarketDataLoading={destinationMarketDataQuery.isFetching}
+        destinationMarketDataError={destinationMarketDataQuery.isError}
+        destinationBalanceLoading={destinationBalancesQuery.isLoading}
+        destinationBalanceError={destinationBalancesQuery.isError}
+        marketDataVenue={chartExchange?.name ?? chartExchangeCode}
+        universalMode
         orderPreview={pendingOrderPreview}
         usdConversionRate={usdConversionRate}
         usdConversionApproximate={usdConversionApproximate}
-        balanceFreshness={selectedBalanceFreshness}
-        destinationPreviews={destinationPreviews}
+        balanceFreshness={destinationBalanceFreshness}
         onConfirm={handleConfirmOrder}
         isSubmitting={submitting}
         approvalRequired={Boolean(approvalRequestId)}

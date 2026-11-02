@@ -81,7 +81,14 @@ export function TradeHistory({ workspaceId, accountId }) {
     {
       key: 'instrument',
       label: 'Instrument',
-      render: (row) => <span className="font-medium text-foreground">{row.instrument ?? row.symbol}</span>,
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.instrument ?? row.symbol}</p>
+          {row.accountLabel ? (
+            <p className="text-2xs uppercase text-muted-foreground">{row.accountLabel}</p>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: 'side',

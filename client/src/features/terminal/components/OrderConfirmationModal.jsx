@@ -2,6 +2,7 @@ import { AlertTriangle } from 'lucide-react';
 
 import { Modal } from '../../../components/ui/Modal.jsx';
 import { Button } from '../../../components/ui/Button.jsx';
+import { AccountSelector } from './AccountSelector.jsx';
 import { formatQuantity } from '../../../lib/formatters/number.formatter.js';
 import { formatCurrency } from '../../../lib/formatters/currency.formatter.js';
 import { cn } from '../../../lib/utils/cn.util.js';
@@ -11,12 +12,24 @@ export function OrderConfirmationModal({
   onOpenChange,
   order,
   instrument,
+  destinationAccounts = [],
   account,
+  destinationAccountId,
+  onDestinationAccountChange,
+  destinationInstrument,
+  destinationMarketsLoading = false,
+  destinationMarketsError = false,
+  onRetryDestinationMarkets,
+  destinationMarketDataLoading = false,
+  destinationMarketDataError = false,
+  destinationBalanceLoading = false,
+  destinationBalanceError = false,
+  marketDataVenue,
+  universalMode = false,
   orderPreview,
   usdConversionRate,
   usdConversionApproximate = false,
   balanceFreshness = 'unknown',
-  destinationPreviews = [],
   onConfirm,
   isSubmitting,
   approvalRequired = false,
@@ -28,9 +41,13 @@ export function OrderConfirmationModal({
 
   const isBuy = order.side === 'buy';
   const notional = orderPreview?.notional ?? 0;
-  const hasFreshInsufficientDestination = destinationPreviews.some(
-    ({ preview, freshness }) => preview?.sufficient === false && freshness === 'current',
-  );
+  const hasFreshInsufficientBalance =
+    orderPreview?.sufficient === false && balanceFreshness === 'current';
+  const destinationReady =
+    !universalMode ||
+    (Boolean(account && destinationInstrument) &&
+      !destinationMarketsLoading &&
+      !destinationMarketsError);
 
   return (
     <Modal
@@ -40,7 +57,7 @@ export function OrderConfirmationModal({
       description={
         approvalRequired
           ? 'The initial risk check requires a separate workspace approval before dispatch.'
-          : 'Review the details below before submitting.'
+          : 'Your order details are valid. Select an execution destination, then review the final checks.'
       }
       footer={
         <>
@@ -50,7 +67,11 @@ export function OrderConfirmationModal({
           <Button
             variant={isBuy ? 'success' : 'destructive'}
             onClick={onConfirm}
-            disabled={isSubmitting || hasFreshInsufficientDestination}
+            disabled={
+              isSubmitting ||
+              !destinationReady ||
+              (!universalMode && hasFreshInsufficientBalance)
+            }
           >
             {isSubmitting
               ? approvalRequired
@@ -58,14 +79,83 @@ export function OrderConfirmationModal({
                 : 'Submitting…'
               : approvalRequired
                 ? 'Approve and submit'
-                : 'Confirm'}
+                  : 'Submit order'}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-3 text-sm">
-        <Row label="Account" value={account?.label ?? account?.id ?? '—'} />
-        <Row label="Instrument" value={instrument?.symbol ?? '—'} />
+        {universalMode ? (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-muted-foreground">Execution destination</span>
+            <AccountSelector
+              accounts={destinationAccounts}
+              value={destinationAccountId}
+              onChange={onDestinationAccountChange}
+              disabled={approvalRequired || isSubmitting}
+            />
+            {account ? (
+              <span className="text-2xs text-muted-foreground">
+                {account.exchangeName} · {account.environment} · {account.type}
+              </span>
+            ) : null}
+            {!destinationAccounts.length ? (
+              <span className="text-2xs text-destructive">
+                No active destination accounts are available in this workspace.
+              </span>
+            ) : null}
+            {destinationMarketsLoading ? (
+              <span className="text-2xs text-muted-foreground">
+                Checking this instrument on the selected exchange…
+              </span>
+            ) : null}
+            {destinationMarketsError ? (
+              <div className="flex items-center justify-between gap-2 text-2xs text-destructive">
+                <span>Could not verify the instrument on this destination.</span>
+                <Button type="button" size="sm" variant="outline" onClick={onRetryDestinationMarkets}>
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            {destinationAccountId &&
+            !destinationMarketsLoading &&
+            !destinationMarketsError &&
+            !destinationInstrument ? (
+              <span className="text-2xs text-destructive">
+                This instrument and market type are not available on the selected exchange.
+              </span>
+            ) : null}
+            {destinationMarketDataLoading ? (
+              <span className="text-2xs text-muted-foreground">
+                Refreshing the destination market quote…
+              </span>
+            ) : null}
+            {destinationMarketDataError ? (
+              <span className="text-2xs text-warning">
+                Destination quote is unavailable; the exchange will validate current market conditions.
+              </span>
+            ) : null}
+            {destinationBalanceLoading ? (
+              <span className="text-2xs text-muted-foreground">
+                Refreshing the destination balance estimate…
+              </span>
+            ) : null}
+            {destinationBalanceError ? (
+              <span className="text-2xs text-warning">
+                Balance estimate unavailable; the server will validate available funds.
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <Row label="Account" value={account?.label ?? account?.id ?? '—'} />
+        )}
+        {universalMode && marketDataVenue ? (
+          <Row label="Market data venue" value={marketDataVenue} />
+        ) : null}
+        <Row
+          label="Instrument"
+          value={destinationInstrument?.symbol ?? instrument?.symbol ?? '—'}
+        />
         <Row
           label="Side"
           value={
@@ -111,42 +201,15 @@ export function OrderConfirmationModal({
         ) : null}
         {orderPreview?.requiredBalance != null ? (
           <Row
-            label={`Balance check · ${orderPreview.requiredAsset}`}
+            label={`Estimated ${orderPreview.requiredAsset} balance`}
             value={
               orderPreview.sufficient === true
-                ? `${formatQuantity(orderPreview.availableBalance, 6)} available · sufficient (${balanceFreshness} snapshot)`
+                ? `${formatQuantity(orderPreview.availableBalance, 6)} available (${balanceFreshness} snapshot)`
                 : orderPreview.sufficient === false
-                  ? `${formatQuantity(orderPreview.availableBalance, 6)} available · insufficient (${balanceFreshness} snapshot)`
+                  ? `${formatQuantity(orderPreview.availableBalance, 6)} available (${balanceFreshness} snapshot)`
                   : 'Unable to estimate from latest balance snapshot'
             }
           />
-        ) : null}
-        {destinationPreviews.length > 0 ? (
-          <div className="mt-1 flex flex-col gap-2 border-t border-border pt-3">
-            <p className="font-semibold text-foreground">Synchronization destinations</p>
-            {destinationPreviews.map(({ account, preview, freshness, isLoading, error }) => {
-              const usdTotal = preview?.notional && usdConversionRate
-                ? formatCurrency(preview.notional * usdConversionRate, 'USD')
-                : 'USD estimate unavailable';
-              const balanceText = isLoading
-                ? 'Refreshing balance…'
-                : error
-                  ? 'Balance unavailable; the server will validate before submission'
-                  : preview?.sufficient === true
-                    ? `Sufficient ${preview.requiredAsset} balance (${freshness} snapshot)`
-                    : preview?.sufficient === false
-                      ? `Insufficient ${preview.requiredAsset} balance (${freshness} snapshot)`
-                      : 'Unable to estimate; the server will validate before submission';
-              return (
-                <div key={account.id} className="rounded-md border border-border p-2">
-                  <p className="font-medium text-foreground">{account.label ?? account.id}</p>
-                  <p className="mt-1 text-2xs text-muted-foreground">
-                    Approx. {usdTotal} · {balanceText}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
         ) : null}
       </div>
 
@@ -155,8 +218,8 @@ export function OrderConfirmationModal({
         <p>
           {approvalRequired && approvalMessage
             ? `${approvalMessage} The exchange may still reject or partially fill the order.`
-            : destinationPreviews.length > 0
-              ? 'The source exchange can still reject or partially fill the order. Destination orders are sent only after a confirmed full fill, and destination checks run again before each submission.'
+            : universalMode
+              ? 'The server rechecks destination access, exchange permissions, instrument rules, available funds, and risk policies before dispatch. The exchange may still reject or partially fill the order.'
               : 'Pre-trade risk checks run before dispatch. The exchange may still reject the order or partially fill it. Refer to the execution status after submission.'}
         </p>
       </div>

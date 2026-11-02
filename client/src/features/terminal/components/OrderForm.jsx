@@ -16,8 +16,8 @@ import {
 } from '../../../components/ui/Select.jsx';
 import { SegmentedControl } from '../../../components/navigation/SegmentedControl.jsx';
 import { Slider } from '../../../components/ui/Slider.jsx';
-import { formatQuantity } from '../../../lib/formatters/number.formatter.js';
 import { formatCurrency } from '../../../lib/formatters/currency.formatter.js';
+import { formatQuantity } from '../../../lib/formatters/number.formatter.js';
 import {
   calculateOrderPreview,
   getUsdConversionRate,
@@ -45,7 +45,6 @@ const MAX_SYNC_DESTINATIONS = 10;
 
 export function OrderForm({
   instrument,
-  account,
   marketType = 'spot',
   onSubmit,
   isSubmitting = false,
@@ -61,6 +60,7 @@ export function OrderForm({
   selectedDestinationAccountIds = [],
   onDestinationAccountsChange,
   maxLeverage,
+  universalMode = false,
   defaultOrderType = 'limit',
   className,
 }) {
@@ -123,8 +123,8 @@ export function OrderForm({
         referencePrice: referencePrice ?? instrument?.markPrice ?? instrument?.lastPrice,
         baseAsset: instrument?.baseAsset,
         quoteAsset: instrument?.quoteAsset,
-        baseBalance: availableBalance,
-        quoteBalance: availableMargin,
+        baseBalance: universalMode ? undefined : availableBalance,
+        quoteBalance: universalMode ? undefined : availableMargin,
         leverage,
       }),
     [
@@ -135,19 +135,16 @@ export function OrderForm({
       price,
       referencePrice,
       instrument,
+      universalMode,
       availableBalance,
       availableMargin,
       leverage,
     ],
   );
-  const notional = orderPreview.notional ?? 0;
-  const resolvedUsdConversionRate =
-    usdConversionRate ?? getUsdConversionRate(instrument?.quoteAsset, null, null);
-  const approximateUsdConversion =
-    usdConversionApproximate ||
-    ['USDT', 'USDC'].includes(String(instrument?.quoteAsset || '').toUpperCase());
   const balanceKnownInsufficient =
-    balanceFreshness === 'current' && orderPreview.sufficient === false;
+    !universalMode &&
+    balanceFreshness === 'current' &&
+    orderPreview.sufficient === false;
 
   const toggleDestinationAccount = (accountId, checked) => {
     const next = checked
@@ -159,15 +156,11 @@ export function OrderForm({
   const applyPercent = (nextPercent) => {
     setPercent(nextPercent);
     const base = currentAvailableBalance;
-    if (!base || !instrument) {
-      return;
-    }
+    if (!base || !instrument) return;
     const refPrice = isMarketOrder
       ? Number(referencePrice ?? instrument.markPrice ?? instrument.lastPrice ?? 0)
       : Number(price);
-    if (!Number.isFinite(refPrice) || refPrice <= 0) {
-      return;
-    }
+    if (!Number.isFinite(refPrice) || refPrice <= 0) return;
     const usable = Number(base) * (nextPercent / 100);
     const size = isFutures
       ? (usable * Number(leverage)) / refPrice
@@ -178,7 +171,12 @@ export function OrderForm({
       shouldValidate: true,
     });
   };
-
+  const notional = orderPreview.notional ?? 0;
+  const resolvedUsdConversionRate =
+    usdConversionRate ?? getUsdConversionRate(instrument?.quoteAsset, null, null);
+  const approximateUsdConversion =
+    usdConversionApproximate ||
+    ['USDT', 'USDC'].includes(String(instrument?.quoteAsset || '').toUpperCase());
   const submit = handleSubmit((values) => {
     onSubmit?.({
       side,
@@ -278,34 +276,62 @@ export function OrderForm({
           />
         </div>
 
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Available</span>
-            <span className="text-xs font-medium text-foreground">
-              {currentAvailableBalance == null
-                ? '—'
-                : isFutures
-                  ? formatCurrency(currentAvailableBalance, instrument?.quoteAsset ?? 'USD')
+        {!universalMode ? (
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Available</span>
+              <span className="text-xs font-medium text-foreground">
+                {currentAvailableBalance == null
+                  ? '—'
+                  : isFutures
+                    ? formatCurrency(currentAvailableBalance, instrument?.quoteAsset ?? 'USD')
                     : `${formatQuantity(currentAvailableBalance, 6)} ${
-                      side === 'buy' ? instrument?.quoteAsset ?? '' : instrument?.baseAsset ?? ''
-                    }`}
-            </span>
+                        side === 'buy' ? instrument?.quoteAsset ?? '' : instrument?.baseAsset ?? ''
+                      }`}
+              </span>
+            </div>
+            <div className="flex gap-1">
+              {[25, 50, 75, 100].map((value) => (
+                <Button
+                  key={value}
+                  type="button"
+                  variant={percent === value ? 'default' : 'outline'}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => applyPercent(value)}
+                >
+                  {value}%
+                </Button>
+              ))}
+            </div>
+            <div
+              className={cn(
+                'mt-2 border-t border-border pt-2 text-2xs',
+                orderPreview.sufficient === true
+                  ? 'text-success'
+                  : orderPreview.sufficient === false
+                    ? 'text-destructive'
+                    : 'text-muted-foreground',
+              )}
+              role="status"
+            >
+              {isBalancesLoading
+                ? 'Refreshing account balances…'
+                : orderPreview.sufficient === true
+                  ? `Sufficient ${orderPreview.requiredAsset} balance: ${formatQuantity(
+                      orderPreview.availableBalance,
+                      6,
+                    )} available; ${formatQuantity(orderPreview.requiredBalance, 6)} estimated required.`
+                  : orderPreview.sufficient === false
+                    ? `Insufficient ${orderPreview.requiredAsset} balance: ${formatQuantity(
+                        orderPreview.availableBalance,
+                        6,
+                      )} available; ${formatQuantity(orderPreview.requiredBalance, 6)} estimated required.`
+                    : 'Balance could not be estimated from the latest sync; the exchange will verify funds before submission.'}
+              {balanceFreshness === 'stale' ? ' Balance snapshot is stale.' : null}
+            </div>
           </div>
-          <div className="flex gap-1">
-            {[25, 50, 75, 100].map((p) => (
-              <Button
-                key={p}
-                type="button"
-                variant={percent === p ? 'default' : 'outline'}
-                size="sm"
-                className="flex-1"
-                onClick={() => applyPercent(p)}
-              >
-                {p}%
-              </Button>
-            ))}
-          </div>
-        </div>
+        ) : null}
 
         {!isMarketOrder ? (
           <div>
@@ -358,8 +384,8 @@ export function OrderForm({
             </div>
           ) : (
             <p className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              Leverage is managed by the exchange. This ticket uses the selected account’s current
-              leverage setting.
+              Leverage is managed by the destination exchange. Confirm the account's leverage
+              settings before submitting.
             </p>
           )
         ) : null}
@@ -399,52 +425,21 @@ export function OrderForm({
               )} USD`
             : 'USD estimate unavailable for this quote asset'}
         </p>
-        <div
-          className={cn(
-            'mt-2 border-t border-border pt-2 text-2xs',
-            orderPreview.sufficient === true
-              ? 'text-success'
-              : orderPreview.sufficient === false
-                ? 'text-destructive'
-                : 'text-muted-foreground',
-          )}
-          role="status"
-        >
-          {isBalancesLoading
-            ? 'Refreshing account balances…'
-            : orderPreview.sufficient === true
-              ? `Sufficient ${orderPreview.requiredAsset} balance: ${formatQuantity(
-                  orderPreview.availableBalance,
-                  6,
-                )} available; ${formatQuantity(orderPreview.requiredBalance, 6)} estimated required.`
-              : orderPreview.sufficient === false
-                ? `Insufficient ${orderPreview.requiredAsset} balance: ${formatQuantity(
-                    orderPreview.availableBalance,
-                    6,
-                  )} available; ${formatQuantity(orderPreview.requiredBalance, 6)} estimated required.`
-                : 'Balance could not be estimated from the latest sync; the exchange will verify funds before submission.'}
-          {balanceFreshness === 'stale' ? ' Balance snapshot is stale.' : null}
-        </div>
       </div>
 
-      {destinationAccounts.length > 0 ? (
+      {!universalMode && destinationAccounts.length > 0 ? (
         <fieldset className="rounded-md border border-border p-3">
           <legend className="px-1 text-xs font-semibold text-foreground">
             Sync to connected accounts
           </legend>
           <p className="mb-2 text-2xs text-muted-foreground">
-            Destination instruments, balances, permissions, and risk are checked before this
-            source order is sent. Destinations receive a market order only after the source order
-            is confirmed filled. Choose up to {MAX_SYNC_DESTINATIONS} accounts.
+            Choose up to {MAX_SYNC_DESTINATIONS} destination accounts for this order.
           </p>
           <div className="flex flex-col gap-2">
             {destinationAccounts.map((destination) => {
               const isSelected = selectedDestinationAccountIds.includes(destination.id);
               return (
-                <label
-                  key={destination.id}
-                  className="flex cursor-pointer items-center gap-2 text-xs"
-                >
+                <label key={destination.id} className="flex cursor-pointer items-center gap-2 text-xs">
                   <Checkbox
                     checked={isSelected}
                     disabled={

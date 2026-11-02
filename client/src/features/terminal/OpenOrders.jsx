@@ -141,16 +141,18 @@ export function OpenOrders({ workspaceId, accountId, status = 'open' }) {
 
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <IconButton
-          label="Sync orders and positions from exchange"
-          onClick={handleSync}
-          disabled={ordersQuery.isLoading || ordersQuery.isSyncingAccountState || !accountId}
-          className="border border-border"
-        >
-          <RefreshCw className={cn('h-4 w-4', (ordersQuery.isFetching || ordersQuery.isSyncingAccountState) && 'animate-spin')} />
-        </IconButton>
-      </div>
+      {accountId ? (
+        <div className="mb-3 flex justify-end">
+          <IconButton
+            label="Sync orders and positions from exchange"
+            onClick={handleSync}
+            disabled={ordersQuery.isLoading || ordersQuery.isSyncingAccountState}
+            className="border border-border"
+          >
+            <RefreshCw className={cn('h-4 w-4', (ordersQuery.isFetching || ordersQuery.isSyncingAccountState) && 'animate-spin')} />
+          </IconButton>
+        </div>
+      ) : null}
 
       <DataTable
         columns={columns}
@@ -160,7 +162,9 @@ export function OpenOrders({ workspaceId, accountId, status = 'open' }) {
         emptyDescription={
           status === 'open'
             ? 'Orders you submit will appear here while open.'
-            : 'Orders for this account will appear here.'
+            : accountId
+              ? 'Orders for this account will appear here.'
+              : 'Order history across connected accounts will appear here.'
         }
       />
 

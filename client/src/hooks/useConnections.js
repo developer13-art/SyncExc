@@ -106,6 +106,7 @@ export function useExchangeRegistry(enabled = true) {
     exchanges: query.data ?? [],
     isLoading: query.isLoading,
     error: query.error,
+    refetch: query.refetch,
   };
 }
 

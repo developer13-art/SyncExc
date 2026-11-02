@@ -111,9 +111,9 @@ const FEATURE_GROUPS = [
       },
       {
         icon: Store,
-        title: 'Copy Trading Marketplace',
+        title: 'Published Signals Marketplace',
         description:
-          'Provider profiles, published signals, subscriber plans, and explicit per-destination copy configurations.',
+          'Explore provider profiles and published signals, review disclosures, and manage eligible subscriptions.',
       },
       {
         icon: Code2,
@@ -131,7 +131,7 @@ const FEATURE_GROUPS = [
         icon: MessageSquare,
         title: 'Community and Collaboration',
         description:
-          'Public profiles, groups, shared analysis documents, and private workspace discussions with moderation.',
+          'Join interest-based groups, share market analysis, discuss ideas in moderated posts, and collaborate privately with your workspace team.',
       },
       {
         icon: Bell,
@@ -161,7 +161,7 @@ const FEATURE_GROUPS = [
         icon: Coins,
         title: 'Referral and Commission Governance',
         description:
-          'Subscription-revenue-based direct referrals with auditable ledger, payout oversight, and fraud controls.',
+          'Share a direct referral link and track qualifying subscription-payment rewards in an auditable ledger. Rewards are not based on trading volume, losses, or account balances.',
       },
     ],
   },

@@ -87,7 +87,14 @@ export function ExecutionStatus({ workspaceId, accountId }) {
     {
       key: 'instrument',
       label: 'Instrument',
-      render: (row) => <span className="font-medium text-foreground">{row.instrument ?? '—'}</span>,
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.instrument ?? '—'}</p>
+          {row.accountLabel ? (
+            <p className="text-2xs uppercase text-muted-foreground">{row.accountLabel}</p>
+          ) : null}
+        </div>
+      ),
     },
     { key: 'side', label: 'Side' },
     {

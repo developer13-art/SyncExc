@@ -10,7 +10,7 @@ import {
 } from '../../../components/ui/Select.jsx';
 import { ConnectionHealthBadge } from '../../../components/domain/connection/ConnectionHealthBadge.jsx';
 
-export function AccountSelector({ accounts = [], value, onChange, className }) {
+export function AccountSelector({ accounts = [], value, onChange, className, disabled = false }) {
   const grouped = useMemo(() => {
     const map = new Map();
     for (const account of accounts) {
@@ -38,7 +38,7 @@ export function AccountSelector({ accounts = [], value, onChange, className }) {
   }
 
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select value={value ?? undefined} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger className={className}>
         <SelectValue placeholder="Select destination account" />
       </SelectTrigger>

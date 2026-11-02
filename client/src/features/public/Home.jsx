@@ -58,6 +58,18 @@ const FEATURES_PREVIEW = [
     description:
       'Personal and organization workspaces with granular permissions and authorized connection sharing that never exposes credentials.',
   },
+  {
+    icon: Users,
+    title: 'Community Groups & Shared Analysis',
+    description:
+      'Join interest-based groups, exchange market analysis, and take part in moderated discussions alongside other traders.',
+  },
+  {
+    icon: CircleDollarSign,
+    title: 'Referral Program',
+    description:
+      'Invite people with your referral link and track eligible rewards from qualifying subscription payments in a clear ledger.',
+  },
 ];
 
 const STEPS = [
@@ -77,7 +89,7 @@ const STEPS = [
     icon: Sparkles,
     title: 'Add signal sources',
     description:
-      'Register supported sources manually or discover candidates through the AI-assisted review workflow.',
+      'Register supported sources manually or discover candidates with AI-assisted review tools.',
   },
   {
     icon: Zap,
@@ -97,17 +109,17 @@ const SPOTLIGHT_FEATURES = [
   },
   {
     icon: Users,
-    title: 'Copy Trading Marketplace',
-    description: 'Discover trader profiles and manage subscriptions and copy settings.',
-    link: ROUTES.app.marketplace.browse,
-    action: 'Explore traders',
+    title: 'Community Groups & Discussions',
+    description: 'Share analysis, join focused groups, and collaborate in moderated discussions.',
+    link: ROUTES.public.features,
+    action: 'Explore community features',
   },
   {
-    icon: Brain,
-    title: 'Signal Sources & AI Parsing',
-    description: 'Review structured signals and manage approved sources in one place.',
-    link: ROUTES.app.signals.overview,
-    action: 'View signal tools',
+    icon: CircleDollarSign,
+    title: 'Referral Program',
+    description: 'Invite directly and follow eligible subscription-based rewards transparently.',
+    link: ROUTES.public.features,
+    action: 'Learn about referrals',
   },
 ];
 

@@ -119,18 +119,20 @@ export function Positions({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="mb-3 flex justify-end">
-        <IconButton
-          label="Sync positions and spot balances from exchange"
-          onClick={handleSync}
-          disabled={positionsQuery.isLoading || positionsQuery.isSyncingAccountState || !accountId}
-          className="border border-border"
-        >
-          <RefreshCw className={cn('h-4 w-4', (positionsQuery.isFetching || positionsQuery.isSyncingAccountState) && 'animate-spin')} />
-        </IconButton>
-      </div>
+      {accountId ? (
+        <div className="mb-3 flex justify-end">
+          <IconButton
+            label="Sync positions and spot balances from exchange"
+            onClick={handleSync}
+            disabled={positionsQuery.isLoading || positionsQuery.isSyncingAccountState}
+            className="border border-border"
+          >
+            <RefreshCw className={cn('h-4 w-4', (positionsQuery.isFetching || positionsQuery.isSyncingAccountState) && 'animate-spin')} />
+          </IconButton>
+        </div>
+      ) : null}
 
-      {marketType === 'spot' ? (
+      {marketType === 'spot' && accountId ? (
         <section className="flex flex-col gap-2">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Spot holdings</h3>
@@ -171,15 +173,21 @@ export function Positions({
       ) : null}
 
       <section className="flex flex-col gap-2">
-        {marketType === 'spot' ? (
-          <h3 className="text-sm font-semibold text-foreground">Open derivatives positions</h3>
-        ) : null}
+        <h3 className="text-sm font-semibold text-foreground">
+          {accountId
+            ? marketType === 'spot'
+              ? 'Open derivatives positions'
+              : 'Open positions'
+            : 'Open positions across connected accounts'}
+        </h3>
         <DataTable
           columns={columns}
           rows={positions}
           isLoading={positionsQuery.isLoading}
-          emptyTitle="No open derivatives positions"
-          emptyDescription={marketType === 'spot'
+          emptyTitle="No open positions"
+          emptyDescription={!accountId
+            ? 'Positions from all connected accounts will appear here.'
+            : marketType === 'spot'
             ? 'Spot holdings are listed separately above.'
             : 'Derivatives positions will appear here while open.'}
         />
