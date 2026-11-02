@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import { Sidebar } from './components/Sidebar.jsx';
 import { Topbar } from './components/Topbar.jsx';
+import { MobileBottomNav } from './components/MobileBottomNav.jsx';
 import { cn } from '../lib/utils/cn.util.js';
 import { selectMobileNavOpen, uiActions } from '../app/slices/uiSlice.js';
 
@@ -36,7 +37,7 @@ export function AppLayout() {
         <main
           data-app-main
           className={cn(
-            'client-app-main min-w-0 flex-1 overflow-x-auto overflow-y-auto scrollbar-thin px-3 py-4 sm:px-4 sm:py-6 md:px-6 lg:px-8',
+            'client-app-main min-w-0 flex-1 overflow-x-auto overflow-y-auto scrollbar-thin px-3 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-6 md:px-6 md:pb-6 lg:px-8',
           )}
         >
           <div className="mx-auto w-full max-w-[1600px]">
@@ -44,6 +45,7 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+      <MobileBottomNav />
     </div>
   );
 }

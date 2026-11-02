@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { Link, NavLink } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
   CalendarDays,
   Hash,
-  Home,
   Image,
   Lightbulb,
   Link2,
@@ -17,7 +16,6 @@ import {
   Send,
   Sparkles,
   Users,
-  Wallet,
 } from 'lucide-react';
 
 import { Avatar } from '../../components/ui/Avatar.jsx';
@@ -649,45 +647,6 @@ export default function Feed() {
         onOpenChange={(open) => { if (!open) setReportTarget(null); }}
         onSubmit={submitReport}
       />
-      <nav className="community-bottom-nav" aria-label="Mobile navigation">
-        <NavLink
-          to={ROUTES.app.dashboard}
-          className={({ isActive }) => `community-bottom-nav-item${isActive ? ' is-active' : ''}`}
-        >
-          <Home aria-hidden="true" />
-          <span>Home</span>
-        </NavLink>
-        <NavLink
-          to={ROUTES.app.community.overview}
-          aria-current="page"
-          className="community-bottom-nav-item is-active"
-        >
-          <Users aria-hidden="true" />
-          <span>Community</span>
-        </NavLink>
-        <NavLink
-          to={ROUTES.app.terminal.overview}
-          className={({ isActive }) => `community-bottom-nav-item${isActive ? ' is-active' : ''}`}
-        >
-          <BarChart3 aria-hidden="true" />
-          <span>Trade</span>
-        </NavLink>
-        <NavLink
-          to={ROUTES.app.referral.dashboard}
-          className={({ isActive }) => `community-bottom-nav-item${isActive ? ' is-active' : ''}`}
-        >
-          <Wallet aria-hidden="true" />
-          <span>Earnings</span>
-        </NavLink>
-        <button
-          type="button"
-          className="community-bottom-nav-item"
-          onClick={() => dispatch(uiActions.openMobileNav())}
-        >
-          <MoreHorizontal aria-hidden="true" />
-          <span>More</span>
-        </button>
-      </nav>
     </div>
   );
 }
