@@ -46,8 +46,15 @@ export function useWorkflows(params = {}) {
   };
 }
 
-export function useWorkflow(workflowId) {
+export function useWorkflow(workflowId, { includeNodeCatalog = false } = {}) {
   const queryClient = useQueryClient();
+
+  const nodeCatalogQuery = useQuery({
+    queryKey: queryKeys.automation.nodeCatalog,
+    queryFn: () => automationApi.listNodeCatalog(),
+    enabled: includeNodeCatalog,
+    staleTime: 5 * 60_000,
+  });
 
   const detailQuery = useQuery({
     queryKey: queryKeys.automation.workflow(workflowId),
@@ -77,6 +84,19 @@ export function useWorkflow(workflowId) {
     staleTime: 30_000,
   });
 
+  const currentVersion = versionsQuery.data?.find(
+    (version) => Number(version.version) === Number(detailQuery.data?.currentVersion),
+  ) ?? versionsQuery.data?.[0];
+  const definition = currentVersion?.definition ?? { nodes: [], edges: [], input: {} };
+  const workflow = detailQuery.data
+    ? {
+      ...detailQuery.data,
+      definition,
+      nodes: definition.nodes ?? [],
+      edges: definition.edges ?? [],
+    }
+    : null;
+
   const update = useMutation({
     mutationFn: (payload) => automationApi.updateWorkflow(workflowId, payload),
     onSuccess: () => {
@@ -103,7 +123,13 @@ export function useWorkflow(workflowId) {
   });
 
   return {
-    workflow: detailQuery.data ?? null,
+    workflow,
+    nodeCatalog: nodeCatalogQuery.data ?? [],
+    nodeCatalogError: nodeCatalogQuery.error,
+    refetchNodeCatalog: nodeCatalogQuery.refetch,
+    isBuilderLoading: detailQuery.isLoading || versionsQuery.isLoading || nodeCatalogQuery.isLoading,
+    error: detailQuery.error,
+    refetch: detailQuery.refetch,
     versions: versionsQuery.data ?? [],
     triggers: triggersQuery.data ?? [],
     schedules: schedulesQuery.data ?? [],

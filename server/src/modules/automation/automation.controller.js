@@ -92,7 +92,7 @@ export function createAutomationController(services) {
 
     async validateWorkflow(req, res) {
       const result = await validationService.validateDefinition({
-        definition: req.body.definition,
+        definition: req.body,
         workspaceId: req.workspace.id,
       });
       return success(res, result);

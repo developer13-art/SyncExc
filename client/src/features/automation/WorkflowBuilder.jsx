@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Save, Send } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Input } from '../../components/ui/Input.jsx';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
-import { FormField } from '../../components/forms/FormField.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { NodeLibrary } from './components/NodeLibrary.jsx';
@@ -23,45 +22,57 @@ import { ROUTES } from '../../config/routes.config.js';
 export default function WorkflowBuilder() {
   const { workflowId } = useParams();
   const dispatch = useDispatch();
-  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const toast = useToast();
 
-  const workflowQuery = useWorkflow(workflowId);
+  const workflowQuery = useWorkflow(workflowId, { includeNodeCatalog: true });
 
   const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [loadedWorkflowId, setLoadedWorkflowId] = useState(null);
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
   useEffect(() => {
-    if (workflowQuery.workflow) {
-      setName(workflowQuery.workflow.name ?? '');
-      setDescription(workflowQuery.workflow.description ?? '');
+    if (
+      workflowQuery.workflow &&
+      !workflowQuery.isBuilderLoading &&
+      loadedWorkflowId !== workflowId
+    ) {
+      const workflow = workflowQuery.workflow;
+      setName(workflow.name ?? '');
+      setDescription(workflow.description ?? '');
       setNodes(
-        (workflowQuery.workflow.nodes ?? []).map((node) => ({
+        (workflow.nodes ?? []).map((node) => ({
           ...node,
           position: node.position ?? { x: 100, y: 100 },
         })),
       );
-      dispatch(uiActions.setPageTitle(`Edit: ${workflowQuery.workflow.name}`));
+      setEdges(workflow.edges ?? []);
+      setLoadedWorkflowId(workflowId);
+      dispatch(uiActions.setPageTitle(`Edit: ${workflow.name}`));
       dispatch(
         uiActions.setBreadcrumbs([
           { label: 'Automation', path: ROUTES.app.automation.overview },
           {
-            label: workflowQuery.workflow.name,
+            label: workflow.name,
             path: ROUTES.app.automation.workflow(workflowId),
           },
           { label: 'Builder', path: ROUTES.app.automation.edit(workflowId) },
         ]),
       );
     }
-  }, [workflowQuery.workflow, dispatch, workflowId]);
+  }, [workflowQuery.workflow, workflowQuery.isBuilderLoading, loadedWorkflowId, dispatch, workflowId]);
 
-  const nodeCatalog = workflowQuery.workflow?.nodeCatalog ?? [];
-  const nodeSchemas = workflowQuery.workflow?.nodeSchemas ?? {};
+  const nodeCatalog = workflowQuery.nodeCatalog ?? [];
+  const nodeSchemas = Object.fromEntries(
+    nodeCatalog.map((node) => [node.type, node.schema ?? { fields: [] }]),
+  );
 
   const handleDragStart = (e, nodeDef) => {
     e.dataTransfer.setData('application/json', JSON.stringify(nodeDef));
@@ -70,6 +81,7 @@ export default function WorkflowBuilder() {
 
   const handleAddNode = (nodeDef) => {
     const id = `${nodeDef.type}-${Date.now()}`;
+    setValidation(null);
     setNodes((prev) => [
       ...prev,
       {
@@ -87,6 +99,7 @@ export default function WorkflowBuilder() {
 
   const handleDropNode = useCallback((nodeDef, position) => {
     const id = `${nodeDef.type}-${Date.now()}`;
+    setValidation(null);
     setNodes((prev) => [
       ...prev,
       {
@@ -103,6 +116,7 @@ export default function WorkflowBuilder() {
   }, []);
 
   const handleNodeMove = (nodeId, position) => {
+    setValidation(null);
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, position } : n)),
     );
@@ -113,6 +127,7 @@ export default function WorkflowBuilder() {
   };
 
   const handleDeleteNode = (nodeId) => {
+    setValidation(null);
     setNodes((prev) => prev.filter((n) => n.id !== nodeId));
     if (selectedNodeId === nodeId) {
       setSelectedNodeId(null);
@@ -120,6 +135,7 @@ export default function WorkflowBuilder() {
   };
 
   const handleConfigChange = (nodeId, config) => {
+    setValidation(null);
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, config } : n)),
     );
@@ -130,8 +146,8 @@ export default function WorkflowBuilder() {
     try {
       const result = await automationApi.validateWorkflow(workflowId, {
         nodes,
-        name,
-        description,
+        edges,
+        input: {},
       });
       setValidation(result);
     } catch (err) {
@@ -147,8 +163,13 @@ export default function WorkflowBuilder() {
       await automationApi.updateWorkflow(workflowId, {
         name,
         description,
-        nodes,
       });
+      await automationApi.createDraftVersion(workflowId, { nodes, edges, input: {} });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['automation', 'workflow', workflowId] }),
+        queryClient.invalidateQueries({ queryKey: ['automation', 'versions', workflowId] }),
+        queryClient.invalidateQueries({ queryKey: ['automation', 'workflows'] }),
+      ]);
       toast.success('Draft saved');
     } catch (err) {
       toast.error('Save failed', { description: getErrorMessage(err) });
@@ -158,23 +179,33 @@ export default function WorkflowBuilder() {
   };
 
   const handlePublish = async () => {
-    if (!validation?.valid) {
-      toast.error('Validate the workflow before publishing');
-      return;
-    }
+    setPublishing(true);
     try {
-      await automationApi.publishWorkflow(workflowId, {
-        nodes,
-        name,
-        description,
-      });
+      const result = await automationApi.validateWorkflow(workflowId, { nodes, edges, input: {} });
+      setValidation(result);
+      if (!result.valid) {
+        toast.error('Workflow validation failed', {
+          description: result.errors?.map((error) => error.message).filter(Boolean).join('; '),
+        });
+        return;
+      }
+      await automationApi.updateWorkflow(workflowId, { name, description });
+      const version = await automationApi.createDraftVersion(workflowId, { nodes, edges, input: {} });
+      await automationApi.publishWorkflow(workflowId, { versionId: version.id });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['automation', 'workflow', workflowId] }),
+        queryClient.invalidateQueries({ queryKey: ['automation', 'versions', workflowId] }),
+        queryClient.invalidateQueries({ queryKey: ['automation', 'workflows'] }),
+      ]);
       toast.success('Version published');
     } catch (err) {
       toast.error('Publish failed', { description: getErrorMessage(err) });
+    } finally {
+      setPublishing(false);
     }
   };
 
-  if (workflowQuery.isLoading) {
+  if (workflowQuery.isBuilderLoading) {
     return <LoadingState label="Loading workflow" />;
   }
 
@@ -184,6 +215,15 @@ export default function WorkflowBuilder() {
         title="Unable to load workflow"
         description="This workflow could not be retrieved."
         onRetry={workflowQuery.refetch}
+      />
+    );
+  }
+  if (workflowQuery.nodeCatalogError) {
+    return (
+      <ErrorState
+        title="Node library unavailable"
+        description={getErrorMessage(workflowQuery.nodeCatalogError)}
+        onRetry={workflowQuery.refetchNodeCatalog}
       />
     );
   }
@@ -214,17 +254,17 @@ export default function WorkflowBuilder() {
           className="max-w-md"
         />
         <div className="ml-auto flex gap-2">
-          <Button variant="outline" onClick={handleValidate} disabled={validating}>
+          <Button variant="outline" onClick={handleValidate} disabled={validating || saving || publishing}>
             <CheckCircle2 className="h-4 w-4" />
             {validating ? 'Validating…' : 'Validate'}
           </Button>
-          <Button variant="outline" onClick={handleSaveDraft} disabled={saving}>
+          <Button variant="outline" onClick={handleSaveDraft} disabled={saving || validating || publishing}>
             <Save className="h-4 w-4" />
             {saving ? 'Saving…' : 'Save draft'}
           </Button>
-          <Button onClick={handlePublish}>
+          <Button onClick={handlePublish} disabled={publishing || saving || validating}>
             <Send className="h-4 w-4" />
-            Publish
+            {publishing ? 'Publishing…' : 'Publish'}
           </Button>
         </div>
       </div>

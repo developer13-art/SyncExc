@@ -17,13 +17,19 @@ import { SearchInput } from '../../../components/forms/SearchInput.jsx';
 import { cn } from '../../../lib/utils/cn.util.js';
 
 const CATEGORY_ICONS = {
+  trigger: Play,
   triggers: Play,
+  condition: Filter,
   conditions: Filter,
   data: Boxes,
   flow: GitBranch,
+  approval: ShieldCheck,
   approvals: ShieldCheck,
+  action: Send,
   actions: Send,
+  integration: Zap,
   integrations: Zap,
+  utility: Settings2,
   utilities: Settings2,
 };
 
@@ -73,7 +79,7 @@ export function NodeLibrary({ nodes = [], onDragStart, onAddNode, className }) {
       <div className="flex-1 overflow-y-auto scrollbar-thin p-3">
         {filtered.length === 0 ? (
           <p className="py-6 text-center text-xs text-muted-foreground">
-            No nodes match your search.
+            {nodes.length === 0 ? 'No workflow nodes are available.' : 'No nodes match your search.'}
           </p>
         ) : (
           filtered.map(([category, list]) => {

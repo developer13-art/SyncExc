@@ -158,6 +158,7 @@ export const queryKeys = {
   },
 
   automation: {
+    nodeCatalog: ['automation', 'node-catalog'],
     workflows: (params) => ['automation', 'workflows', params],
     workflow: (id) => ['automation', 'workflow', id],
     versions: (id) => ['automation', 'versions', id],

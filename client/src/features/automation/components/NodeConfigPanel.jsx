@@ -91,6 +91,21 @@ function FieldRenderer({ field, value, onChange }) {
     );
   }
 
+  if (field.type === 'list') {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <Label>{field.label}</Label>
+        <Textarea
+          rows={3}
+          value={Array.isArray(value) ? value.join('\n') : ''}
+          onChange={(e) => onChange(e.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean))}
+          placeholder={field.placeholder}
+        />
+        {field.hint ? <p className="text-2xs text-muted-foreground">{field.hint}</p> : null}
+      </div>
+    );
+  }
+
   if (field.type === 'select') {
     return (
       <div className="flex flex-col gap-1.5">

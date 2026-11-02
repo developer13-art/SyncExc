@@ -4,6 +4,8 @@ import { apiConfig } from '../config/api.config.js';
 const { endpoints } = apiConfig;
 
 export const automationApi = {
+  listNodeCatalog: () => api.get(endpoints.automation.nodeCatalog),
+
   listWorkflows: (params) => api.getPaged(endpoints.automation.workflows, { params }),
 
   createWorkflow: (payload) => api.post(endpoints.automation.workflows, payload),
@@ -14,6 +16,9 @@ export const automationApi = {
     api.patch(endpoints.automation.workflow(workflowId), payload),
 
   listVersions: (workflowId) => api.get(endpoints.automation.workflowVersions(workflowId)),
+
+  createDraftVersion: (workflowId, definition) =>
+    api.post(endpoints.automation.workflowVersions(workflowId), definition),
 
   validateWorkflow: (workflowId, payload) =>
     api.post(endpoints.automation.validateWorkflow(workflowId), payload),

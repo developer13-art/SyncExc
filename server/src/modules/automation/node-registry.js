@@ -11,6 +11,125 @@
 
 import { fnv1aHash, backoffDelay } from '@syncexc/shared';
 
+const NODE_CONFIG_SCHEMAS = {
+  field_match: {
+    fields: [
+      { key: 'field', label: 'Field path', type: 'text', placeholder: 'signal.symbol' },
+      {
+        key: 'operator',
+        label: 'Operator',
+        type: 'select',
+        options: [
+          { value: 'equals', label: 'Equals' },
+          { value: 'not_equals', label: 'Does not equal' },
+          { value: 'contains', label: 'Contains' },
+          { value: 'starts_with', label: 'Starts with' },
+          { value: 'in', label: 'Is in list' },
+        ],
+      },
+      { key: 'value', label: 'Value', type: 'text' },
+    ],
+  },
+  numeric_compare: {
+    fields: [
+      { key: 'field', label: 'Field path', type: 'text', placeholder: 'signal.price' },
+      {
+        key: 'operator',
+        label: 'Operator',
+        type: 'select',
+        options: [
+          { value: 'gt', label: 'Greater than' },
+          { value: 'gte', label: 'At least' },
+          { value: 'lt', label: 'Less than' },
+          { value: 'lte', label: 'At most' },
+          { value: 'eq', label: 'Equals' },
+        ],
+      },
+      { key: 'value', label: 'Compare with', type: 'number' },
+    ],
+  },
+  inclusion: {
+    fields: [
+      { key: 'field', label: 'Field path', type: 'text' },
+      { key: 'values', label: 'Allowed values', type: 'list', placeholder: 'One value per line' },
+    ],
+  },
+  datetime_compare: {
+    fields: [
+      { key: 'field', label: 'Field path', type: 'text' },
+      {
+        key: 'operator',
+        label: 'Operator',
+        type: 'select',
+        options: [
+          { value: 'before', label: 'Before' },
+          { value: 'after', label: 'After' },
+          { value: 'on', label: 'On date' },
+        ],
+      },
+      { key: 'value', label: 'Date or time', type: 'datetime-local' },
+    ],
+  },
+  capability_check: {
+    fields: [
+      { key: 'connectionId', label: 'Connection ID', type: 'text' },
+      { key: 'capability', label: 'Capability', type: 'text' },
+    ],
+  },
+  map_field: {
+    fields: [
+      { key: 'source', label: 'Source field path', type: 'text' },
+      { key: 'target', label: 'Target field path', type: 'text' },
+    ],
+  },
+  normalize: {
+    fields: [
+      { key: 'field', label: 'Field path', type: 'text' },
+      { key: 'target', label: 'Output field path', type: 'text' },
+      {
+        key: 'method',
+        label: 'Normalization',
+        type: 'select',
+        options: [
+          { value: 'lowercase', label: 'Lowercase' },
+          { value: 'uppercase', label: 'Uppercase' },
+          { value: 'trim', label: 'Trim whitespace' },
+        ],
+      },
+    ],
+  },
+  derive_value: {
+    fields: [
+      { key: 'expression', label: 'Expression', type: 'textarea' },
+      { key: 'target', label: 'Output field path', type: 'text' },
+    ],
+  },
+  branch: { fields: [{ key: 'expression', label: 'Condition expression', type: 'textarea' }] },
+  filter: { fields: [{ key: 'expression', label: 'Condition expression', type: 'textarea' }] },
+  wait: { fields: [{ key: 'durationMs', label: 'Wait duration (milliseconds)', type: 'number' }] },
+  stop: { fields: [{ key: 'reason', label: 'Stop reason', type: 'text' }] },
+  request_approval: {
+    fields: [
+      { key: 'message', label: 'Approval message', type: 'textarea' },
+      { key: 'timeoutMs', label: 'Timeout (milliseconds)', type: 'number' },
+    ],
+  },
+  send_notification: {
+    fields: [
+      { key: 'title', label: 'Title', type: 'text' },
+      { key: 'message', label: 'Message', type: 'textarea' },
+    ],
+  },
+  webhook_call: { fields: [{ key: 'url', label: 'Webhook URL', type: 'url' }] },
+};
+
+function formatNodeLabel(type) {
+  return type
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 export function createNodeRegistry({ services, logger }) {
   const nodes = new Map();
 
@@ -681,8 +800,11 @@ export function createNodeRegistry({ services, logger }) {
     list() {
       return Array.from(nodes.entries()).map(([type, def]) => ({
         type,
+        label: formatNodeLabel(type),
+        description: `${formatNodeLabel(type)} workflow node`,
         category: def.category,
         ports: def.ports,
+        schema: NODE_CONFIG_SCHEMAS[type] ?? { fields: [] },
       }));
     },
   };

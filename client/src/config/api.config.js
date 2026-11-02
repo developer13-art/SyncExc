@@ -317,6 +317,7 @@ export const apiConfig = Object.freeze({
       audit: '/marketplace/audit',
     },
     automation: {
+      nodeCatalog: '/automation/node-catalog',
       workflows: '/automation/workflows',
       workflow: (id) => `/automation/workflows/${id}`,
       workflowVersions: (id) => `/automation/workflows/${id}/versions`,

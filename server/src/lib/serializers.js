@@ -740,6 +740,7 @@ export function serializeWorkflow(row) {
     id: row.id,
     workspaceId: row.workspace_id,
     name: row.name,
+    description: row.description ?? null,
     status: row.status,
     currentVersion: row.current_version,
     createdAt: row.created_at,
