@@ -15,6 +15,7 @@ Return ONLY valid JSON matching this exact schema:
   "instrument": string | null,
   "marketType": "spot" | "futures" | "perpetual" | null,
   "direction": "long" | "short" | null,
+  "orderType": "market" | "limit" | null,
   "entry": string | null,
   "entryRange": { "min": string, "max": string } | null,
   "stopLoss": string | null,
@@ -62,12 +63,15 @@ export function createAiInterpreterService({ db, queries, ai, logger }) {
       instrument: data.instrument || null,
       marketType: data.marketType || null,
       direction: data.direction || null,
+      orderType: data.orderType || null,
       entry: data.entry || null,
       entryRange: data.entryRange || null,
       stopLoss: data.stopLoss || null,
       targets: Array.isArray(data.targets) ? data.targets : [],
       leverage: data.leverage || null,
-      confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
+      confidence: typeof data.confidence === 'number' && Number.isFinite(data.confidence)
+        ? Math.max(0, Math.min(1, data.confidence))
+        : 0.5,
       reason: data.reason || '',
       issues: Array.isArray(data.issues) ? data.issues : [],
     };

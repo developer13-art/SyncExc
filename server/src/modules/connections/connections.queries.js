@@ -431,7 +431,15 @@ export function createConnectionsQueries({ db }) {
       const result = await db.query(
         `
         SELECT * FROM exchange_instruments
-        WHERE exchange_code = $1 AND exchange_symbol = $2 AND market_type = $3
+        WHERE exchange_code = $1 AND market_type = $3
+          AND (
+            exchange_symbol = $2
+            OR normalized_symbol = $2
+            OR regexp_replace(exchange_symbol, '[^A-Z0-9]', '', 'g') =
+               regexp_replace($2, '[^A-Z0-9]', '', 'g')
+          )
+        ORDER BY CASE WHEN exchange_symbol = $2 THEN 0
+                      WHEN normalized_symbol = $2 THEN 1 ELSE 2 END
         LIMIT 1
         `,
         [exchangeCode, exchangeSymbol, marketType]

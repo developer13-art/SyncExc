@@ -31,6 +31,7 @@ import { createReviewService } from './review.service.js';
 import { createValidationService } from './validation.js';
 import { createEligibilityService } from './eligibility.service.js';
 import { createIntentHandoffService } from './intent-handoff.service.js';
+import { createSourceExecutionService } from './source-execution.service.js';
 import { createSignalsRoutes } from './signals.routes.js';
 import { createSignalsListeners } from './listeners.js';
 import { createTelegramPollingService } from './telegram-polling.service.js';
@@ -137,6 +138,15 @@ export function createSignalsModule({ services }) {
     logger,
   });
 
+  const sourceExecution = createSourceExecutionService({
+    db: services.db,
+    connections: services.connections,
+    terminal: services.terminal.publicApi,
+    sources: services.sources,
+    queries,
+    logger,
+  });
+
   const routes = createSignalsRoutes({
     ingestion,
     extraction,
@@ -152,6 +162,13 @@ export function createSignalsModule({ services }) {
     events: services.events,
     ingestion,
     extraction,
+    issueDetection,
+    validation,
+    eligibility,
+    intentHandoff,
+    sourceExecution,
+    sources: services.sources,
+    db: services.db,
     logger,
   });
 
@@ -177,6 +194,7 @@ export function createSignalsModule({ services }) {
     validation,
     eligibility,
     intentHandoff,
+    sourceExecution,
     publicApi,
 
     async shutdown() {

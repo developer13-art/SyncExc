@@ -17,6 +17,7 @@ const MODES = [
   { value: 'review', label: 'Review before execution', detail: 'Require a human review before an execution intent.' },
   { value: 'simulate', label: 'Simulation only', detail: 'Exchange handoff is disabled; start simulations from the Simulation area.' },
   { value: 'live', label: 'Live execution', detail: 'Allows live intent creation after risk and permission checks.' },
+  { value: 'authorized_automation', label: 'Authorized automation', detail: 'Automatically submits eligible signals to selected live accounts after validation and risk checks.' },
 ];
 
 export default function SourceExecutionConfig({ sourceId }) {
@@ -32,6 +33,8 @@ export default function SourceExecutionConfig({ sourceId }) {
   const [selectedAccounts, setSelectedAccounts] = useState([]);
   const [maxLeverage, setMaxLeverage] = useState('');
   const [riskPerTradePct, setRiskPerTradePct] = useState('');
+  const [maxNotional, setMaxNotional] = useState('');
+  const [allowMarketOrders, setAllowMarketOrders] = useState(true);
   const [allowedSymbols, setAllowedSymbols] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -41,6 +44,8 @@ export default function SourceExecutionConfig({ sourceId }) {
     setSelectedAccounts((data.destinations ?? []).filter((item) => item.enabled).map((item) => item.account_id));
     setMaxLeverage(data.settings?.maxLeverage ?? '');
     setRiskPerTradePct(data.settings?.riskPerTradePct ?? data.settings?.maxRiskPercent ?? '');
+    setMaxNotional(data.settings?.maxNotional ?? '');
+    setAllowMarketOrders(data.settings?.allowMarketOrders ?? true);
     setAllowedSymbols((data.settings?.allowedSymbols ?? []).join(', '));
   }, [data]);
 
@@ -57,6 +62,8 @@ export default function SourceExecutionConfig({ sourceId }) {
       const settings = {
         ...(maxLeverage !== '' ? { maxLeverage: Number(maxLeverage) } : {}),
         ...(riskPerTradePct !== '' ? { riskPerTradePct: Number(riskPerTradePct) } : {}),
+        ...(maxNotional !== '' ? { maxNotional: Number(maxNotional) } : {}),
+        allowMarketOrders,
         ...(allowedSymbols.trim()
           ? { allowedSymbols: [...new Set(allowedSymbols.split(',').map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))] }
           : {}),
@@ -88,10 +95,12 @@ export default function SourceExecutionConfig({ sourceId }) {
 
   return (
     <form onSubmit={save} className="flex flex-col gap-5">
-      <Alert variant={mode === 'live' ? 'warning' : 'info'} title="Execution safety">
+      <Alert variant={['live', 'authorized_automation'].includes(mode) ? 'warning' : 'info'} title="Execution safety">
         <p className="text-xs">
-          Saving this configuration never places an order. Live intents still require source
-          authorization, signal validation, user review, risk checks and an active destination.
+          Saving this configuration never places an order. Live intents require source
+          authorization, signal validation, risk checks and an active destination.
+          Authorized automation submits signals that pass policy; terminal risk rules can
+          still hold an order for confirmation.
           Simulation never uses live exchange connections; saving this setting does not start a simulation.
         </p>
       </Alert>
@@ -162,10 +171,10 @@ export default function SourceExecutionConfig({ sourceId }) {
         <CardHeader>
           <CardTitle>Signal limits</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="grid gap-2">
             <Label htmlFor="source-max-leverage">Maximum leverage</Label>
-            <Input id="source-max-leverage" type="number" min="1" max="125" step="0.1"
+            <Input id="source-max-leverage" type="number" min="1" max="20" step="1"
               value={maxLeverage} onChange={(event) => setMaxLeverage(event.target.value)} />
           </div>
           <div className="grid gap-2">
@@ -174,18 +183,30 @@ export default function SourceExecutionConfig({ sourceId }) {
               value={riskPerTradePct} onChange={(event) => setRiskPerTradePct(event.target.value)} />
           </div>
           <div className="grid gap-2">
+            <Label htmlFor="source-max-notional">Maximum order notional (quote currency)</Label>
+            <Input id="source-max-notional" type="number" min="0.01" step="any"
+              value={maxNotional} onChange={(event) => setMaxNotional(event.target.value)} />
+          </div>
+          <div className="grid gap-2">
             <Label htmlFor="source-symbols">Allowed symbols</Label>
             <Input id="source-symbols" value={allowedSymbols}
               onChange={(event) => setAllowedSymbols(event.target.value)}
               placeholder="BTCUSDT, ETHUSDT" />
           </div>
+          <label className="flex items-center gap-2 rounded-md border border-border p-3 text-sm">
+            <input type="checkbox" checked={allowMarketOrders}
+              onChange={(event) => setAllowMarketOrders(event.target.checked)} />
+            Allow market orders
+          </label>
         </CardContent>
       </Card>
 
-      {mode === 'live' ? (
+      {['live', 'authorized_automation'].includes(mode) ? (
         <p className="flex items-center gap-2 text-xs text-amber-700" role="note">
           <AlertTriangle className="h-4 w-4" />
-          Live mode is an explicit setting. It does not bypass review, account permissions or risk controls.
+          {mode === 'authorized_automation'
+            ? 'Authorized automation can place real orders. It does not bypass account permissions or risk controls.'
+            : 'Live mode is an explicit setting. It does not bypass review, account permissions or risk controls.'}
         </p>
       ) : null}
       <div className="flex justify-end">

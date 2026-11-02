@@ -31,6 +31,7 @@ import { createMarketplaceRoutes } from './marketplace.routes.js';
 import { createMarketplaceListeners } from './listeners.js';
 import { createTraderSignalExecutionService } from './trader-signal-execution.service.js';
 import { createStrategyService } from './strategy.service.js';
+import { createOfficialTraderService } from './official-trader.service.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createMarketplaceModule({ services }) {
@@ -131,6 +132,14 @@ export function createMarketplaceModule({ services }) {
     logger,
   });
 
+  const officialTraderService = createOfficialTraderService({
+    db: services.db,
+    marketData: services.connections.marketData,
+    ai: services.ai,
+    publication: publicationService,
+    logger,
+  });
+
   const moderationService = createModerationService({
     db: services.db,
     queries,
@@ -190,6 +199,9 @@ export function createMarketplaceModule({ services }) {
       authorizeExecution: (params) => strategyService.authorizeExecution(params),
       recordOrder: (params) => strategyService.recordOrder(params),
     },
+    officialTrader: {
+      scanNow: () => officialTraderService.scanNow(),
+    },
   };
 
   return {
@@ -204,6 +216,7 @@ export function createMarketplaceModule({ services }) {
     copyOrchestration: copyOrchestrationService,
     traderSignalExecution: traderSignalExecutionService,
     strategy: strategyService,
+    officialTrader: officialTraderService,
     performance: performanceService,
     disclosure: disclosureService,
     moderation: moderationService,

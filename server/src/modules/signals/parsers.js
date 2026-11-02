@@ -16,7 +16,9 @@ export function createParserService({ db, queries, logger }) {
   function templateParser(content) {
     const result = {
       instrument: null,
+      marketType: null,
       direction: null,
+      orderType: null,
       entry: null,
       entryRange: null,
       stopLoss: null,
@@ -34,12 +36,18 @@ export function createParserService({ db, queries, logger }) {
     if (/\b(long|buy|bullish)\b/i.test(content)) result.direction = 'long';
     else if (/\b(short|sell|bearish)\b/i.test(content)) result.direction = 'short';
 
+    if (/\b(?:spot|cash market)\b/i.test(content)) result.marketType = 'spot';
+    else if (/\b(?:futures?|perpetuals?|perps?)\b/i.test(content)) result.marketType = 'futures';
+
+    if (/\blimit(?:\s+order)?\b/i.test(content)) result.orderType = 'limit';
+    else if (/\bmarket(?:\s+order)?\b/i.test(content)) result.orderType = 'market';
+
     // Entry range: "60000-60200" or "entry 60000 to 60200"
-    const rangeMatch = content.match(/entry\s*[:\-]?\s*([\d.]+)\s*[-\s]+([\d.]+)/i);
+    const rangeMatch = content.match(/entry(?:\s+range)?\s*[:\-]?\s*([\d.]+)\s*(?:-|to|\s)\s*([\d.]+)/i);
     if (rangeMatch) {
       result.entryRange = { min: rangeMatch[1], max: rangeMatch[2] };
     } else {
-      const entryMatch = content.match(/entry\s*[:\-]?\s*([\d.]+)/i);
+      const entryMatch = content.match(/entry(?:\s+price)?\s*[:\-]?\s*([\d.]+)/i);
       if (entryMatch) result.entry = entryMatch[1];
     }
 
@@ -100,7 +108,9 @@ export function createParserService({ db, queries, logger }) {
   function countExtractedFields(result) {
     let count = 0;
     if (result.instrument) count += 1;
+    if (result.marketType) count += 1;
     if (result.direction) count += 1;
+    if (result.orderType) count += 1;
     if (result.entry) count += 1;
     if (result.entryRange) count += 1;
     if (result.stopLoss) count += 1;

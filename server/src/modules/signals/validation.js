@@ -65,6 +65,24 @@ export function createValidationService({ db, queries, connections, events, logg
       });
     }
 
+    checks.push({
+      checkKey: 'market_type_valid',
+      result: ['spot', 'futures'].includes(candidate.market_type) ? 'passed' : 'failed',
+      severity: 'high',
+      message: ['spot', 'futures'].includes(candidate.market_type)
+        ? 'Market type is valid'
+        : 'Market type must be identified as spot or futures',
+    });
+
+    checks.push({
+      checkKey: 'order_type_valid',
+      result: ['market', 'limit'].includes(candidate.order_type) ? 'passed' : 'failed',
+      severity: 'high',
+      message: ['market', 'limit'].includes(candidate.order_type)
+        ? 'Order type is valid'
+        : 'Order type must be identified as market or limit',
+    });
+
     // 4. Entry price format
     if (candidate.entry) {
       const entryCheck = validatePrice(candidate.entry);
@@ -75,27 +93,44 @@ export function createValidationService({ db, queries, connections, events, logg
         message: entryCheck.valid ? 'Entry price is valid' : entryCheck.error,
       });
     } else if (candidate.entry_range) {
+      const min = Number(candidate.entry_range.min);
+      const max = Number(candidate.entry_range.max);
+      const validRange = validatePrice(min).valid && validatePrice(max).valid && min <= max;
       checks.push({
         checkKey: 'entry_format',
-        result: 'passed',
-        severity: 'info',
-        message: 'Entry range provided',
+        result: validRange ? 'passed' : 'failed',
+        severity: 'high',
+        message: validRange ? 'Entry range is valid' : 'Entry range must contain positive prices in ascending order',
       });
     } else {
       checks.push({
         checkKey: 'entry_required',
-        result: 'warning',
+        result: 'failed',
         severity: 'high',
         message: 'No entry price or range provided',
-        remediation: 'Provide a scalar entry or range, or configure a policy that supplies it',
+        remediation: 'Provide a scalar entry price or an unambiguous entry range',
       });
     }
 
+    checks.push({
+      checkKey: 'stop_loss_required',
+      result: candidate.stop_loss ? 'passed' : 'failed',
+      severity: 'high',
+      message: candidate.stop_loss ? 'Stop-loss is provided' : 'A stop-loss is required for automated execution',
+    });
+    checks.push({
+      checkKey: 'target_required',
+      result: targets.length > 0 ? 'passed' : 'failed',
+      severity: 'high',
+      message: targets.length > 0 ? 'At least one take-profit target is provided' : 'At least one take-profit target is required for automated execution',
+    });
+
     // 5. Stop-loss direction consistency
-    if (candidate.stop_loss && candidate.entry) {
+    if (candidate.stop_loss && (candidate.entry || candidate.entry_range)) {
       const sl = Number(candidate.stop_loss);
-      const entry = Number(candidate.entry);
-      const valid = candidate.direction === 'long' ? sl < entry : sl > entry;
+      const lower = Number(candidate.entry_range?.min ?? candidate.entry);
+      const upper = Number(candidate.entry_range?.max ?? candidate.entry);
+      const valid = candidate.direction === 'long' ? sl < lower : sl > upper;
       checks.push({
         checkKey: 'stop_loss_direction',
         result: valid ? 'passed' : 'failed',
@@ -105,8 +140,10 @@ export function createValidationService({ db, queries, connections, events, logg
     }
 
     // 6. Target direction consistency
-    if (targets.length > 0 && candidate.entry) {
-      const entry = Number(candidate.entry);
+    if (targets.length > 0 && (candidate.entry || candidate.entry_range)) {
+      const entry = candidate.direction === 'long'
+        ? Number(candidate.entry_range?.max ?? candidate.entry)
+        : Number(candidate.entry_range?.min ?? candidate.entry);
       const allValid = targets.every((t) =>
         candidate.direction === 'long' ? Number(t.value) > entry : Number(t.value) < entry
       );

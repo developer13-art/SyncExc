@@ -420,6 +420,57 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
     return price;
   }
 
+  async function getCandles({
+    exchangeCode,
+    symbol,
+    marketType = 'spot',
+    timeframe = '15m',
+    limit = 120,
+  }) {
+    const exchange = String(exchangeCode || '').toLowerCase();
+    const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+    const normalizedMarketType = marketType === 'spot' ? 'spot' : 'futures';
+    const exchangeConfig = EXCHANGES[exchange];
+    if (!exchangeConfig) throw new ValidationError('Unsupported exchange');
+    if (!/^[A-Z0-9._-]{3,48}$/.test(normalizedSymbol)) throw new ValidationError('Invalid exchange symbol');
+    if (!exchangeConfig.timeframes.includes(timeframe)) throw new ValidationError('Unsupported candle timeframe');
+    const safeLimit = Math.max(25, Math.min(300, Number(limit) || 120));
+    const key = `candles:${exchange}:${normalizedMarketType}:${normalizedSymbol}:${timeframe}:${safeLimit}`;
+    const cached = cache.get(key);
+    if (cached && now() - cached.cachedAt < CACHE_TTL_MS) {
+      return { ...cached.value, cacheAgeMs: now() - cached.cachedAt };
+    }
+
+    const endpoint = providerData(exchange, {
+      symbol: normalizedSymbol,
+      marketType: normalizedMarketType,
+      timeframe,
+      limit: safeLimit,
+    }).candles;
+    const candles = normalizeProviderRows(exchange, endpoint[1], await request(endpoint[0], exchange));
+    if (candles.length === 0) {
+      throw new AppError(`No market candles are available for ${normalizedSymbol}`, {
+        code: 'MARKET_CANDLES_UNAVAILABLE',
+        status: 503,
+        expose: true,
+      });
+    }
+    const value = {
+      exchangeCode: exchange,
+      symbol: normalizedSymbol,
+      marketType: normalizedMarketType,
+      timeframe,
+      candles,
+      retrievedAt: now(),
+    };
+    cache.set(key, { cachedAt: now(), value });
+    if (cache.size > MAX_CACHE_ENTRIES) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey) cache.delete(oldestKey);
+    }
+    return { ...value, cacheAgeMs: 0 };
+  }
+
   async function getMarketData({ exchangeCode, symbol, marketType = 'spot', timeframe = '1h', limit = 120 }) {
     const exchange = String(exchangeCode || '').toLowerCase();
     const normalizedSymbol = String(symbol || '').trim().toUpperCase();
@@ -505,7 +556,7 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
     return { ...result, cacheAgeMs: 0 };
   }
 
-  return { getMarketData, getSpotPrice };
+  return { getMarketData, getSpotPrice, getCandles };
 }
 
 export default createMarketDataService;

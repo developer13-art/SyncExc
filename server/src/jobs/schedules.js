@@ -35,6 +35,14 @@ export async function registerAllSchedules({ scheduler }) {
   });
 
   scheduler.add({
+    name: 'signal-execution-sweep',
+    type: 'signal_execution_sweep',
+    intervalMs: 30 * 1000,
+    payload: async () => ({ limit: 50 }),
+    priority: 45,
+  });
+
+  scheduler.add({
     name: 'marketplace-trader-trade-sync-tick',
     type: 'marketplace_trader_trade_sync',
     intervalMs: 60 * 1000,
@@ -75,6 +83,13 @@ export async function registerAllSchedules({ scheduler }) {
     type: 'workflow_schedule',
     intervalMs: 15 * 60 * 1000,
     priority: 80,
+  });
+
+  scheduler.add({
+    name: 'marketplace-official-trader-scan',
+    type: 'marketplace_official_trader_scan',
+    intervalMs: 15 * 60 * 1000,
+    priority: 70,
   });
 
   /* ===========================================================================

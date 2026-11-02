@@ -126,6 +126,10 @@ export async function registerAllHandlers({ registry, services }) {
     }
   });
 
+  register('marketplace_official_trader_scan', async ({ services: s }) => {
+    await s.marketplace.officialTrader.scanNow();
+  });
+
   register('sync_reconcile', async ({ payload, services: s }) => {
     const reconciliation = s.synchronization.reconciliation;
 
@@ -175,6 +179,10 @@ export async function registerAllHandlers({ registry, services }) {
 
   register('signal_validate', async ({ payload, services: s }) => {
     await s.signals.validation.validateCandidate(payload.candidateId);
+  });
+
+  register('signal_execution_sweep', async ({ payload, services: s }) => {
+    await s.signals.sourceExecution.resumePendingIntents({ limit: payload?.limit || 50 });
   });
 
   /* ===========================================================================

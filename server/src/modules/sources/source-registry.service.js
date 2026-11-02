@@ -344,7 +344,7 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
   }) {
     const source = await getSourceForWorkspace({ sourceId, workspaceId });
     if (source.workspace_id !== workspaceId) throw new NotFoundError('Source');
-    if (!['monitor_only', 'review', 'simulate', 'live'].includes(mode)) {
+    if (!['monitor_only', 'review', 'simulate', 'live', 'authorized_automation'].includes(mode)) {
       throw new ValidationError('Unsupported execution mode');
     }
     if (!Array.isArray(destinationAccountIds) || destinationAccountIds.length > 10) {
@@ -375,13 +375,14 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
     if (['monitor_only', 'simulate'].includes(mode) && accountIds.length > 0) {
       throw new ValidationError('Monitoring and simulation modes cannot target exchange accounts');
     }
-    if (mode === 'live' && accountResult.rows.some((account) => account.environment !== 'live')) {
+    if (['live', 'authorized_automation'].includes(mode) &&
+        accountResult.rows.some((account) => account.environment !== 'live')) {
       throw new ValidationError('Live mode requires live exchange accounts; testnet accounts are not eligible');
     }
-    if (mode === 'live' && accountIds.length === 0) {
-      throw new ValidationError('Live mode requires at least one explicitly selected destination');
+    if (['live', 'authorized_automation'].includes(mode) && accountIds.length === 0) {
+      throw new ValidationError('Live execution requires at least one explicitly selected destination');
     }
-    if (mode === 'live') {
+    if (['live', 'authorized_automation'].includes(mode)) {
       const riskPerTradePct = Number(settings.riskPerTradePct);
       const maxLeverage = Number(settings.maxLeverage);
       if (!Number.isFinite(riskPerTradePct) || riskPerTradePct <= 0 || riskPerTradePct > 5) {
@@ -389,6 +390,13 @@ export function createSourceRegistryService({ db, queries, events, audit, logger
       }
       if (!Number.isInteger(maxLeverage) || maxLeverage < 1 || maxLeverage > 20) {
         throw new ValidationError('Live mode requires maxLeverage between 1 and 20');
+      }
+      if (settings.maxNotional != null &&
+          (!Number.isFinite(Number(settings.maxNotional)) || Number(settings.maxNotional) <= 0)) {
+        throw new ValidationError('maxNotional must be a positive number');
+      }
+      if (settings.allowMarketOrders != null && typeof settings.allowMarketOrders !== 'boolean') {
+        throw new ValidationError('allowMarketOrders must be a boolean');
       }
       if (settings.allowedSymbols != null &&
           (!Array.isArray(settings.allowedSymbols) || settings.allowedSymbols.length > 50 ||

@@ -37,12 +37,52 @@ export function createIssueDetectionService({ db, queries, logger }) {
       });
     }
 
+    if (!candidate.market_type) {
+      issues.push({
+        issueType: 'missing_field',
+        severity: 'high',
+        affectedFields: ['market_type'],
+        detectionMethod: 'rule',
+        evidence: { required: true },
+      });
+    }
+
+    if (!candidate.order_type) {
+      issues.push({
+        issueType: 'missing_field',
+        severity: 'high',
+        affectedFields: ['order_type'],
+        detectionMethod: 'rule',
+        evidence: { required: true },
+      });
+    }
+
     // Missing entry (both scalar and range)
     if (!candidate.entry && !candidate.entry_range) {
       issues.push({
         issueType: 'missing_field',
         severity: 'high',
         affectedFields: ['entry'],
+        detectionMethod: 'rule',
+        evidence: { required: true },
+      });
+    }
+
+    if (!candidate.stop_loss) {
+      issues.push({
+        issueType: 'missing_field',
+        severity: 'high',
+        affectedFields: ['stop_loss'],
+        detectionMethod: 'rule',
+        evidence: { required: true },
+      });
+    }
+
+    if (targets.length === 0) {
+      issues.push({
+        issueType: 'missing_field',
+        severity: 'high',
+        affectedFields: ['targets'],
         detectionMethod: 'rule',
         evidence: { required: true },
       });
@@ -124,8 +164,14 @@ export function createIssueDetectionService({ db, queries, logger }) {
     }
 
     // Store issues
+    const existingIssues = await queries.listOpenIssues(candidateId);
     const persisted = [];
     for (const issue of issues) {
+      const alreadyExists = existingIssues.some((existing) =>
+        existing.issue_type === issue.issueType &&
+        JSON.stringify(existing.affected_fields || []) === JSON.stringify(issue.affectedFields)
+      );
+      if (alreadyExists) continue;
       await db.tx(async (tx) => {
         const created = await queries.insertIssue(tx, {
           candidateId,

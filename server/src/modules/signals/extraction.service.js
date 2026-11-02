@@ -6,7 +6,10 @@
  */
 
 import { NotFoundError } from '../../lib/errors.js';
-import { extractInstrument, normalizeDirection } from '@syncexc/shared';
+import { extractInstrument, normalizeDirection, validatePrice } from '@syncexc/shared';
+
+const REVIEW_LANGUAGE_REGEX =
+  /\b(?:cancel(?:led|ed)?|ignore|do not|don't|not a signal|close(?:d)?|exit|update|modify|amend)\b/i;
 
 export function createExtractionService({
   db,
@@ -22,6 +25,8 @@ export function createExtractionService({
   async function extractFromMessage({ messageId }) {
     const message = await queries.findMessageById(messageId);
     if (!message) throw new NotFoundError('Message');
+    const existingCandidate = await queries.findCandidateByMessageId(messageId);
+    if (existingCandidate) return { isSignal: true, candidate: existingCandidate, replayed: true };
 
     const source = await db.query(
       `SELECT * FROM signal_sources WHERE id = $1`,
@@ -34,10 +39,17 @@ export function createExtractionService({
 
     // Step 2: AI interpreter (only if the parser was inconclusive)
     let aiResult = null;
+    const requiresReview = REVIEW_LANGUAGE_REGEX.test(message.content);
     const parserIncomplete =
       !parserResult ||
       !parserResult.result.instrument ||
-      !parserResult.result.direction;
+      !parserResult.result.direction ||
+      !parserResult.result.marketType ||
+      !parserResult.result.orderType ||
+      !parserResult.result.entry ||
+      !parserResult.result.stopLoss ||
+      !parserResult.result.targets?.length ||
+      requiresReview;
 
     if (parserIncomplete && aiInterpreter) {
       try {
@@ -54,6 +66,7 @@ export function createExtractionService({
     const merged = mergeResults({
       parser: parserResult?.result,
       ai: aiResult?.result,
+      requiresReview,
     });
 
     if (!merged.isSignal) {
@@ -69,6 +82,7 @@ export function createExtractionService({
         instrument: merged.instrument,
         marketType: merged.marketType,
         direction: merged.direction,
+        orderType: merged.orderType,
         entry: merged.entry,
         entryRange: merged.entryRange,
         stopLoss: merged.stopLoss,
@@ -77,13 +91,17 @@ export function createExtractionService({
       });
 
       // Insert signal fields with provenance
-      await queries.insertSignalField(tx, {
-        candidateId: created.id,
-        fieldName: 'instrument',
-        value: merged.instrument,
-        provenance: merged.provenance.instrument,
-        confidence: merged.confidence.instrument,
-      });
+      for (const fieldName of ['instrument', 'marketType', 'direction', 'orderType']) {
+        const value = merged[fieldName];
+        if (!value) continue;
+        await queries.insertSignalField(tx, {
+          candidateId: created.id,
+          fieldName: fieldName === 'marketType' ? 'market_type' : fieldName === 'orderType' ? 'order_type' : fieldName,
+          value,
+          provenance: merged.provenance[fieldName],
+          confidence: merged.confidence[fieldName],
+        });
+      }
 
       if (merged.entry) {
         await queries.insertSignalField(tx, {
@@ -135,6 +153,17 @@ export function createExtractionService({
         });
       }
 
+      for (const issue of merged.issues) {
+        await queries.insertIssue(tx, {
+          candidateId: created.id,
+          issueType: 'ambiguous_value',
+          severity: 'high',
+          affectedFields: [],
+          evidence: { detail: issue },
+          detectionMethod: 'ai_interpreter',
+        });
+      }
+
       // Insert version 1
       await queries.insertCandidateVersion(tx, {
         candidateId: created.id,
@@ -158,104 +187,204 @@ export function createExtractionService({
     return { isSignal: true, candidate };
   }
 
-  function mergeResults({ parser, ai }) {
+  function mergeResults({ parser, ai, requiresReview }) {
     const result = {
       isSignal: false,
       instrument: null,
       marketType: null,
       direction: null,
+      orderType: null,
       entry: null,
       entryRange: null,
       stopLoss: null,
       targets: [],
       leverage: null,
+      issues: requiresReview
+        ? ['Message language suggests a signal update, cancellation, or negation and requires review.']
+        : [],
       provenance: {},
       confidence: {},
     };
 
     if (parser) {
       if (parser.instrument) {
-        result.instrument = extractInstrument(parser.instrument) || parser.instrument;
-        result.provenance.instrument = 'deterministic_parser';
-        result.confidence.instrument = 'high';
-        result.isSignal = true;
+        result.instrument = normalizeSignalInstrument(parser.instrument);
+        if (result.instrument) {
+          result.provenance.instrument = 'deterministic_parser';
+          result.confidence.instrument = 'high';
+        }
+      }
+      if (parser.marketType) {
+        result.marketType = normalizeMarketType(parser.marketType);
+        if (result.marketType) {
+          result.provenance.marketType = 'deterministic_parser';
+          result.confidence.marketType = 'high';
+        }
       }
       if (parser.direction) {
         result.direction = normalizeDirection(parser.direction);
-        result.provenance.direction = 'deterministic_parser';
-        result.confidence.direction = 'high';
+        if (result.direction) {
+          result.provenance.direction = 'deterministic_parser';
+          result.confidence.direction = 'high';
+        }
+      }
+      if (parser.orderType) {
+        result.orderType = normalizeOrderType(parser.orderType);
+        if (result.orderType) {
+          result.provenance.orderType = 'deterministic_parser';
+          result.confidence.orderType = 'high';
+        }
       }
       if (parser.entry) {
-        result.entry = parser.entry;
-        result.provenance.entry = 'deterministic_parser';
-        result.confidence.entry = 'high';
+        result.entry = normalizePrice(parser.entry);
+        if (result.entry) {
+          result.provenance.entry = 'deterministic_parser';
+          result.confidence.entry = 'high';
+        }
       }
       if (parser.entryRange) {
-        result.entryRange = parser.entryRange;
-        result.provenance.entry = 'deterministic_parser';
-        result.confidence.entry = 'high';
+        result.entryRange = normalizeEntryRange(parser.entryRange);
+        if (result.entryRange) {
+          result.provenance.entry = 'deterministic_parser';
+          result.confidence.entry = 'high';
+        }
       }
       if (parser.stopLoss) {
-        result.stopLoss = parser.stopLoss;
-        result.provenance.stopLoss = 'deterministic_parser';
-        result.confidence.stopLoss = 'high';
+        result.stopLoss = normalizePrice(parser.stopLoss);
+        if (result.stopLoss) {
+          result.provenance.stopLoss = 'deterministic_parser';
+          result.confidence.stopLoss = 'high';
+        }
       }
       if (parser.targets?.length) {
-        result.targets = parser.targets;
-        result.provenance.targets = 'deterministic_parser';
-        result.confidence.targets = 'high';
+        result.targets = parser.targets.map(normalizePrice).filter(Boolean);
+        if (result.targets.length > 0) {
+          result.provenance.targets = 'deterministic_parser';
+          result.confidence.targets = 'high';
+        }
       }
       if (parser.leverage) {
-        result.leverage = parser.leverage;
-        result.provenance.leverage = 'deterministic_parser';
-        result.confidence.leverage = 'high';
+        result.leverage = normalizePrice(parser.leverage);
+        if (result.leverage) {
+          result.provenance.leverage = 'deterministic_parser';
+          result.confidence.leverage = 'high';
+        }
       }
     }
 
-    if (ai && ai.isSignal) {
+    if (ai && !ai.isSignal) {
+      result.isSignal = false;
+      return result;
+    }
+
+    if (ai?.isSignal) {
+      result.isSignal = true;
+      result.issues = [
+        ...result.issues,
+        ...(Array.isArray(ai.issues)
+          ? ai.issues.filter((issue) => typeof issue === 'string').map((issue) => issue.slice(0, 500))
+          : []),
+      ];
+      if (!Number.isFinite(Number(ai.confidence)) || Number(ai.confidence) < 0.8) {
+        result.issues.push('AI extraction confidence is below the automation threshold and requires review.');
+      }
       // Fill in missing fields from AI
       if (!result.instrument && ai.instrument) {
-        result.instrument = ai.instrument;
-        result.provenance.instrument = 'ai_interpreter';
-        result.confidence.instrument = ai.confidence > 0.7 ? 'medium' : 'low';
+        result.instrument = normalizeSignalInstrument(ai.instrument);
+        if (result.instrument) {
+          result.provenance.instrument = 'ai_interpreter';
+          result.confidence.instrument = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
         result.isSignal = true;
       }
       if (!result.direction && ai.direction) {
-        result.direction = ai.direction;
-        result.provenance.direction = 'ai_interpreter';
-        result.confidence.direction = ai.confidence > 0.7 ? 'medium' : 'low';
+        result.direction = normalizeDirection(ai.direction);
+        if (result.direction) {
+          result.provenance.direction = 'ai_interpreter';
+          result.confidence.direction = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
       }
       if (!result.marketType && ai.marketType) {
-        result.marketType = ai.marketType;
-        result.provenance.marketType = 'ai_interpreter';
+        result.marketType = normalizeMarketType(ai.marketType);
+        if (result.marketType) {
+          result.provenance.marketType = 'ai_interpreter';
+          result.confidence.marketType = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
+      }
+      if (!result.orderType && ai.orderType) {
+        result.orderType = normalizeOrderType(ai.orderType);
+        if (result.orderType) {
+          result.provenance.orderType = 'ai_interpreter';
+          result.confidence.orderType = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
       }
       if (!result.entry && !result.entryRange && ai.entry) {
-        result.entry = ai.entry;
-        result.provenance.entry = 'ai_interpreter';
-        result.confidence.entry = ai.confidence > 0.7 ? 'medium' : 'low';
+        result.entry = normalizePrice(ai.entry);
+        if (result.entry) {
+          result.provenance.entry = 'ai_interpreter';
+          result.confidence.entry = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
       }
       if (!result.entry && !result.entryRange && ai.entryRange) {
-        result.entryRange = ai.entryRange;
-        result.provenance.entry = 'ai_interpreter';
+        result.entryRange = normalizeEntryRange(ai.entryRange);
+        if (result.entryRange) {
+          result.provenance.entry = 'ai_interpreter';
+          result.confidence.entry = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
       }
       if (!result.stopLoss && ai.stopLoss) {
-        result.stopLoss = ai.stopLoss;
-        result.provenance.stopLoss = 'ai_interpreter';
-        result.confidence.stopLoss = ai.confidence > 0.7 ? 'medium' : 'low';
+        result.stopLoss = normalizePrice(ai.stopLoss);
+        if (result.stopLoss) {
+          result.provenance.stopLoss = 'ai_interpreter';
+          result.confidence.stopLoss = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
       }
       if (!result.targets.length && ai.targets?.length) {
-        result.targets = ai.targets;
-        result.provenance.targets = 'ai_interpreter';
-        result.confidence.targets = ai.confidence > 0.7 ? 'medium' : 'low';
+        result.targets = ai.targets.map(normalizePrice).filter(Boolean);
+        if (result.targets.length > 0) {
+          result.provenance.targets = 'ai_interpreter';
+          result.confidence.targets = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
       }
       if (!result.leverage && ai.leverage) {
-        result.leverage = ai.leverage;
-        result.provenance.leverage = 'ai_interpreter';
-        result.confidence.leverage = ai.confidence > 0.7 ? 'medium' : 'low';
+        result.leverage = normalizePrice(ai.leverage);
+        if (result.leverage) {
+          result.provenance.leverage = 'ai_interpreter';
+          result.confidence.leverage = ai.confidence > 0.7 ? 'medium' : 'low';
+        }
       }
     }
 
+    if (!ai) result.isSignal = Boolean(result.instrument && result.direction);
     return result;
+  }
+
+  function normalizeSignalInstrument(value) {
+    const instrument = extractInstrument(value);
+    if (!instrument) return null;
+    return instrument.toUpperCase().replace(/[/:_-]/g, '');
+  }
+
+  function normalizePrice(value) {
+    const price = String(value ?? '').trim();
+    return validatePrice(price).valid ? price : null;
+  }
+
+  function normalizeEntryRange(value) {
+    const min = normalizePrice(value?.min);
+    const max = normalizePrice(value?.max);
+    if (!min || !max || Number(min) > Number(max)) return null;
+    return { min, max };
+  }
+
+  function normalizeOrderType(value) {
+    const orderType = String(value || '').toLowerCase();
+    return ['market', 'limit'].includes(orderType) ? orderType : null;
+  }
+
+  function normalizeMarketType(value) {
+    const marketType = String(value || '').toLowerCase();
+    return ['futures', 'perpetual'].includes(marketType) ? 'futures' : marketType === 'spot' ? 'spot' : null;
   }
 
   async function getCandidate(candidateId) {

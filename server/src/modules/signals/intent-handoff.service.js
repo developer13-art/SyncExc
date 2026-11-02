@@ -72,8 +72,8 @@ export function createIntentHandoffService({ db, queries, events, logger }) {
         'SIMULATION_HANDOFF_UNAVAILABLE'
       );
     }
-    if (executionMode === 'authorized_automation' && configuredMode !== 'live') {
-      throw new ConflictError('Authorized automation requires explicit live mode for this source', 'LIVE_MODE_REQUIRED');
+    if (executionMode === 'authorized_automation' && configuredMode !== 'authorized_automation') {
+      throw new ConflictError('Authorized automation must be explicitly enabled for this source', 'AUTOMATION_NOT_AUTHORIZED');
     }
     if (executionMode === 'confirm_before_execution' && !['review', 'live'].includes(configuredMode)) {
       throw new ConflictError('The source configuration does not allow reviewed execution', 'REVIEW_MODE_REQUIRED');
@@ -92,6 +92,10 @@ export function createIntentHandoffService({ db, queries, events, logger }) {
     if (!decision || decision.outcome !== 'eligible_for_handoff') {
       throw new ConflictError('Candidate has no current successful risk and eligibility decision', 'NOT_ELIGIBLE');
     }
+    const validation = await queries.findLatestValidation(candidateId);
+    if (!validation || validation.outcome !== 'passed') {
+      throw new ConflictError('Candidate validation has not passed', 'VALIDATION_NOT_PASSED');
+    }
 
     const destinationResult = await db.query(
       `
@@ -109,7 +113,7 @@ export function createIntentHandoffService({ db, queries, events, logger }) {
     if (executionMode !== 'simulation_only' && destinationResult.rows.length === 0) {
       throw new ConflictError('Select at least one active destination account before execution', 'DESTINATION_REQUIRED');
     }
-    if (configuredMode === 'live' &&
+    if (['live', 'authorized_automation'].includes(configuredMode) &&
         destinationResult.rows.some((destination) => destination.environment !== 'live')) {
       throw new ConflictError('Live mode requires live destinations; testnet accounts cannot be used', 'LIVE_DESTINATION_REQUIRED');
     }
@@ -120,6 +124,7 @@ export function createIntentHandoffService({ db, queries, events, logger }) {
       instrument: candidate.instrument,
       marketType: candidate.market_type,
       direction: candidate.direction,
+      orderType: candidate.order_type,
       entry: candidate.entry,
       entryRange: candidate.entry_range,
       stopLoss: candidate.stop_loss,

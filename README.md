@@ -7,6 +7,7 @@ SyncExc unifies exchange connections, signal sources, AI-assisted signal interpr
 ## Table of Contents
 
 - [Overview](#overview)
+- [Signal automation](#signal-automation)
 - [Architecture](#architecture)
 - [Modules](#modules)
 - [Requirements](#requirements)
@@ -37,6 +38,25 @@ The platform is designed around strict separation of concerns:
 - Notifications report state but never establish outcomes.
 - Simulation runs in strict isolation from live execution.
 - Every consequential action is auditable, idempotent, and reversible where safe.
+
+## Signal automation
+
+Signal sources default to review mode. Automatic execution is opt-in per source
+and requires authorized automation, active monitoring, explicitly selected live
+destination accounts, and configured risk limits. Each candidate passes
+deterministic validation and eligibility checks before the terminal's existing
+permission, balance, and risk controls can submit an order. Ambiguous or
+low-confidence AI extraction is held for review; AI does not authorize trades.
+Source settings also support an allowed-symbol list, a maximum order notional,
+and disabling market orders.
+
+The SyncExc Official marketplace trader scans active supported spot and futures
+instruments every 15 minutes using exchange candles and technical indicators.
+AI reviews up to 10 highest-scoring candidates per scan before publication. Its analysis is
+market-data-only (not news-based), is not financial advice, and is copied only
+when a subscriber has enabled and configured copying. Apply the server database
+migrations and configure an AI provider before enabling these features in a
+deployment.
 
 ## Architecture
 

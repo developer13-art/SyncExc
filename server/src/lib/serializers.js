@@ -505,6 +505,7 @@ export function serializeSignalCandidate(row) {
     instrument: row.instrument,
     marketType: row.market_type || null,
     direction: row.direction,
+    orderType: row.order_type || null,
     entry: row.entry || null,
     entryRange: row.entry_range || null,
     stopLoss: row.stop_loss || null,

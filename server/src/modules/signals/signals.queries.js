@@ -42,6 +42,14 @@ export function createSignalsQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findCandidateByMessageId(messageId) {
+      const result = await db.query(
+        `SELECT * FROM trading_signal_candidates WHERE message_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [messageId]
+      );
+      return result.rows[0] || null;
+    },
+
     async updateMessageStatus(messageId, status) {
       await db.query(
         `UPDATE signal_messages SET processing_status = $2 WHERE id = $1`,
@@ -235,10 +243,10 @@ export function createSignalsQueries({ db }) {
       const result = await client.query(
         `
         INSERT INTO trading_signal_candidates (
-          source_id, message_id, instrument, market_type, direction,
+          source_id, message_id, instrument, market_type, direction, order_type,
           entry, entry_range, stop_loss, leverage, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *
         `,
         [
@@ -247,6 +255,7 @@ export function createSignalsQueries({ db }) {
           data.instrument,
           data.marketType || null,
           data.direction,
+          data.orderType || null,
           data.entry || null,
           data.entryRange ? JSON.stringify(data.entryRange) : null,
           data.stopLoss || null,
@@ -272,12 +281,13 @@ export function createSignalsQueries({ db }) {
         SET instrument = COALESCE($2, instrument),
             market_type = COALESCE($3, market_type),
             direction = COALESCE($4, direction),
-            entry = COALESCE($5, entry),
-            entry_range = COALESCE($6, entry_range),
-            stop_loss = COALESCE($7, stop_loss),
-            leverage = COALESCE($8, leverage),
-            status = COALESCE($9, status),
-            eligibility_outcome = COALESCE($10, eligibility_outcome),
+            order_type = COALESCE($5, order_type),
+            entry = COALESCE($6, entry),
+            entry_range = COALESCE($7, entry_range),
+            stop_loss = COALESCE($8, stop_loss),
+            leverage = COALESCE($9, leverage),
+            status = COALESCE($10, status),
+            eligibility_outcome = COALESCE($11, eligibility_outcome),
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -287,6 +297,7 @@ export function createSignalsQueries({ db }) {
           fields.instrument ?? null,
           fields.marketType ?? null,
           fields.direction ?? null,
+          fields.orderType ?? null,
           fields.entry ?? null,
           fields.entryRange ? JSON.stringify(fields.entryRange) : null,
           fields.stopLoss ?? null,
@@ -446,6 +457,14 @@ export function createSignalsQueries({ db }) {
         [candidateId]
       );
       return result.rows;
+    },
+
+    async findLatestValidation(candidateId) {
+      const result = await db.query(
+        `SELECT * FROM trading_signal_validations WHERE candidate_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [candidateId]
+      );
+      return result.rows[0] || null;
     },
 
     /* =========================================================================
@@ -632,7 +651,9 @@ export function createSignalsQueries({ db }) {
     async listExecutionDestinationResults(intentId) {
       const result = await db.query(
         `
-        SELECT r.*, a.account_type, c.exchange_code, c.environment, c.label AS account_label
+        SELECT r.*, a.account_type, a.status AS account_status, a.connection_id,
+               c.exchange_code, c.environment, c.status AS connection_status,
+               c.label AS account_label
         FROM trading_execution_destination_results r
         JOIN exchange_accounts a ON a.id = r.account_id
         JOIN exchange_connections c ON c.id = a.connection_id

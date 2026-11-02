@@ -65,15 +65,17 @@ const TelegramMessagesQuerySchema = Joi.object({
 });
 
 const ExecutionConfigSchema = Joi.object({
-  mode: Joi.string().valid('monitor_only', 'review', 'simulate', 'live').required(),
+  mode: Joi.string()
+    .valid('monitor_only', 'review', 'simulate', 'live', 'authorized_automation')
+    .required(),
   settings: Joi.object({
     maxLeverage: Joi.number().integer().min(1).max(20).optional(),
     riskPerTradePct: Joi.number().positive().max(5).optional(),
     maxNotional: Joi.number().positive().optional(),
     allowMarketOrders: Joi.boolean().optional(),
     allowedSymbols: Joi.array()
-      .items(Joi.string().trim().uppercase().max(32))
-      .max(100)
+      .items(Joi.string().trim().uppercase().pattern(/^[A-Z0-9._-]{2,24}$/))
+      .max(50)
       .unique()
       .optional(),
   }).default({}),

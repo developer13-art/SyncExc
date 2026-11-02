@@ -15,6 +15,7 @@ export function createEligibilityService({ db, queries, events, logger }) {
     if (!candidate) return null;
 
     const issues = await queries.listOpenIssues(candidateId);
+    const latestValidation = await queries.findLatestValidation(candidateId);
     const source = await db.query(`SELECT * FROM signal_sources WHERE id = $1`, [candidate.source_id]);
     const sourceRow = source.rows[0];
 
@@ -22,9 +23,17 @@ export function createEligibilityService({ db, queries, events, logger }) {
     let outcome;
 
     // Rules in precedence order
-    if (!sourceRow || !['active', 'approved'].includes(sourceRow.status)) {
+    if (
+      !sourceRow ||
+      !['active', 'approved'].includes(sourceRow.status) ||
+      (sourceRow.status === 'active' && !sourceRow.monitoring_enabled)
+    ) {
       outcome = ELIGIBILITY_OUTCOME.BLOCKED_SOURCE;
-      reasons.push({ rule: 'source_status', value: sourceRow?.status || 'missing' });
+      reasons.push({
+        rule: 'source_status',
+        value: sourceRow?.status || 'missing',
+        monitoringEnabled: sourceRow?.monitoring_enabled ?? false,
+      });
     } else if (candidate.status === 'canceled') {
       outcome = ELIGIBILITY_OUTCOME.BLOCKED_CANCELED;
       reasons.push({ rule: 'candidate_canceled' });
@@ -37,9 +46,16 @@ export function createEligibilityService({ db, queries, events, logger }) {
     } else if (issues.some((i) => i.severity === 'high')) {
       outcome = ELIGIBILITY_OUTCOME.REVIEW_REQUIRED;
       reasons.push({ rule: 'high_issues', count: issues.filter((i) => i.severity === 'high').length });
-    } else if (!candidate.instrument || !candidate.direction) {
+    } else if (
+      !candidate.instrument || !candidate.direction || !candidate.market_type ||
+      !candidate.order_type || !candidate.entry && !candidate.entry_range ||
+      !candidate.stop_loss || (await queries.listTargetsForCandidate(candidateId)).length === 0
+    ) {
       outcome = ELIGIBILITY_OUTCOME.WAITING_FOR_DATA;
       reasons.push({ rule: 'missing_required_fields' });
+    } else if (latestValidation?.outcome !== 'passed') {
+      outcome = ELIGIBILITY_OUTCOME.BLOCKED_INVALID;
+      reasons.push({ rule: 'validation_not_passed', validationOutcome: latestValidation?.outcome || 'missing' });
     } else {
       // Check for duplicate execution intents
       const existing = await db.query(
