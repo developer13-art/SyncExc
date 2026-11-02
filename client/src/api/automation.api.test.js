@@ -6,6 +6,7 @@ import { automationApi } from './automation.api.js';
 vi.mock('./client.js', () => ({
   default: {
     get: vi.fn(),
+    getPaged: vi.fn(),
     post: vi.fn(),
   },
 }));
@@ -37,5 +38,28 @@ describe('automationApi workflow definitions', () => {
       '/automation/workflows/workflow-1/versions',
       definition,
     );
+  });
+
+  it('lists workflow runs using the server route and cursor query', async () => {
+    api.getPaged.mockResolvedValue({ items: [], meta: {} });
+
+    await automationApi.listRuns('workflow-1', {
+      limit: 25,
+      cursor: 'next-page',
+      state: 'failed',
+    });
+
+    expect(api.getPaged).toHaveBeenCalledWith(
+      '/automation/workflows/workflow-1/runs',
+      { params: { limit: 25, cursor: 'next-page', state: 'failed' } },
+    );
+  });
+
+  it('loads run details from the server run route', async () => {
+    api.get.mockResolvedValue({ run: { id: 'run-1' }, steps: [] });
+
+    await automationApi.getRun('run-1');
+
+    expect(api.get).toHaveBeenCalledWith('/automation/runs/run-1');
   });
 });

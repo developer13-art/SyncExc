@@ -131,9 +131,15 @@ export function useWorkflow(workflowId, { includeNodeCatalog = false } = {}) {
     error: detailQuery.error,
     refetch: detailQuery.refetch,
     versions: versionsQuery.data ?? [],
+    versionsError: versionsQuery.error,
+    refetchVersions: versionsQuery.refetch,
     triggers: triggersQuery.data ?? [],
+    triggersLoading: triggersQuery.isLoading,
+    triggersError: triggersQuery.error,
+    refetchTriggers: triggersQuery.refetch,
     schedules: schedulesQuery.data ?? [],
     isLoading: detailQuery.isLoading,
+    versionsLoading: versionsQuery.isLoading,
     updateWorkflow: update.mutateAsync,
     validateWorkflow: validate.mutateAsync,
     publishWorkflow: publish.mutateAsync,
@@ -142,25 +148,31 @@ export function useWorkflow(workflowId, { includeNodeCatalog = false } = {}) {
 }
 
 export function useWorkflowRuns(params = {}) {
-  const queryClient = useQueryClient();
+  const {
+    workflowId,
+    status,
+    limit = params.pageSize ?? 25,
+    cursor,
+  } = params;
+  const runParams = {
+    limit,
+    ...(cursor ? { cursor } : {}),
+    ...(status && status !== 'all' ? { state: status } : {}),
+  };
 
   const listQuery = useQuery({
-    queryKey: queryKeys.automation.runs(params),
-    queryFn: () => automationApi.listRuns(params),
+    queryKey: queryKeys.automation.runs({ workflowId, ...runParams }),
+    queryFn: () => automationApi.listRuns(workflowId, runParams),
     staleTime: 10_000,
     refetchInterval: 15_000,
-  });
-
-  const cancel = useMutation({
-    mutationFn: ({ runId, ...payload }) => automationApi.cancelRun(runId, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['automation', 'runs'] }),
   });
 
   return {
     runs: listQuery.data?.items ?? [],
     meta: listQuery.data?.meta ?? {},
     isLoading: listQuery.isLoading,
-    cancelRun: cancel.mutateAsync,
+    error: listQuery.error,
+    refetch: listQuery.refetch,
   };
 }
 
@@ -173,18 +185,17 @@ export function useWorkflowRun(runId) {
     refetchInterval: 10_000,
   });
 
-  const stepsQuery = useQuery({
-    queryKey: queryKeys.automation.runSteps(runId),
-    queryFn: () => automationApi.getRunSteps(runId),
-    enabled: Boolean(runId),
-    staleTime: 5_000,
-    refetchInterval: 10_000,
-  });
-
   return {
-    run: detailQuery.data ?? null,
-    steps: stepsQuery.data ?? [],
+    run: detailQuery.data?.run
+      ? {
+        ...detailQuery.data.run,
+        status: detailQuery.data.run.status ?? detailQuery.data.run.state,
+      }
+      : null,
+    steps: detailQuery.data?.steps ?? [],
     isLoading: detailQuery.isLoading,
+    error: detailQuery.error,
+    refetch: detailQuery.refetch,
   };
 }
 

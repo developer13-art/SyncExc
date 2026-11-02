@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 
@@ -6,29 +6,41 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Ca
 import { DataTable } from '../../components/ui/DataTable.jsx';
 import { IconButton } from '../../components/ui/IconButton.jsx';
 import { Pagination } from '../../components/ui/Pagination.jsx';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { SegmentedControl } from '../../components/navigation/SegmentedControl.jsx';
 import { RunStatusBadge } from '../../components/domain/workflow/RunStatusBadge.jsx';
 import { useWorkflowRuns } from '../../hooks/useAutomation.js';
-import { usePagination } from '../../hooks/usePagination.js';
 import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 export function WorkflowRuns({ workflowId }) {
-  const pagination = usePagination({ initialPageSize: 25 });
   const [status, setStatus] = useState('all');
+  const [cursors, setCursors] = useState([null]);
+  const page = cursors.length;
+  const cursor = cursors[page - 1];
 
   const runsQuery = useWorkflowRuns({
     workflowId,
     status: status === 'all' ? undefined : status,
-    page: pagination.page,
-    pageSize: pagination.pageSize,
+    limit: 25,
+    cursor,
   });
 
   const runs = runsQuery.runs ?? [];
+  const nextCursor = runsQuery.meta?.nextCursor;
+  const totalPages = page + (nextCursor ? 1 : 0);
 
-  if (runsQuery.meta?.total !== undefined) {
-    pagination.setTotal(runsQuery.meta.total);
-  }
+  useEffect(() => {
+    setCursors([null]);
+  }, [workflowId, status]);
+
+  const changePage = (targetPage) => {
+    if (targetPage < page) {
+      setCursors((current) => current.slice(0, targetPage));
+    } else if (targetPage === page + 1 && nextCursor) {
+      setCursors((current) => [...current, nextCursor]);
+    }
+  };
 
   const columns = [
     {
@@ -64,7 +76,7 @@ export function WorkflowRuns({ workflowId }) {
     {
       key: 'status',
       label: 'Status',
-      render: (row) => <RunStatusBadge status={row.status} />,
+      render: (row) => <RunStatusBadge status={row.status ?? row.state} />,
     },
     {
       key: 'durationMs',
@@ -95,7 +107,10 @@ export function WorkflowRuns({ workflowId }) {
                 { value: 'running', label: 'Running' },
               ]}
               value={status}
-              onChange={setStatus}
+              onChange={(value) => {
+                setStatus(value);
+                setCursors([null]);
+              }}
             />
             <IconButton
               label="Refresh"
@@ -110,22 +125,30 @@ export function WorkflowRuns({ workflowId }) {
         </div>
       </CardHeader>
       <CardContent className="p-5 pt-0">
-        <DataTable
-          columns={columns}
-          rows={runs}
-          isLoading={runsQuery.isLoading}
-          emptyTitle="No runs yet"
-          emptyDescription="Runs appear here when the workflow is triggered."
-        />
+        {runsQuery.error ? (
+          <ErrorState
+            title="Unable to load workflow runs"
+            description="Run history could not be retrieved."
+            onRetry={runsQuery.refetch}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            rows={runs}
+            isLoading={runsQuery.isLoading}
+            emptyTitle="No runs yet"
+            emptyDescription="Runs appear here when the workflow is triggered."
+          />
+        )}
 
-        {pagination.total > pagination.pageSize ? (
+        {totalPages > 1 ? (
           <div className="mt-4 flex justify-end">
             <Pagination
-              page={pagination.page}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.goToPage}
-              hasNext={pagination.hasNext}
-              hasPrev={pagination.hasPrev}
+              page={page}
+              totalPages={totalPages}
+              onPageChange={changePage}
+              hasNext={Boolean(nextCursor)}
+              hasPrev={page > 1}
             />
           </div>
         ) : null}

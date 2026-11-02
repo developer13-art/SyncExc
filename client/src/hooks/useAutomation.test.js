@@ -4,11 +4,13 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automationApi } from '../api/index.js';
-import { useWorkflow } from './useAutomation.js';
+import { useWorkflow, useWorkflowRun, useWorkflowRuns } from './useAutomation.js';
 
 vi.mock('../api/index.js', () => ({
   automationApi: {
     getWorkflow: vi.fn(),
+    getRun: vi.fn(),
+    listRuns: vi.fn(),
     listVersions: vi.fn(),
     listNodeCatalog: vi.fn(),
     listTriggers: vi.fn(),
@@ -56,6 +58,65 @@ describe('useWorkflow', () => {
       expect(result.current.workflow?.nodes).toEqual([savedNode]);
       expect(result.current.nodeCatalog).toEqual([catalogNode]);
       expect(result.current.isBuilderLoading).toBe(false);
+    });
+  });
+
+  describe('workflow run hooks', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('uses cursor and state filters for workflow run lists', async () => {
+      automationApi.listRuns.mockResolvedValue({
+        items: [{ id: 'run-1', state: 'failed' }],
+        meta: { nextCursor: 'cursor-2' },
+      });
+
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const wrapper = ({ children }) =>
+        createElement(QueryClientProvider, { client: queryClient }, children);
+      const { result } = renderHook(
+        () => useWorkflowRuns({
+          workflowId: 'workflow-1',
+          status: 'failed',
+          limit: 25,
+          cursor: 'cursor-1',
+        }),
+        { wrapper },
+      );
+
+      await waitFor(() => {
+        expect(result.current.runs).toEqual([{ id: 'run-1', state: 'failed' }]);
+      });
+
+      expect(automationApi.listRuns).toHaveBeenCalledWith('workflow-1', {
+        limit: 25,
+        cursor: 'cursor-1',
+        state: 'failed',
+      });
+      expect(result.current.meta.nextCursor).toBe('cursor-2');
+    });
+
+    it('uses the single run-detail response for run data and steps', async () => {
+      automationApi.getRun.mockResolvedValue({
+        run: { id: 'run-1', state: 'running' },
+        steps: [{ id: 'step-1' }],
+      });
+
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      const wrapper = ({ children }) =>
+        createElement(QueryClientProvider, { client: queryClient }, children);
+      const { result } = renderHook(() => useWorkflowRun('run-1'), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.run?.status).toBe('running');
+      });
+
+      expect(result.current.steps).toEqual([{ id: 'step-1' }]);
     });
   });
 });

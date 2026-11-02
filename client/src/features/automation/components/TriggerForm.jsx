@@ -2,6 +2,7 @@ import { Controller, useForm } from 'react-hook-form';
 
 import { Button } from '../../../components/ui/Button.jsx';
 import { Input } from '../../../components/ui/Input.jsx';
+import { Textarea } from '../../../components/ui/Textarea.jsx';
 import { FormField } from '../../../components/forms/FormField.jsx';
 import {
   Select,
@@ -16,10 +17,11 @@ const TRIGGER_TYPES = [
   { value: 'signal_published', label: 'Signal published' },
   { value: 'signal_validated', label: 'Signal validated' },
   { value: 'source_status_changed', label: 'Source status changed' },
-  { value: 'sync_event', label: 'Synchronization event' },
-  { value: 'order_event', label: 'Order event' },
-  { value: 'risk_alert', label: 'Risk alert' },
-  { value: 'schedule', label: 'Scheduled time' },
+  { value: 'exchange_connection_event', label: 'Exchange connection event' },
+  { value: 'sync_operation_event', label: 'Synchronization operation event' },
+  { value: 'risk_event', label: 'Risk event' },
+  { value: 'circuit_breaker_activated', label: 'Circuit breaker activated' },
+  { value: 'workspace_pause_event', label: 'Workspace pause event' },
   { value: 'webhook', label: 'Authenticated webhook' },
 ];
 
@@ -28,21 +30,18 @@ export function TriggerForm({ value, onSubmit, onCancel, isSubmitting, className
     register,
     control,
     handleSubmit,
-    watch,
     formState: { errors },
   } = useForm({
     defaultValues: {
       type: value?.type ?? 'signal_published',
-      name: value?.name ?? '',
-      filter: value?.filter ?? '',
-      dedupWindowSeconds: value?.dedupWindowSeconds ?? 300,
+      name: value?.name ?? value?.config?.name ?? '',
+      filter: value?.filter
+        ? JSON.stringify(value.filter, null, 2)
+        : value?.config?.filter
+          ? JSON.stringify(value.config.filter, null, 2)
+          : '',
     },
   });
-
-  const type = watch('type');
-  const requiresFilter = ['signal_published', 'signal_validated', 'source_status_changed'].includes(
-    type,
-  );
 
   const submit = handleSubmit((values) => onSubmit?.(values));
 
@@ -78,35 +77,37 @@ export function TriggerForm({ value, onSubmit, onCancel, isSubmitting, className
         >
           <Input
             id="trigger-name"
-            {...register('name', { required: 'Name is required' })}
+            {...register('name', {
+              validate: (value) => value.trim().length > 0 || 'Name is required',
+            })}
             error={errors.name?.message}
           />
         </FormField>
 
-        {requiresFilter ? (
-          <FormField
-            label="Event filter"
-            htmlFor="trigger-filter"
-            hint="Optional filter expression applied to the event before triggering."
-          >
-            <Input
-              id="trigger-filter"
-              placeholder="e.g. instrument starts with BTC"
-              {...register('filter')}
-            />
-          </FormField>
-        ) : null}
-
         <FormField
-          label="Deduplication window (seconds)"
-          htmlFor="trigger-dedup"
-          hint="Repeated events within this window are treated as one trigger."
+          label="Event filter (optional JSON)"
+          htmlFor="trigger-filter"
+          hint='Match event fields, for example {"symbol":"BTCUSDT"}. Use a JSON object.'
+          error={errors.filter?.message}
         >
-          <Input
-            id="trigger-dedup"
-            type="text"
-            inputMode="numeric"
-            {...register('dedupWindowSeconds')}
+          <Textarea
+            id="trigger-filter"
+            rows={3}
+            placeholder={'{"symbol":"BTCUSDT"}'}
+            error={errors.filter?.message}
+            {...register('filter', {
+              validate: (value) => {
+                if (!value.trim()) return true;
+                try {
+                  const parsed = JSON.parse(value);
+                  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                    ? true
+                    : 'Enter a JSON object';
+                } catch {
+                  return 'Enter a valid JSON object';
+                }
+              },
+            })}
           />
         </FormField>
 

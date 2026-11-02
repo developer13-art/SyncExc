@@ -46,12 +46,6 @@ export const automationApi = {
   createTrigger: (workflowId, payload) =>
     api.post(endpoints.automation.workflowTriggers(workflowId), payload),
 
-  updateTrigger: (triggerId, payload) =>
-    api.patch(endpoints.automation.trigger(triggerId), payload),
-
-  pauseTrigger: (triggerId, payload) =>
-    api.post(endpoints.automation.pauseTrigger(triggerId), payload),
-
   listSchedules: (workflowId) =>
     api.get(endpoints.automation.workflowSchedules(workflowId)),
 
@@ -76,13 +70,10 @@ export const automationApi = {
   triggerManualRun: (workflowId, payload) =>
     api.post(endpoints.automation.manualRun(workflowId), payload),
 
-  listRuns: (params) => api.getPaged(endpoints.automation.runs, { params }),
+  listRuns: (workflowId, params) =>
+    api.getPaged(endpoints.automation.runs(workflowId), { params }),
 
   getRun: (runId) => api.get(endpoints.automation.run(runId)),
-
-  getRunSteps: (runId) => api.get(endpoints.automation.runSteps(runId)),
-
-  cancelRun: (runId, payload) => api.post(endpoints.automation.cancelRun(runId), payload),
 
   getMetrics: (workflowId, params) =>
     api.get(endpoints.automation.workflowMetrics(workflowId), { params }),

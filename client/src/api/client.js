@@ -52,6 +52,7 @@ function unwrapPaged(response) {
       items: Array.isArray(body.data) ? body.data : (body.data?.items ?? []),
       meta: {
         ...(body.meta ?? body.data?.meta ?? {}),
+        ...(body.pagination ?? {}),
         ...(body.pagination?.total !== undefined
           ? { total: body.pagination.total }
           : {}),

@@ -108,6 +108,7 @@ export function createAutomationModule({ services }) {
     testRunService,
     executionEngine,
     pauseService,
+    nodeRegistry,
     middleware: services.middleware,
   });
 

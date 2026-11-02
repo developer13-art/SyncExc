@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, XCircle } from 'lucide-react';
+import { ArrowLeft, AlertTriangle } from 'lucide-react';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
@@ -9,15 +9,11 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { RunStatusBadge } from '../../components/domain/workflow/RunStatusBadge.jsx';
 import { RunTimeline } from './components/RunTimeline.jsx';
 import { useWorkflowRun } from '../../hooks/useAutomation.js';
-import { automationApi } from '../../api/index.js';
-import { useToast } from '../../hooks/useToast.js';
-import { getErrorMessage } from '../../api/errors.js';
 import { formatDateTime } from '../../lib/formatters/date.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 export default function WorkflowRunDetails() {
   const { runId } = useParams();
-  const toast = useToast();
   const runQuery = useWorkflowRun(runId);
 
   if (runQuery.isLoading) {
@@ -36,18 +32,6 @@ export default function WorkflowRunDetails() {
 
   const run = runQuery.run;
   const steps = runQuery.steps ?? [];
-
-  const handleCancel = async () => {
-    try {
-      await automationApi.cancelRun(runId, { reason: 'Manual cancellation' });
-      toast.success('Cancellation requested');
-      await runQuery.refetch?.();
-    } catch (err) {
-      toast.error('Cancellation failed', { description: getErrorMessage(err) });
-    }
-  };
-
-  const canCancel = ['running', 'waiting', 'awaiting_approval'].includes(run.status);
 
   return (
     <div className="flex flex-col gap-6">
@@ -71,11 +55,6 @@ export default function WorkflowRunDetails() {
             Version {run.version} · Started {run.startedAt ? formatDateTime(run.startedAt) : '—'}
           </p>
         </div>
-        {canCancel ? (
-          <Button variant="outline" onClick={handleCancel}>
-            <XCircle className="h-4 w-4" /> Cancel run
-          </Button>
-        ) : null}
       </div>
 
       {run.status === 'reconciliation_required' ? (

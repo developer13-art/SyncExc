@@ -52,6 +52,22 @@ const PauseSchema = Joi.object({
   reason: Joi.string().min(10).max(500).required(),
 });
 
+const RunsQuerySchema = PaginationSchema.keys({
+  state: Joi.string().valid(
+    'queued',
+    'running',
+    'waiting',
+    'awaiting_approval',
+    'succeeded',
+    'partially_succeeded',
+    'failed',
+    'cancelled',
+    'timed_out',
+    'paused',
+    'reconciliation_required',
+  ).optional(),
+});
+
 export function createAutomationRoutes(services) {
   const controller = createAutomationController(services);
   const { middleware } = services;
@@ -188,7 +204,7 @@ export function createAutomationRoutes(services) {
     '/workflows/:workflowId/runs',
     middleware.requireAuth(),
     middleware.requireWorkspace(),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(RunsQuerySchema),
     middleware.asyncHandler(controller.listRuns)
   );
 
