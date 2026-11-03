@@ -59,6 +59,15 @@ describe('AI provider errors', () => {
     assert.equal(error.code, 'AI_PROVIDER_ERROR');
     assert.equal(shouldRetryAIError(error), true);
   });
+
+  it('does not retry permanent provider client errors', () => {
+    const error = Object.assign(new Error('Provider request failed'), {
+      code: 'AI_PROVIDER_ERROR',
+      details: { status: 404 },
+    });
+
+    assert.equal(shouldRetryAIError(error), false);
+  });
 });
 
 describe('Groq AI provider', () => {
@@ -71,7 +80,7 @@ describe('Groq AI provider', () => {
     config.ai.provider = 'groq';
     config.ai.groq = {
       apiKey: 'test-groq-key',
-      model: 'llama-3.3-70b-versatile',
+      model: 'qwen/qwen3.6-27b',
       maxTokens: 4096,
     };
     globalThis.fetch = async (url, options) => {
@@ -79,7 +88,7 @@ describe('Groq AI provider', () => {
       return new Response(JSON.stringify({
         choices: [{ message: { content: '{"ok":true}' } }],
         usage: { total_tokens: 12 },
-        model: 'llama-3.3-70b-versatile',
+        model: 'qwen/qwen3.6-27b',
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -98,7 +107,7 @@ describe('Groq AI provider', () => {
       assert.equal(request.url, 'https://api.groq.com/openai/v1/chat/completions');
       assert.equal(request.options.headers.Authorization, 'Bearer test-groq-key');
       assert.deepEqual(JSON.parse(request.options.body), {
-        model: 'llama-3.3-70b-versatile',
+        model: 'qwen/qwen3.6-27b',
         messages: [
           { role: 'system', content: 'Return JSON.' },
           { role: 'user', content: 'Test' },
@@ -110,8 +119,53 @@ describe('Groq AI provider', () => {
       assert.deepEqual(result, {
         content: '{"ok":true}',
         usage: { total_tokens: 12 },
-        model: 'llama-3.3-70b-versatile',
+        model: 'qwen/qwen3.6-27b',
       });
+    } finally {
+      config.ai.provider = originalProvider;
+      config.ai.groq = originalGroqConfig;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('reports Groq error codes without retaining provider error messages', async () => {
+    const originalProvider = config.ai.provider;
+    const originalGroqConfig = config.ai.groq;
+    const originalFetch = globalThis.fetch;
+
+    config.ai.provider = 'groq';
+    config.ai.groq = { apiKey: 'test-groq-key', model: 'retired-model', maxTokens: 4096 };
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      error: {
+        message: 'Model is retired',
+        type: 'invalid_request_error',
+        code: 'model_decommissioned',
+      },
+    }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json', 'x-request-id': 'req_test_groq' },
+    });
+
+    try {
+      const ai = await initAI();
+      await assert.rejects(
+        ai.chat({
+          messages: [{ role: 'user', content: 'Test' }],
+          rateKey: 'groq-provider-error-test',
+        }),
+        (error) => {
+          assert.equal(error.code, 'AI_PROVIDER_ERROR');
+          assert.deepEqual(error.details, {
+            status: 404,
+            providerCode: 'model_decommissioned',
+            providerType: 'invalid_request_error',
+            requestId: 'req_test_groq',
+          });
+          assert.equal(JSON.stringify(error.details).includes('Model is retired'), false);
+          assert.equal(shouldRetryAIError(error), false);
+          return true;
+        }
+      );
     } finally {
       config.ai.provider = originalProvider;
       config.ai.groq = originalGroqConfig;

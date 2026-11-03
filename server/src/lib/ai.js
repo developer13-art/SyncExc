@@ -49,7 +49,13 @@ export function createOpenAIProviderError(status, payload, requestId) {
 }
 
 export function shouldRetryAIError(error) {
-  return error?.code !== 'AI_QUOTA_EXHAUSTED';
+  const providerStatus = error?.details?.status;
+  const permanentClientError =
+    Number.isInteger(providerStatus) &&
+    providerStatus >= 400 &&
+    providerStatus < 500 &&
+    providerStatus !== 429;
+  return error?.code !== 'AI_QUOTA_EXHAUSTED' && !permanentClientError;
 }
 
 function checkRateLimit(key) {
@@ -252,12 +258,20 @@ async function callGroq({ system, messages, maxTokens, temperature = 0 }) {
     });
 
     if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      const providerError = payload?.error || {};
+      const providerCode = typeof providerError.code === 'string' ? providerError.code : null;
+      const providerType = typeof providerError.type === 'string' ? providerError.type : null;
+      const requestId = res.headers.get('x-request-id');
+
       throw new AppError(`Groq request failed: ${res.status}`, {
         code: 'AI_PROVIDER_ERROR',
         status: 502,
         details: {
           status: res.status,
-          ...(res.headers.get('x-request-id') ? { requestId: res.headers.get('x-request-id') } : {}),
+          ...(providerCode ? { providerCode } : {}),
+          ...(providerType ? { providerType } : {}),
+          ...(requestId ? { requestId } : {}),
         },
       });
     }
