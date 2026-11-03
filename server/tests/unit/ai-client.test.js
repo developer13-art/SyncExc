@@ -128,6 +128,53 @@ describe('Groq AI provider', () => {
     }
   });
 
+  it('uses Groq Browser Search with its research model and without structured-output mode', async () => {
+    const originalProvider = config.ai.provider;
+    const originalGroqConfig = config.ai.groq;
+    const originalFetch = globalThis.fetch;
+    let request;
+
+    config.ai.provider = 'groq';
+    config.ai.groq = {
+      apiKey: 'test-groq-key',
+      model: 'qwen/qwen3.6-27b',
+      researchModel: 'openai/gpt-oss-120b',
+      maxTokens: 4096,
+    };
+    globalThis.fetch = async (url, options) => {
+      request = { url, options };
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '{"signals":[]}' } }],
+        model: 'openai/gpt-oss-120b',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    try {
+      const ai = await initAI();
+      const result = await ai.chatJson({
+        messages: [{ role: 'user', content: 'Research crypto markets.' }],
+        webSearch: true,
+        maxTokens: 1200,
+        rateKey: 'groq-browser-search-test',
+      });
+
+      const body = JSON.parse(request.options.body);
+      assert.equal(body.model, 'openai/gpt-oss-120b');
+      assert.deepEqual(body.tools, [{ type: 'browser_search' }]);
+      assert.equal(body.tool_choice, 'required');
+      assert.equal(body.max_completion_tokens, 1200);
+      assert.equal(Object.hasOwn(body, 'response_format'), false);
+      assert.deepEqual(result.data, { signals: [] });
+    } finally {
+      config.ai.provider = originalProvider;
+      config.ai.groq = originalGroqConfig;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('reports Groq error codes without retaining provider error messages', async () => {
     const originalProvider = config.ai.provider;
     const originalGroqConfig = config.ai.groq;
@@ -170,6 +217,23 @@ describe('Groq AI provider', () => {
       config.ai.provider = originalProvider;
       config.ai.groq = originalGroqConfig;
       globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('rejects web research when Groq is not the selected provider', async () => {
+    const originalProvider = config.ai.provider;
+    config.ai.provider = 'openai';
+    try {
+      const ai = await initAI();
+      await assert.rejects(
+        ai.chatJson({
+          messages: [{ role: 'user', content: 'Research crypto markets.' }],
+          webSearch: true,
+        }),
+        { code: 'AI_WEB_SEARCH_UNSUPPORTED' }
+      );
+    } finally {
+      config.ai.provider = originalProvider;
     }
   });
 });

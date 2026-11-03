@@ -378,12 +378,9 @@ test('market data pauses an exchange after 418 and honors Retry-After', async ()
   assert.equal(requests, 2);
 });
 
-test('official trader publishes AI-reviewed market signals through marketplace publication', async () => {
-  const candles = Array.from({ length: 80 }, (_, index) => {
-    const close = 100 + index * 0.1 + Math.sin(index * 0.4);
-    return { open: close - 0.02, high: close + 0.05, low: close - 0.05, close };
-  });
+test('official trader researches catalog symbols with AI and publishes sourced signals without exchange candles', async () => {
   const publishedSignals = [];
+  let researchRequest;
   const db = {
     query: async (sql) => {
       if (sql.includes('FROM marketplace_provider_profiles')) {
@@ -392,10 +389,8 @@ test('official trader publishes AI-reviewed market signals through marketplace p
       if (sql.includes('FROM exchange_instruments')) {
         return {
           rows: [{
-            exchange_code: 'binance',
-            exchange_symbol: 'BTCUSDT',
-            normalized_symbol: 'BTCUSDT',
-            market_type: 'spot',
+            symbol: 'BTCUSDT',
+            marketType: 'spot',
           }],
         };
       }
@@ -404,11 +399,28 @@ test('official trader publishes AI-reviewed market signals through marketplace p
   };
   const scanner = createOfficialTraderService({
     db,
-    marketData: { getCandles: async () => ({ candles }) },
     ai: {
-      chatJson: async () => ({
-        data: { publish: true, confidence: 0.9, summary: 'Trend and momentum are aligned.' },
-      }),
+      chatJson: async (request) => {
+        researchRequest = request;
+        return {
+          data: {
+            signals: [{
+              symbol: 'BTCUSDT',
+              marketType: 'spot',
+              confidence: 0.9,
+              direction: 'long',
+              entry: '100',
+              stopLoss: '95',
+              targets: ['110'],
+              analysis: 'Recent market reports support a bullish setup with a defined invalidation level.',
+              sources: [
+                { title: 'Market report one', url: 'https://example.com/report-one' },
+                { title: 'Market report two', url: 'https://example.com/report-two' },
+              ],
+            }],
+          },
+        };
+      },
     },
     publication: {
       publishSignal: async (signal) => publishedSignals.push(signal),
@@ -418,63 +430,21 @@ test('official trader publishes AI-reviewed market signals through marketplace p
 
   const result = await scanner.scanNow();
   assert.equal(result.instrumentsScanned, 1);
+  assert.equal(result.aiResearched, 1);
   assert.equal(result.published, 1);
+  assert.equal(researchRequest.webSearch, true);
+  assert.match(researchRequest.system, /Use browser search/);
+  assert.deepEqual(JSON.parse(researchRequest.messages[0].content).activeCryptoInstrumentCatalog, [
+    { symbol: 'BTCUSDT', marketType: 'spot' },
+  ]);
   assert.equal(publishedSignals[0].providerId, 'provider-id');
   assert.equal(publishedSignals[0].instrument, 'BTCUSDT');
-  assert.equal(publishedSignals[0].orderType, 'market');
+  assert.equal(publishedSignals[0].orderType, 'limit');
+  assert.equal(publishedSignals[0].entry, '100');
+  assert.equal(publishedSignals[0].stopLoss, '95');
   assert.equal(publishedSignals[0].targets.length, 1);
-});
-
-test('official trader stops retrying a rate-limited exchange and falls back to others', async () => {
-  const instruments = Array.from({ length: 5 }, (_, index) => {
-    const symbol = `COIN${index}USDT`;
-    return [
-      { exchange_code: 'binance', exchange_symbol: symbol, normalized_symbol: symbol, market_type: 'spot' },
-      { exchange_code: 'bybit', exchange_symbol: symbol, normalized_symbol: symbol, market_type: 'spot' },
-    ];
-  }).flat();
-  const warnings = [];
-  let binanceRequests = 0;
-  let bybitRequests = 0;
-  const scanner = createOfficialTraderService({
-    db: {
-      query: async (sql) => {
-        if (sql.includes('FROM marketplace_provider_profiles')) {
-          return { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] };
-        }
-        if (sql.includes('FROM exchange_instruments')) return { rows: instruments };
-        return { rows: [] };
-      },
-    },
-    marketData: {
-      getCandles: async ({ exchangeCode }) => {
-        if (exchangeCode === 'binance') {
-          binanceRequests += 1;
-          const error = new Error('Rate limited');
-          error.code = 'MARKET_DATA_RATE_LIMITED';
-          throw error;
-        }
-        bybitRequests += 1;
-        return { candles: [] };
-      },
-    },
-    ai: {},
-    publication: {},
-    logger: {
-      info() {},
-      warn: (...args) => warnings.push(args),
-      error() {},
-    },
-  });
-
-  const result = await scanner.scanNow();
-  assert.equal(result.instrumentsScanned, 5);
-  assert.ok(binanceRequests <= 3);
-  assert.equal(bybitRequests, 5);
-  assert.equal(
-    warnings.filter(([, message]) => message === 'Official trader paused requests to a rate-limited exchange').length,
-    1,
-  );
+  assert.equal(publishedSignals[0].sourceEvidence.type, 'official_ai_research');
+  assert.equal(publishedSignals[0].sourceEvidence.sources.length, 2);
 });
 
 test('registers the official trader scan as an independently scheduled job handler', async () => {

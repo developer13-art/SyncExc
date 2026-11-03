@@ -228,19 +228,27 @@ async function callGoogle({ system, messages, maxTokens, temperature = 0 }) {
   }
 }
 
-async function callGroq({ system, messages, maxTokens, temperature = 0 }) {
+async function callGroq({ system, messages, maxTokens, temperature = 0, webSearch = false }) {
   const apiKey = config.ai.groq.apiKey;
   if (!apiKey) throw new AppError('Groq API key not configured', { code: 'AI_NOT_CONFIGURED', status: 500 });
 
   const body = {
-    model: config.ai.groq.model,
+    model: webSearch ? config.ai.groq.researchModel : config.ai.groq.model,
     messages: [
       ...(system ? [{ role: 'system', content: system }] : []),
       ...messages,
     ],
-    max_tokens: maxTokens || config.ai.groq.maxTokens,
+    ...(webSearch
+      ? {
+          max_completion_tokens: maxTokens || config.ai.groq.maxTokens,
+          tools: [{ type: 'browser_search' }],
+          tool_choice: 'required',
+        }
+      : {
+          max_tokens: maxTokens || config.ai.groq.maxTokens,
+          response_format: { type: 'json_object' },
+        }),
     temperature,
-    response_format: { type: 'json_object' },
   };
 
   const controller = new AbortController();
@@ -362,17 +370,24 @@ export async function initAI() {
      * @param {number} [opts.maxTokens]
      * @param {number} [opts.temperature]
      * @param {string} [opts.rateKey]
+     * @param {boolean} [opts.webSearch]
      * @returns {Promise<{ content: string, usage?: object, model?: string }>}
      */
-    async chat({ system, messages, maxTokens, temperature = 0, rateKey = 'global' }) {
+    async chat({ system, messages, maxTokens, temperature = 0, rateKey = 'global', webSearch = false }) {
       if (!Array.isArray(messages) || messages.length === 0) {
         throw new AppError('AI chat requires at least one message', { code: 'AI_BAD_REQUEST', status: 400 });
+      }
+      if (webSearch && config.ai.provider !== 'groq') {
+        throw new AppError('Live web research requires the Groq AI provider', {
+          code: 'AI_WEB_SEARCH_UNSUPPORTED',
+          status: 500,
+        });
       }
 
       checkRateLimit(rateKey);
 
       return retry(
-        async () => provider({ system, messages, maxTokens, temperature }),
+        async () => provider({ system, messages, maxTokens, temperature, webSearch }),
         {
           attempts: config.ai.maxRetries + 1,
           baseMs: 500,
@@ -386,8 +401,8 @@ export async function initAI() {
      * Chat completion expecting JSON. Parses the response and returns the object.
      * Throws on parse failure so callers can treat it as a processing failure.
      */
-    async chatJson({ system, messages, maxTokens, temperature = 0, rateKey = 'global' }) {
-      const result = await this.chat({ system, messages, maxTokens, temperature, rateKey });
+    async chatJson({ system, messages, maxTokens, temperature = 0, rateKey = 'global', webSearch = false }) {
+      const result = await this.chat({ system, messages, maxTokens, temperature, rateKey, webSearch });
       let parsed;
       try {
         parsed = JSON.parse(result.content);

@@ -149,6 +149,12 @@ For Groq, set `GROQ_API_KEY`; `GROQ_MODEL` defaults to
 `qwen/qwen3.6-27b`. On Render, set `AI_PROVIDER=groq` in the server
 environment and add `GROQ_API_KEY` before redeploying.
 
+The SyncExc Official trader uses Groq Browser Search to research active
+catalog symbols without requesting exchange candles. Its research model must
+support Browser Search; `GROQ_RESEARCH_MODEL` defaults to
+`openai/gpt-oss-120b`. AI-generated limit ideas are published only when their
+catalog symbol, source URLs, confidence, and risk levels pass validation.
+
 ### Marketplace payments
 
 Paid Trader plans require `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Configure the

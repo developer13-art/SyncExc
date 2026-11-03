@@ -134,7 +134,6 @@ export function createMarketplaceModule({ services }) {
 
   const officialTraderService = createOfficialTraderService({
     db: services.db,
-    marketData: services.connections.marketData,
     ai: services.ai,
     publication: publicationService,
     logger,

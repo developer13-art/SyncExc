@@ -1,8 +1,8 @@
 const OFFICIAL_HANDLE = 'syncexc-official';
-const SCAN_TIMEFRAME = '15m';
-const AI_REVIEW_LIMIT = 10;
+const AI_RESEARCH_LIMIT = 5;
+const MIN_CONFIDENCE = 0.8;
 
-export function createOfficialTraderService({ db, marketData, ai, publication, logger }) {
+export function createOfficialTraderService({ db, ai, publication, logger }) {
   let scanRunning = false;
 
   async function scanNow() {
@@ -18,87 +18,37 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
 
       const instrumentResult = await db.query(
         `
-        WITH active_instruments AS (
-          SELECT exchange_code,
-                 exchange_symbol,
-                 market_type,
-                 regexp_replace(
-                   regexp_replace(upper(normalized_symbol), '(SWAP|PERPETUAL|PERP)$', ''),
-                   '[^A-Z0-9]',
-                   '',
-                   'g'
-                 ) AS canonical_symbol
-          FROM exchange_instruments
-          WHERE exchange_code IN ('binance', 'bybit', 'bitget', 'okx')
-            AND market_type IN ('spot', 'futures')
-            AND trading_status = 'active'
-        )
-        SELECT exchange_code,
-               exchange_symbol,
-               canonical_symbol AS normalized_symbol,
-               market_type
-        FROM active_instruments
-        ORDER BY canonical_symbol, market_type,
-                 array_position(ARRAY['binance', 'bybit', 'bitget', 'okx'], exchange_code),
-                 exchange_symbol
+        SELECT DISTINCT
+               regexp_replace(
+                 regexp_replace(upper(normalized_symbol), '(SWAP|PERPETUAL|PERP)$', ''),
+                 '[^A-Z0-9]',
+                 '',
+                 'g'
+               ) AS symbol,
+               market_type AS "marketType"
+        FROM exchange_instruments
+        WHERE exchange_code IN ('binance', 'bybit', 'bitget', 'okx')
+          AND market_type IN ('spot', 'futures')
+          AND trading_status = 'active'
+        ORDER BY symbol, "marketType"
         `
       );
-      const instrumentGroups = new Map();
-      for (const instrument of instrumentResult.rows) {
-        const key = `${instrument.normalized_symbol}:${instrument.market_type}`;
-        const group = instrumentGroups.get(key) || [];
-        group.push(instrument);
-        instrumentGroups.set(key, group);
-      }
-      const instruments = [...instrumentGroups.values()];
-      const candidates = [];
-      let dataFailures = 0;
-      let nextIndex = 0;
-      const workerCount = Math.min(3, instruments.length);
-      const rateLimitedExchanges = new Set();
+      const universe = instrumentResult.rows
+        .map(({ symbol, marketType }) => ({
+          symbol: String(symbol || '').toUpperCase(),
+          marketType,
+        }))
+        .filter(({ symbol, marketType }) =>
+          /^[A-Z0-9]{3,48}$/.test(symbol) && ['spot', 'futures'].includes(marketType)
+        );
+      if (universe.length === 0) throw new Error('Official trader has no active catalog instruments to research');
 
-      await Promise.all(Array.from({ length: workerCount }, async () => {
-        while (nextIndex < instruments.length) {
-          const instrumentGroup = instruments[nextIndex];
-          nextIndex += 1;
-          let receivedMarketData = false;
-          for (const instrument of instrumentGroup) {
-            if (rateLimitedExchanges.has(instrument.exchange_code)) continue;
-            try {
-              const result = await marketData.getCandles({
-                exchangeCode: instrument.exchange_code,
-                symbol: instrument.exchange_symbol,
-                marketType: instrument.market_type,
-                timeframe: SCAN_TIMEFRAME,
-                limit: 80,
-              });
-              receivedMarketData = true;
-              const analysis = analyzeCandles(result.candles, instrument.market_type);
-              if (analysis) candidates.push({ ...instrument, ...analysis });
-              break;
-            } catch (error) {
-              const isRateLimited = error?.code === 'MARKET_DATA_RATE_LIMITED';
-              const alreadyRateLimited = rateLimitedExchanges.has(instrument.exchange_code);
-              if (isRateLimited) rateLimitedExchanges.add(instrument.exchange_code);
-              if (isRateLimited && alreadyRateLimited) continue;
-              logger.warn(
-                { err: error, exchangeCode: instrument.exchange_code, symbol: instrument.exchange_symbol },
-                isRateLimited
-                  ? 'Official trader paused requests to a rate-limited exchange'
-                  : 'Official trader could not analyze instrument on exchange',
-              );
-            }
-          }
-          if (!receivedMarketData) dataFailures += 1;
-        }
-      }));
-
-      candidates.sort((left, right) => right.score - left.score);
+      const candidates = await researchWithAi(universe);
       let published = 0;
       let aiRejected = 0;
       let publicationFailures = 0;
 
-      for (const candidate of candidates.slice(0, AI_REVIEW_LIMIT)) {
+      for (const candidate of candidates) {
         try {
           const activeSignal = await db.query(
             `
@@ -114,8 +64,7 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
           );
           if (activeSignal.rows[0]) continue;
 
-          const review = await reviewWithAi(candidate);
-          if (!review.publish || review.confidence < 0.75) {
+          if (candidate.confidence < MIN_CONFIDENCE) {
             aiRejected += 1;
             continue;
           }
@@ -128,23 +77,23 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
             instrument: candidate.normalized_symbol,
             marketType: candidate.market_type,
             direction: candidate.direction,
-            orderType: 'market',
+            orderType: 'limit',
             entryTime: now,
+            entry: candidate.entry,
             stopLoss: candidate.stopLoss,
-            targets: [candidate.takeProfit],
+            targets: candidate.targets,
             leverage: candidate.market_type === 'futures' ? '1' : null,
             validUntil: new Date(now.getTime() + 30 * 60 * 1000),
             sourceEvidence: {
-              type: 'official_market_scan',
-              timeframe: SCAN_TIMEFRAME,
-              exchange: candidate.exchange_code,
-              observedPrice: candidate.price,
-              indicators: candidate.indicators,
-              aiSummary: review.summary,
-              methodology: 'market_data_technical_screen_v1',
+              type: 'official_ai_research',
+              analysis: candidate.analysis,
+              confidence: candidate.confidence,
+              sources: candidate.sources,
+              researchedAt: now.toISOString(),
+              methodology: 'groq_browser_search_research_v1',
             },
             disclosures: {
-              risk: 'Automated market-data analysis; not financial advice or a guarantee of results.',
+              risk: 'AI-generated research based on cited web sources; prices and conditions may change. Not financial advice or a guarantee of results.',
             },
           });
           published += 1;
@@ -158,20 +107,16 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
       }
 
       const summary = {
-        instrumentsScanned: instrumentGroups.size,
-        dataFailures,
+        instrumentsScanned: universe.length,
         candidates: candidates.length,
-        aiReviewed: Math.min(candidates.length, AI_REVIEW_LIMIT),
+        aiResearched: Math.min(candidates.length, AI_RESEARCH_LIMIT),
         aiRejected,
         published,
         publicationFailures,
       };
-      logger.info(summary, 'Official trader market scan completed');
-      if (instrumentGroups.size === 0 || dataFailures === instrumentGroups.size) {
-        throw new Error('Official trader scan could not retrieve market data for any instrument');
-      }
+      logger.info(summary, 'Official trader AI research scan completed');
       if (candidates.length > 0 && published === 0 && aiRejected === 0 && publicationFailures > 0) {
-        throw new Error('Official trader could not review or publish any candidate signal');
+        throw new Error('Official trader could not publish any AI-researched candidate signal');
       }
       return summary;
     } finally {
@@ -179,46 +124,112 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
     }
   }
 
-  async function reviewWithAi(candidate) {
-    if (!ai?.chatJson) throw new Error('AI review is not configured for the official trader');
+  async function researchWithAi(universe) {
+    if (!ai?.chatJson) throw new Error('AI research is not configured for the official trader');
     const { data } = await ai.chatJson({
       system: [
-        'You are reviewing a rule-generated crypto market signal for publication.',
-        'Use only the supplied market data. Do not invent prices, news, or facts.',
-        'Return JSON with publish (boolean), confidence (number 0..1), and summary (string).',
-        'Publish only when the direction is supported by the moving averages and RSI and the risk levels are coherent.',
-        'This review does not authorize or execute trades.',
+        'You are an independent cryptocurrency market researcher creating actionable, risk-aware marketplace trade ideas.',
+        'Use browser search to research the current market, recent developments, and recent price context for symbols in the supplied catalog.',
+        'Do not call or assume access to exchange APIs, candles, order books, or private account data.',
+        'Only cite facts supported by pages you actually found through browser search; do not invent URLs, prices, catalysts, or facts.',
+        'Select at most 5 well-supported opportunities from the supplied symbol and market-type catalog. Return an empty signals array when none is sufficiently supported.',
+        'For each opportunity, return symbol, marketType, confidence (0..1), direction (long or short), entry, stopLoss, targets (one to three prices), analysis, and sources (at least two objects with title and https URL).',
+        'Use a limit entry price based on recent price information in the sources. Set stop loss and targets on the correct side of the entry, and target at least 1.5 times the risk.',
+        'Only propose short trades for futures. Use positive numeric prices and only exact catalog symbols and market types.',
+        'Return only valid JSON with this shape: {"signals":[{"symbol":"BTCUSDT","marketType":"spot","confidence":0.9,"direction":"long","entry":"100","stopLoss":"95","targets":["110"],"analysis":"...","sources":[{"title":"...","url":"https://..."}]}]}.',
+        'These are research ideas for subscribers to review and optionally copy; they do not authorize or execute trades.',
       ].join(' '),
       messages: [{
         role: 'user',
         content: JSON.stringify({
-          symbol: candidate.normalized_symbol,
-          marketType: candidate.market_type,
-          direction: candidate.direction,
-          timeframe: SCAN_TIMEFRAME,
-          price: candidate.price,
-          stopLoss: candidate.stopLoss,
-          takeProfit: candidate.takeProfit,
-          indicators: candidate.indicators,
+          currentDate: new Date().toISOString(),
+          maximumSignals: AI_RESEARCH_LIMIT,
+          activeCryptoInstrumentCatalog: universe,
         }),
       }],
-      maxTokens: 180,
-      temperature: 0,
+      maxTokens: 2400,
+      temperature: 0.2,
       rateKey: 'marketplace:official-trader',
+      webSearch: true,
     });
-    const confidence = Number(data?.confidence);
-    if (typeof data?.publish !== 'boolean' || !Number.isFinite(confidence) ||
-        typeof data?.summary !== 'string') {
-      throw new Error('AI returned an invalid official-trader review');
+    if (!Array.isArray(data?.signals) || data.signals.length > AI_RESEARCH_LIMIT) {
+      throw new Error('AI returned an invalid official-trader research result');
     }
-    return {
-      publish: data.publish,
-      confidence: Math.max(0, Math.min(1, confidence)),
-      summary: data.summary.slice(0, 500),
-    };
+
+    const catalog = new Set(universe.map(({ symbol, marketType }) => `${symbol}:${marketType}`));
+    const seen = new Set();
+    return data.signals.map((signal) => {
+      const normalizedSymbol = String(signal?.symbol || '').trim().toUpperCase();
+      const marketType = signal?.marketType;
+      const key = `${normalizedSymbol}:${marketType}`;
+      const confidence = Number(signal?.confidence);
+      const entry = positivePrice(signal?.entry);
+      const stopLoss = positivePrice(signal?.stopLoss);
+      const targets = Array.isArray(signal?.targets)
+        ? signal.targets.map(positivePrice)
+        : [];
+      const sourceList = Array.isArray(signal?.sources)
+        ? signal.sources.map(validateResearchSource)
+        : [];
+      const sources = [...new Map(sourceList.map((source) => [source.url, source])).values()];
+      const analysis = typeof signal?.analysis === 'string' ? signal.analysis.trim().slice(0, 1500) : '';
+
+      if (!catalog.has(key) || seen.has(key)) {
+        throw new Error('AI returned a symbol outside the catalog or duplicated a research signal');
+      }
+      if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1 ||
+          !['long', 'short'].includes(signal.direction) ||
+          (signal.direction === 'short' && marketType !== 'futures') ||
+          entry === null || stopLoss === null || targets.length === 0 || targets.length > 3 ||
+          targets.some((target) => target === null) ||
+          !hasValidRiskReward(signal.direction, entry, stopLoss, targets) ||
+          analysis.length === 0 || sources.length < 2) {
+        throw new Error('AI returned an invalid or unsupported official-trader trade idea');
+      }
+      seen.add(key);
+      return {
+        normalized_symbol: normalizedSymbol,
+        market_type: marketType,
+        confidence,
+        direction: signal.direction,
+        entry: String(entry),
+        stopLoss: String(stopLoss),
+        targets: targets.map(String),
+        analysis,
+        sources,
+      };
+    });
   }
 
   return { scanNow };
+}
+
+function positivePrice(value) {
+  const price = Number(value);
+  return Number.isFinite(price) && price > 0 ? price : null;
+}
+
+function hasValidRiskReward(direction, entry, stopLoss, targets) {
+  const risk = direction === 'long' ? entry - stopLoss : stopLoss - entry;
+  if (risk <= 0) return false;
+  return targets.every((target) => {
+    const reward = direction === 'long' ? target - entry : entry - target;
+    return reward > 0 && reward / risk >= 1.5;
+  });
+}
+
+function validateResearchSource(source) {
+  const title = typeof source?.title === 'string' ? source.title.trim().slice(0, 200) : '';
+  let url;
+  try {
+    url = new URL(source?.url);
+  } catch {
+    throw new Error('AI returned a malformed research source URL');
+  }
+  if (!title || url.protocol !== 'https:' || !url.hostname || url.username || url.password) {
+    throw new Error('AI returned an invalid research source');
+  }
+  return { title, url: url.toString() };
 }
 
 export function analyzeCandles(candles, marketType) {

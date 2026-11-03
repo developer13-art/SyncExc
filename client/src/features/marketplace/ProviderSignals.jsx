@@ -412,6 +412,32 @@ export function ProviderSignals({ providerId, onSubscribe }) {
                     ) : null}
                   </div>
 
+                  {signal.sourceEvidence?.analysis ? (
+                    <div className="space-y-2 rounded-lg border border-border p-3">
+                      <p className="text-xs font-semibold text-foreground">AI research</p>
+                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                        {signal.sourceEvidence.analysis}
+                      </p>
+                      {Array.isArray(signal.sourceEvidence.sources) &&
+                      signal.sourceEvidence.sources.length > 0 ? (
+                        <ul className="space-y-1 border-t border-border pt-2">
+                          {signal.sourceEvidence.sources.map((source) => (
+                            <li key={source.url}>
+                              <a
+                                className="text-xs text-primary underline-offset-4 hover:underline"
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {source.title || source.url}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <p
                     className={`rounded-md border px-3 py-2 text-xs ${
                       signal.status === 'closed' || hasExpired || isLate
