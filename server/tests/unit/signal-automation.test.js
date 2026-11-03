@@ -207,9 +207,16 @@ test('routes authorized source orders through terminal risk checks', async () =>
   let updatedIntentStatus;
   const sourceExecution = createSourceExecutionService({
     db: {
-      query: async (sql) => sql.includes('UPDATE trading_execution_destination_results')
-        ? { rows: [{ id: 'destination-result-id' }] }
-        : { rows: [{ id: 'source-id', workspace_id: 'workspace-id', created_by: 'user-id' }] },
+      query: async (sql) => {
+        if (sql.includes('FROM signal_sources')) {
+          assert.match(sql, /owner_id AS created_by/);
+          return { rows: [{ id: 'source-id', workspace_id: 'workspace-id', created_by: 'user-id' }] };
+        }
+        if (sql.includes('UPDATE trading_execution_destination_results')) {
+          return { rows: [{ id: 'destination-result-id' }] };
+        }
+        return { rows: [] };
+      },
     },
     queries: {
       findExecutionIntentById: async () => ({
@@ -500,9 +507,10 @@ test('chains received messages through validation, eligibility, and authorized e
       },
     },
     db: {
-      query: async (sql) => sql.includes('FROM trading_execution_intents')
-        ? { rows: [] }
-        : {
+      query: async (sql) => {
+        if (sql.includes('FROM trading_execution_intents')) return { rows: [] };
+        assert.match(sql, /owner_id AS created_by/);
+        return {
           rows: [{
             id: 'source-id',
             workspace_id: 'workspace-id',
@@ -510,7 +518,8 @@ test('chains received messages through validation, eligibility, and authorized e
             status: 'active',
             monitoring_enabled: true,
           }],
-        },
+        };
+      },
     },
     logger: { debug() {}, error() {} },
   });

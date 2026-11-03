@@ -30,7 +30,7 @@ export function createSignalsListeners({
         await validation.validateCandidate({ candidateId });
 
         const sourceResult = await db.query(
-          `SELECT id, workspace_id, created_by, status, monitoring_enabled FROM signal_sources WHERE id = $1`,
+          `SELECT id, workspace_id, owner_id AS created_by, status, monitoring_enabled FROM signal_sources WHERE id = $1`,
           [extracted.candidate.source_id]
         );
         const source = sourceResult.rows[0];

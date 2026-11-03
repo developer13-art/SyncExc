@@ -100,7 +100,7 @@ const envSchema = Joi.object({
   GOOGLE_AI_API_KEY: Joi.string().allow('').optional(),
   GOOGLE_AI_MODEL: Joi.string().default('gemini-1.5-flash'),
   GROQ_API_KEY: Joi.string().allow('').optional(),
-  GROQ_MODEL: Joi.string().default('qwen/qwen3.6-27b'),
+  GROQ_MODEL: Joi.string().default('openai/gpt-oss-20b'),
   GROQ_RESEARCH_MODEL: Joi.string().default('openai/gpt-oss-120b'),
   GROQ_MAX_TOKENS: Joi.number().integer().default(4096),
   LOCAL_LLM_BASE_URL: Joi.string().uri().default('http://localhost:11434'),

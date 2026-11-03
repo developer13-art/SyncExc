@@ -146,7 +146,7 @@ application, use `npm run dev:server`, `npm run dev:client`, or
 
 Set `AI_PROVIDER` to `openai`, `anthropic`, `google`, `groq`, or `local`.
 For Groq, set `GROQ_API_KEY`; `GROQ_MODEL` defaults to
-`qwen/qwen3.6-27b`. On Render, set `AI_PROVIDER=groq` in the server
+`openai/gpt-oss-20b`. On Render, set `AI_PROVIDER=groq` in the server
 environment and add `GROQ_API_KEY` before redeploying.
 
 The SyncExc Official trader uses Groq Browser Search to research active

@@ -80,7 +80,7 @@ describe('Groq AI provider', () => {
     config.ai.provider = 'groq';
     config.ai.groq = {
       apiKey: 'test-groq-key',
-      model: 'qwen/qwen3.6-27b',
+      model: 'openai/gpt-oss-20b',
       maxTokens: 4096,
     };
     globalThis.fetch = async (url, options) => {
@@ -88,7 +88,7 @@ describe('Groq AI provider', () => {
       return new Response(JSON.stringify({
         choices: [{ message: { content: '{"ok":true}' } }],
         usage: { total_tokens: 12 },
-        model: 'qwen/qwen3.6-27b',
+        model: 'openai/gpt-oss-20b',
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -107,7 +107,7 @@ describe('Groq AI provider', () => {
       assert.equal(request.url, 'https://api.groq.com/openai/v1/chat/completions');
       assert.equal(request.options.headers.Authorization, 'Bearer test-groq-key');
       assert.deepEqual(JSON.parse(request.options.body), {
-        model: 'qwen/qwen3.6-27b',
+        model: 'openai/gpt-oss-20b',
         messages: [
           { role: 'system', content: 'Return JSON.' },
           { role: 'user', content: 'Test' },
@@ -119,7 +119,7 @@ describe('Groq AI provider', () => {
       assert.deepEqual(result, {
         content: '{"ok":true}',
         usage: { total_tokens: 12 },
-        model: 'qwen/qwen3.6-27b',
+        model: 'openai/gpt-oss-20b',
       });
     } finally {
       config.ai.provider = originalProvider;
@@ -137,7 +137,7 @@ describe('Groq AI provider', () => {
     config.ai.provider = 'groq';
     config.ai.groq = {
       apiKey: 'test-groq-key',
-      model: 'qwen/qwen3.6-27b',
+      model: 'openai/gpt-oss-20b',
       researchModel: 'openai/gpt-oss-120b',
       maxTokens: 4096,
     };

@@ -12,7 +12,7 @@ export function createSourceExecutionService({ db, connections, terminal, source
     if (!candidate) throw new Error(`Signal candidate for intent ${intentId} was not found`);
     const validation = await queries.findLatestValidation(candidate.id);
     const sourceResult = await db.query(
-      `SELECT id, workspace_id, created_by FROM signal_sources WHERE id = $1 AND status = 'active' AND monitoring_enabled = true`,
+      `SELECT id, workspace_id, owner_id AS created_by FROM signal_sources WHERE id = $1 AND status = 'active' AND monitoring_enabled = true`,
       [candidate.source_id]
     );
     const source = sourceResult.rows[0];
