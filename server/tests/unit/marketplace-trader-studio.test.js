@@ -37,6 +37,7 @@ describe('Trader Studio API', () => {
   it('requires a second explicit confirmation for terminal risk approval and records the submitted order', async () => {
     const record = {
       id: 'record-1',
+      published_signal_id: 'signal-1',
       subscriber_user_id: 'subscriber-1',
       outcome: 'held',
       copy_intent_id: 'intent-1',
@@ -55,6 +56,10 @@ describe('Trader Studio API', () => {
     let terminalConfirmationCalls = 0;
     let submitCalls = 0;
     const queries = {
+      async findPublishedSignalById() {
+        return { id: 'signal-1', user_id: 'trader-1', workspace_id: 'trader-workspace' };
+      },
+      async listTraderSignalExecutionAccounts() { return []; },
       async findCopyRecordForConfirmation() { return record; },
       async claimCopyExecutionIntent(_intentId, expectedStatus) {
         if (record.intent_status !== expectedStatus) return null;
@@ -127,6 +132,69 @@ describe('Trader Studio API', () => {
     assert.equal(record.intent_status, 'submitted');
   });
 
+  it('skips an existing confirmation when its destination is a provider execution account', async () => {
+    const record = {
+      id: 'record-duplicate',
+      published_signal_id: 'signal-duplicate',
+      subscriber_user_id: 'trader-1',
+      outcome: 'held',
+      copy_intent_id: 'intent-duplicate',
+      intent_status: 'awaiting_confirmation',
+      intent_payload: {
+        accountId: 'provider-account',
+      },
+    };
+    const updated = [];
+    const service = createCopyOrchestrationService({
+      db: {
+        async tx(callback) {
+          return callback({});
+        },
+      },
+      queries: {
+        async findCopyRecordForConfirmation() { return record; },
+        async findPublishedSignalById() {
+          return {
+            id: 'signal-duplicate',
+            user_id: 'trader-1',
+            workspace_id: 'workspace-1',
+          };
+        },
+        async listTraderSignalExecutionAccounts() {
+          return [{ account_id: 'provider-account' }];
+        },
+        async updateCopyExecutionIntent(_id, fields) {
+          updated.push(['intent', fields.status]);
+        },
+        async updateCopyProcessingRecord(_id, fields) {
+          updated.push(['record', fields.outcome, fields.skipReason]);
+        },
+        async updateCopyDestinationResult(_id, fields) {
+          updated.push(['destination', fields.outcome, fields.skipReason]);
+        },
+      },
+      terminal: {
+        async submitOrder() {
+          assert.fail('A provider account must not receive the duplicate copy order');
+        },
+      },
+    });
+
+    const result = await service.confirmRecord({
+      userId: 'trader-1',
+      workspaceId: 'workspace-1',
+      recordId: record.id,
+    });
+
+    assert.equal(result.status, 'skipped');
+    assert.equal(result.skipReason, 'duplicate_intent');
+    assert.deepEqual(updated, [
+      ['intent', 'skipped'],
+      ['record', 'skipped', 'duplicate_intent'],
+      ['destination', 'skipped', 'duplicate_intent'],
+    ]);
+  });
+
   it('submits authorized automatic copies after validating each destination', async () => {
     const signal = {
       id: 'signal-auto',
@@ -164,6 +232,7 @@ describe('Trader Studio API', () => {
     const queries = {
       async findPublishedSignalById() { return signal; },
       async listActiveCopyConfigurationsForProvider() { return [config]; },
+      async listTraderSignalExecutionAccounts() { return []; },
       async listCopyDestinations() { return [destination]; },
       async insertCopyProcessingRecord(_tx, data) {
         const record = {
@@ -202,6 +271,7 @@ describe('Trader Studio API', () => {
         const intent = intents.get(record.executionIntentId);
         return {
           ...record,
+          published_signal_id: signal.id,
           workspace_id: config.workspace_id,
           copy_intent_id: intent.id,
           intent_status: intent.status,
@@ -268,6 +338,7 @@ describe('Trader Studio API', () => {
   it('submits a user-confirmed signal to the active selected copy configuration', async () => {
     const record = {
       id: 'record-1',
+      published_signal_id: 'signal-1',
       subscriber_user_id: 'subscriber-1',
       outcome: 'held',
       copy_intent_id: 'intent-1',
@@ -286,8 +357,15 @@ describe('Trader Studio API', () => {
     let submittedOrder;
     const queries = {
       async findPublishedSignalById() {
-        return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
+        return {
+          id: 'signal-1',
+          provider_id: 'provider-1',
+          user_id: 'trader-1',
+          workspace_id: 'trader-workspace',
+          status: 'published',
+        };
       },
+      async listTraderSignalExecutionAccounts() { return []; },
       async findCopyConfigurationById() {
         return {
           id: 'config-1',
@@ -409,6 +487,7 @@ describe('Trader Studio API', () => {
             market_types: ['futures'],
           };
         },
+        async listTraderSignalExecutionAccounts() { return []; },
         async listCopyDestinations() { return destinations; },
         async cancelPendingCopyIntentsForSignal() { return 0; },
         async insertCopyProcessingRecord(_tx, data) {
@@ -438,6 +517,7 @@ describe('Trader Studio API', () => {
           const intent = intents.get(record.executionIntentId);
           return {
             ...record,
+            published_signal_id: signal.id,
             workspace_id: 'workspace-1',
             copy_intent_id: intent.id,
             intent_payload: intent.intent_payload,
@@ -527,6 +607,7 @@ describe('Trader Studio API', () => {
   it('returns and persists the exchange rejection reason for copied signals', async () => {
     const record = {
       id: 'record-rejected',
+      published_signal_id: 'signal-1',
       subscriber_user_id: 'subscriber-1',
       outcome: 'held',
       copy_intent_id: 'intent-rejected',
@@ -545,8 +626,15 @@ describe('Trader Studio API', () => {
     let destinationResult;
     const queries = {
       async findPublishedSignalById() {
-        return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
+        return {
+          id: 'signal-1',
+          provider_id: 'provider-1',
+          user_id: 'trader-1',
+          workspace_id: 'trader-workspace',
+          status: 'published',
+        };
       },
+      async listTraderSignalExecutionAccounts() { return []; },
       async findCopyConfigurationById() {
         return {
           id: 'config-1',

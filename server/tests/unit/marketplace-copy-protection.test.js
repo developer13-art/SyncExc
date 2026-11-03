@@ -187,6 +187,9 @@ test('uses current market reference and tick-aligned protection overrides in cop
       async listActiveCopyConfigurationsForProvider() {
         return [config];
       },
+      async listTraderSignalExecutionAccounts() {
+        return [];
+      },
       async listCopyDestinations() {
         return [destination];
       },
@@ -243,4 +246,90 @@ test('uses current market reference and tick-aligned protection overrides in cop
   assert.equal(riskPayload.takeProfit, '114.4');
   assert.equal(intentPayload.stopLoss, '107.9');
   assert.equal(intentPayload.takeProfit, '114.4');
+});
+
+test('does not copy a provider signal into an account already used by the provider', async () => {
+  const signal = {
+    id: 'signal-from-provider',
+    provider_id: 'provider-1',
+    user_id: 'trader-1',
+    workspace_id: 'trader-workspace',
+    source_account_id: null,
+    status: 'published',
+    instrument: 'BTCUSDT',
+    market_type: 'futures',
+    direction: 'short',
+    order_type: 'market',
+  };
+  const config = {
+    id: 'config-1',
+    provider_id: 'provider-1',
+    workspace_id: 'trader-workspace',
+    subscriber_user_id: 'trader-1',
+    current_version: 1,
+    sizing_rule: { type: 'fixed_amount', config: { amount: '100' } },
+    execution_mode: 'confirm_before_execution',
+  };
+  const destination = {
+    id: 'destination-1',
+    account_id: 'trader-account',
+    connection_id: 'connection-1',
+    exchange_code: 'bybit',
+    connection_status: 'active',
+    account_status: 'active',
+    account_type: 'unified',
+    environment: 'demo',
+  };
+  const inserted = [];
+  const destinationResults = [];
+  const service = createCopyOrchestrationService({
+    db: {
+      async tx(callback) {
+        return callback({});
+      },
+    },
+    queries: {
+      async findPublishedSignalById() {
+        return signal;
+      },
+      async listActiveCopyConfigurationsForProvider() {
+        return [config];
+      },
+      async listTraderSignalExecutionAccounts(userId, workspaceId) {
+        assert.equal(userId, signal.user_id);
+        assert.equal(workspaceId, signal.workspace_id);
+        return [{ account_id: 'trader-account' }];
+      },
+      async listCopyDestinations() {
+        return [destination];
+      },
+      async insertCopyProcessingRecord(_tx, record) {
+        inserted.push(record);
+        return { id: 'processing-1', ...record };
+      },
+      async insertCopyDestinationResult(_tx, result) {
+        destinationResults.push(result);
+      },
+    },
+    subscriptionService: {},
+    copyConfigurationService: {},
+    risk: {},
+    terminal: {
+      async submitOrder() {
+        assert.fail('A duplicate order must not be submitted');
+      },
+    },
+    connections: {},
+    marketData: {},
+    events: { async publish() {} },
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  await service.processPublishedSignal({ publishedSignalId: signal.id });
+
+  assert.equal(inserted.length, 1);
+  assert.equal(inserted[0].outcome, 'skipped');
+  assert.equal(inserted[0].skipReason, 'duplicate_intent');
+  assert.equal(destinationResults.length, 1);
+  assert.match(destinationResults[0].errorMessage, /already used by the signal provider/);
 });

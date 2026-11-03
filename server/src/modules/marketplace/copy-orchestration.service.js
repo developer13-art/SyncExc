@@ -36,6 +36,9 @@ export function createCopyOrchestrationService({
 
     // Find all active configs across workspaces for this provider
     const configs = await queries.listActiveCopyConfigurationsForProvider(signal.provider_id);
+    const providerAccountIds = configs.length > 0
+      ? await getProviderAccountIds(signal)
+      : new Set();
 
     logger.info(
       { signalId: publishedSignalId, configCount: configs.length },
@@ -44,7 +47,7 @@ export function createCopyOrchestrationService({
 
     for (const config of configs) {
       try {
-        await processConfigForSignal({ config, signal });
+        await processConfigForSignal({ config, signal, providerAccountIds });
       } catch (err) {
         logger.error(
           { err, configId: config.id, signalId: publishedSignalId },
@@ -86,6 +89,8 @@ export function createCopyOrchestrationService({
     if (!subscription) {
       throw new ConflictError('An active subscription is required to copy this signal', 'SUBSCRIPTION_REQUIRED');
     }
+
+    const providerAccountIds = await getProviderAccountIds(signal);
 
     if (destinationAccountIds || amount != null) {
       if (
@@ -138,6 +143,7 @@ export function createCopyOrchestrationService({
             signal,
             destination,
             manualCopy: true,
+            providerAccountIds,
           });
         } catch (err) {
           logger.warn(
@@ -202,7 +208,11 @@ export function createCopyOrchestrationService({
       workspaceId
     );
     if (records.length === 0) {
-      await processConfigForSignal({ config: { ...config, subscriber_user_id: userId }, signal });
+      await processConfigForSignal({
+        config: { ...config, subscriber_user_id: userId },
+        signal,
+        providerAccountIds,
+      });
       records = await queries.listCopyRecordsForSignalConfiguration(
         signalId,
         configId,
@@ -237,7 +247,7 @@ export function createCopyOrchestrationService({
     return { results };
   }
 
-  async function processConfigForSignal({ config, signal }) {
+  async function processConfigForSignal({ config, signal, providerAccountIds }) {
     const destinations = await queries.listCopyDestinations(config.id);
 
     // Apply instrument filter
@@ -282,7 +292,7 @@ export function createCopyOrchestrationService({
     // For each destination, run the full pipeline
     for (const destination of destinations) {
       try {
-        await processDestination({ config, signal, destination });
+        await processDestination({ config, signal, destination, providerAccountIds });
       } catch (err) {
         logger.error(
           { err, configId: config.id, signalId: signal.id, destinationId: destination.id },
@@ -330,7 +340,23 @@ export function createCopyOrchestrationService({
     }
   }
 
-  async function processDestination({ config, signal, destination, manualCopy = false }) {
+  async function processDestination({
+    config,
+    signal,
+    destination,
+    manualCopy = false,
+    providerAccountIds = new Set(),
+  }) {
+    if (providerAccountIds.has(String(destination.account_id))) {
+      return recordSkip({
+        config,
+        signal,
+        destination,
+        reason: COPY_SKIP_REASON.DUPLICATE_INTENT,
+        message: 'This account is already used by the signal provider; copying here would submit a duplicate trade.',
+      });
+    }
+
     // Skip if the destination connection is not active
     if (destination.connection_status !== 'active') {
       return recordSkip({
@@ -835,13 +861,27 @@ export function createCopyOrchestrationService({
     return result;
   }
 
+  async function getProviderAccountIds(signal) {
+    const accounts = await queries.listTraderSignalExecutionAccounts(
+      signal.user_id,
+      signal.workspace_id,
+    );
+    return new Set(
+      [
+        signal.source_account_id,
+        ...accounts.map((account) => account.account_id),
+      ]
+        .filter(Boolean)
+        .map(String),
+    );
+  }
+
   async function confirmRecord({ userId, workspaceId, recordId, canApproveExecution = false }) {
     const record = await queries.findCopyRecordForConfirmation(recordId, workspaceId);
     if (!record || record.subscriber_user_id !== userId) throw new NotFoundError('Copy confirmation');
     if (record.outcome !== COPY_PROCESSING_OUTCOME.HELD || !record.copy_intent_id) {
       throw new ConflictError('This copy signal is not awaiting confirmation', 'INVALID_STATE');
     }
-
     const initialIntent = typeof record.intent_payload === 'string'
       ? JSON.parse(record.intent_payload)
       : record.intent_payload;
@@ -849,6 +889,30 @@ export function createCopyOrchestrationService({
     if (!['awaiting_confirmation', 'terminal_confirmation_required'].includes(intentStatus)) {
       throw new ConflictError('This copy confirmation has already been processed', 'INVALID_STATE');
     }
+    const signal = await queries.findPublishedSignalById(record.published_signal_id);
+    if (!signal) throw new NotFoundError('Published signal');
+    const providerAccountIds = await getProviderAccountIds(signal);
+    if (providerAccountIds.has(String(initialIntent.accountId))) {
+      const errorMessage = 'This account is already used by the signal provider; copying here would submit a duplicate trade.';
+      await db.tx(async (tx) => {
+        await queries.updateCopyExecutionIntent(record.copy_intent_id, { status: 'skipped' }, tx);
+        await queries.updateCopyProcessingRecord(record.id, {
+          outcome: COPY_PROCESSING_OUTCOME.SKIPPED,
+          skipReason: COPY_SKIP_REASON.DUPLICATE_INTENT,
+        }, tx);
+        await queries.updateCopyDestinationResult(record.id, {
+          outcome: COPY_PROCESSING_OUTCOME.SKIPPED,
+          skipReason: COPY_SKIP_REASON.DUPLICATE_INTENT,
+          errorMessage,
+        }, tx);
+      });
+      return {
+        status: COPY_PROCESSING_OUTCOME.SKIPPED,
+        skipReason: COPY_SKIP_REASON.DUPLICATE_INTENT,
+        errorMessage,
+      };
+    }
+
     if (intentStatus === 'terminal_confirmation_required' && !canApproveExecution) {
       throw new AuthorizationError('Approval permission is required for this terminal risk check', 'PERMISSION_DENIED');
     }
