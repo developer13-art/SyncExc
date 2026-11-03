@@ -79,6 +79,23 @@ export function useTerminalOrders(workspaceId, params = {}) {
 
 export function useTerminalPositions(workspaceId, params = {}) {
   const queryClient = useQueryClient();
+  const invalidatePositionCloseViews = async () =>
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.positions(workspaceId, {}),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.orders(workspaceId, {}),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.trades(workspaceId, {}),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.terminal.overview(workspaceId),
+      }),
+      queryClient.invalidateQueries({ queryKey: ['marketplace'] }),
+    ]);
+
   const positionsQuery = useQuery({
     queryKey: queryKeys.terminal.positions(workspaceId, params),
     queryFn: () => terminalApi.listPositions(workspaceId, params),
@@ -101,11 +118,23 @@ export function useTerminalPositions(workspaceId, params = {}) {
       queryClient.invalidateQueries({ queryKey: ['marketplace'] });
     },
   });
+  const closePosition = useMutation({
+    mutationFn: (positionId) => terminalApi.closePosition(workspaceId, positionId),
+    onSuccess: invalidatePositionCloseViews,
+  });
+  const confirmPositionClose = useMutation({
+    mutationFn: (executionRequestId) =>
+      terminalApi.confirmExecution(workspaceId, executionRequestId),
+    onSuccess: invalidatePositionCloseViews,
+  });
 
   return {
     ...positionsQuery,
     syncAccountState: syncAccountState.mutateAsync,
     isSyncingAccountState: syncAccountState.isPending,
+    closePosition: closePosition.mutateAsync,
+    confirmPositionClose: confirmPositionClose.mutateAsync,
+    isClosingPosition: closePosition.isPending || confirmPositionClose.isPending,
   };
 }
 

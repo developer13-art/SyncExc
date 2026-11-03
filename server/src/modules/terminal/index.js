@@ -71,10 +71,29 @@ export function createTerminalModule({ services }) {
       const orderId = envelope.payload?.orderId;
       if (orderId) {
         await orderSubmissionService.syncFilledOrder({ orderId });
+        await syncReducedOnlyPosition(orderId);
       }
     },
     { name: 'terminal:sync-filled-order' },
   );
+
+  services.events.subscribe(
+    'execution.order_partially_filled',
+    async (envelope) => {
+      const orderId = envelope.payload?.orderId;
+      if (orderId) await syncReducedOnlyPosition(orderId);
+    },
+    { name: 'terminal:sync-reduced-only-position' },
+  );
+
+  async function syncReducedOnlyPosition(orderId) {
+    const { order } = await service.getOrder(orderId);
+    if (!order?.reduce_only) return;
+    await service.syncAccountState({
+      workspaceId: order.workspace_id,
+      accountId: order.account_id,
+    });
+  }
 
   const routes = createTerminalRoutes({
     service,

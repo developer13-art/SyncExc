@@ -4,6 +4,7 @@
 
 import { serializeOrder, serializeFill, serializePosition, serializeExecutionIntent } from '../../lib/serializers.js';
 import { success, created, paginated } from '../../lib/response.js';
+import { createHash } from 'node:crypto';
 
 export function createTerminalController({ service, orderSubmissionService, portfolioService }) {
   return {
@@ -117,6 +118,41 @@ export function createTerminalController({ service, orderSubmissionService, port
       return success(res, positions.map(serializePosition));
     },
 
+    async closePosition(req, res) {
+      const position = await service.getOpenPositionForClose({
+        workspaceId: req.workspace.id,
+        positionId: req.params.positionId,
+      });
+      const result = await orderSubmissionService.submit({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        connectionId: position.connection_id,
+        accountId: position.account_id,
+        marketType: 'futures',
+        instrumentId: position.instrument,
+        side: position.side === 'long' ? 'sell' : 'buy',
+        type: 'market',
+        quantity: position.quantity,
+        reduceOnly: true,
+        idempotencyKey: `close-position:${createClosePositionKey(position)}`,
+      });
+
+      if (result.requiresConfirmation) {
+        return created(res, {
+          requiresConfirmation: true,
+          executionRequestId: result.executionRequest.id,
+          riskDecision: result.riskDecision,
+        });
+      }
+
+      return created(res, {
+        order: result.order ? serializeOrder(result.order) : null,
+        executionRequest: result.executionRequest,
+        riskDecision: result.riskDecision,
+        ambiguous: result.ambiguous || false,
+      });
+    },
+
     async listTrades(req, res) {
       const pageSize = Number(req.query.pageSize) || Number(req.query.limit) || 50;
       const { rows, nextCursor, total } = await service.listTradesForScope({
@@ -186,6 +222,17 @@ export function createTerminalController({ service, orderSubmissionService, port
       return success(res, result);
     },
   };
+}
+
+function createClosePositionKey(position) {
+  const identity = [
+    position.id,
+    position.quantity,
+    position.updated_at instanceof Date
+      ? position.updated_at.toISOString()
+      : String(position.updated_at),
+  ].join(':');
+  return createHash('sha256').update(identity).digest('hex');
 }
 
 export default createTerminalController;

@@ -137,6 +137,14 @@ export function createTerminalService({
     return queries.listPositions(workspaceId, { accountId, instrument });
   }
 
+  async function getOpenPositionForClose({ workspaceId, positionId }) {
+    const position = await queries.findOpenPositionForClose(workspaceId, positionId);
+    if (!position || !['long', 'short'].includes(position.side)) {
+      throw new NotFoundError('Open futures position');
+    }
+    return position;
+  }
+
   async function syncAccountState({ workspaceId, accountId }) {
     const account = await connections.requireAccountAccess({
       accountId,
@@ -574,6 +582,7 @@ export function createTerminalService({
     listOpenOrders,
     listTradesForScope,
     listPositions,
+    getOpenPositionForClose,
     syncAccountState,
     reconcilePendingOrders,
     getExecutionRequest,

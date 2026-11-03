@@ -662,6 +662,18 @@ export function createTerminalQueries({ db }) {
       return result.rows;
     },
 
+    async findOpenPositionForClose(workspaceId, positionId) {
+      const result = await db.query(
+        `
+        SELECT *
+        FROM trading_positions
+        WHERE workspace_id = $1 AND id = $2 AND quantity > 0
+        `,
+        [workspaceId, positionId],
+      );
+      return result.rows[0] || null;
+    },
+
     async insertPositionSnapshot(client, data) {
       const result = await client.query(
         `

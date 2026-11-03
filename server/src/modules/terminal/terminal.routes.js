@@ -145,6 +145,15 @@ export function createTerminalRoutes({ service, orderSubmissionService, portfoli
     middleware.asyncHandler(controller.syncPositions)
   );
 
+  router.post(
+    '/positions/:positionId/close',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.requirePermission('trading.request_execution'),
+    middleware.validateParams(Joi.object({ positionId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.closePosition),
+  );
+
   router.get(
     '/trades',
     middleware.requireAuth(),

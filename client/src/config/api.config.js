@@ -149,6 +149,8 @@ export const apiConfig = Object.freeze({
       cancelOrder: (workspaceId, orderId) =>
         `/workspaces/${workspaceId}/terminal/orders/${orderId}/cancel`,
       positions: () => '/terminal/positions',
+      closePosition: (_workspaceId, positionId) =>
+        `/terminal/positions/${positionId}/close`,
       balances: (workspaceId) => `/workspaces/${workspaceId}/terminal/balances`,
       trades: () => '/terminal/trades',
       executions: (workspaceId) => `/workspaces/${workspaceId}/terminal/executions`,

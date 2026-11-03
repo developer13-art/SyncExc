@@ -270,6 +270,7 @@ export function createOrderSubmissionService({
         type,
         quantity,
         price,
+        reduceOnly,
         leverage,
         stopLoss,
         takeProfit,
