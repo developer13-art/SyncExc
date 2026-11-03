@@ -4,8 +4,10 @@ import { retry } from '@syncexc/shared';
 
 import {
   createOpenAIProviderError,
+  initAI,
   shouldRetryAIError,
 } from '../../src/lib/ai.js';
+import config from '../../src/config.js';
 
 describe('AI provider errors', () => {
   it('identifies exhausted OpenAI quota without retaining provider response text', async () => {
@@ -56,5 +58,64 @@ describe('AI provider errors', () => {
 
     assert.equal(error.code, 'AI_PROVIDER_ERROR');
     assert.equal(shouldRetryAIError(error), true);
+  });
+});
+
+describe('Groq AI provider', () => {
+  it('sends chat completions to Groq and returns the response', async () => {
+    const originalProvider = config.ai.provider;
+    const originalGroqConfig = config.ai.groq;
+    const originalFetch = globalThis.fetch;
+    let request;
+
+    config.ai.provider = 'groq';
+    config.ai.groq = {
+      apiKey: 'test-groq-key',
+      model: 'llama-3.3-70b-versatile',
+      maxTokens: 4096,
+    };
+    globalThis.fetch = async (url, options) => {
+      request = { url, options };
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '{"ok":true}' } }],
+        usage: { total_tokens: 12 },
+        model: 'llama-3.3-70b-versatile',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    try {
+      const ai = await initAI();
+      const result = await ai.chat({
+        system: 'Return JSON.',
+        messages: [{ role: 'user', content: 'Test' }],
+        maxTokens: 128,
+        rateKey: 'groq-provider-test',
+      });
+
+      assert.equal(request.url, 'https://api.groq.com/openai/v1/chat/completions');
+      assert.equal(request.options.headers.Authorization, 'Bearer test-groq-key');
+      assert.deepEqual(JSON.parse(request.options.body), {
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: 'Return JSON.' },
+          { role: 'user', content: 'Test' },
+        ],
+        max_tokens: 128,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+      });
+      assert.deepEqual(result, {
+        content: '{"ok":true}',
+        usage: { total_tokens: 12 },
+        model: 'llama-3.3-70b-versatile',
+      });
+    } finally {
+      config.ai.provider = originalProvider;
+      config.ai.groq = originalGroqConfig;
+      globalThis.fetch = originalFetch;
+    }
   });
 });

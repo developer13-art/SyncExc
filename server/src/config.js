@@ -91,7 +91,7 @@ const envSchema = Joi.object({
   VAPID_SUBJECT: Joi.string().default('mailto:admin@syncexc.com'),
 
   // AI
-  AI_PROVIDER: Joi.string().valid('openai', 'anthropic', 'google', 'local').default('openai'),
+  AI_PROVIDER: Joi.string().valid('openai', 'anthropic', 'google', 'groq', 'local').default('openai'),
   OPENAI_API_KEY: Joi.string().allow('').optional(),
   OPENAI_MODEL: Joi.string().default('gpt-4o-mini'),
   OPENAI_MAX_TOKENS: Joi.number().integer().default(4096),
@@ -99,6 +99,9 @@ const envSchema = Joi.object({
   ANTHROPIC_MODEL: Joi.string().default('claude-3-5-sonnet-20241022'),
   GOOGLE_AI_API_KEY: Joi.string().allow('').optional(),
   GOOGLE_AI_MODEL: Joi.string().default('gemini-1.5-flash'),
+  GROQ_API_KEY: Joi.string().allow('').optional(),
+  GROQ_MODEL: Joi.string().default('llama-3.3-70b-versatile'),
+  GROQ_MAX_TOKENS: Joi.number().integer().default(4096),
   LOCAL_LLM_BASE_URL: Joi.string().uri().default('http://localhost:11434'),
   LOCAL_LLM_MODEL: Joi.string().default('llama3.1'),
   AI_REQUEST_TIMEOUT_MS: Joi.number().integer().default(60000),
@@ -345,6 +348,11 @@ const config = {
     google: {
       apiKey: env.GOOGLE_AI_API_KEY || undefined,
       model: env.GOOGLE_AI_MODEL,
+    },
+    groq: {
+      apiKey: env.GROQ_API_KEY || undefined,
+      model: env.GROQ_MODEL,
+      maxTokens: env.GROQ_MAX_TOKENS,
     },
     local: {
       baseUrl: env.LOCAL_LLM_BASE_URL,

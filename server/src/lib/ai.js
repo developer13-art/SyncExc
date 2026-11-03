@@ -222,6 +222,59 @@ async function callGoogle({ system, messages, maxTokens, temperature = 0 }) {
   }
 }
 
+async function callGroq({ system, messages, maxTokens, temperature = 0 }) {
+  const apiKey = config.ai.groq.apiKey;
+  if (!apiKey) throw new AppError('Groq API key not configured', { code: 'AI_NOT_CONFIGURED', status: 500 });
+
+  const body = {
+    model: config.ai.groq.model,
+    messages: [
+      ...(system ? [{ role: 'system', content: system }] : []),
+      ...messages,
+    ],
+    max_tokens: maxTokens || config.ai.groq.maxTokens,
+    temperature,
+    response_format: { type: 'json_object' },
+  };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.ai.timeoutMs);
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      throw new AppError(`Groq request failed: ${res.status}`, {
+        code: 'AI_PROVIDER_ERROR',
+        status: 502,
+        details: {
+          status: res.status,
+          ...(res.headers.get('x-request-id') ? { requestId: res.headers.get('x-request-id') } : {}),
+        },
+      });
+    }
+
+    const json = await res.json();
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) throw new AppError('Groq returned empty response', { code: 'AI_EMPTY_RESPONSE', status: 502 });
+    return {
+      content,
+      usage: json.usage,
+      model: json.model,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function callLocal({ system, messages, maxTokens, temperature = 0 }) {
   const url = `${config.ai.local.baseUrl}/api/chat`;
 
@@ -268,6 +321,7 @@ const PROVIDERS = {
   openai: callOpenAI,
   anthropic: callAnthropic,
   google: callGoogle,
+  groq: callGroq,
   local: callLocal,
 };
 

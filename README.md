@@ -142,6 +142,13 @@ memory and are not shared between multiple server instances. To start one
 application, use `npm run dev:server`, `npm run dev:client`, or
 `npm run dev:admin`.
 
+### AI providers
+
+Set `AI_PROVIDER` to `openai`, `anthropic`, `google`, `groq`, or `local`.
+For Groq, set `GROQ_API_KEY`; `GROQ_MODEL` defaults to
+`llama-3.3-70b-versatile`. On Render, set `AI_PROVIDER=groq` in the server
+environment and add `GROQ_API_KEY` before redeploying.
+
 ### Marketplace payments
 
 Paid Trader plans require `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Configure the

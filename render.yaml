@@ -61,6 +61,8 @@ services:
         sync: false
       - key: GOOGLE_AI_API_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
 
       # Payments
       - key: STRIPE_SECRET_KEY
