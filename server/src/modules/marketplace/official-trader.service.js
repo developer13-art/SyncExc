@@ -1,6 +1,6 @@
 const OFFICIAL_HANDLE = 'syncexc-official';
 const AI_RESEARCH_LIMIT = 5;
-const AI_RESEARCH_UNIVERSE_LIMIT = 20;
+const AI_RESEARCH_UNIVERSE_LIMIT = 8;
 const AI_RESEARCH_ROTATION_MS = 15 * 60 * 1000;
 const MIN_CONFIDENCE = 0.8;
 
@@ -70,6 +70,7 @@ export function createOfficialTraderService({ db, ai, publication, logger }) {
       let published = 0;
       let aiRejected = 0;
       let publicationFailures = 0;
+      let activeSignalSkipped = 0;
 
       for (const candidate of candidates) {
         try {
@@ -85,7 +86,10 @@ export function createOfficialTraderService({ db, ai, publication, logger }) {
             `,
             [provider.id, candidate.normalized_symbol, candidate.market_type]
           );
-          if (activeSignal.rows[0]) continue;
+          if (activeSignal.rows[0]) {
+            activeSignalSkipped += 1;
+            continue;
+          }
 
           if (candidate.confidence < MIN_CONFIDENCE) {
             aiRejected += 1;
@@ -133,12 +137,17 @@ export function createOfficialTraderService({ db, ai, publication, logger }) {
         instrumentsScanned: universe.length,
         instrumentsResearched: researchUniverse.length,
         candidates: candidates.length,
-        aiResearched: Math.min(candidates.length, AI_RESEARCH_LIMIT),
+        aiResearched: researchUniverse.length,
         aiRejected,
+        activeSignalSkipped,
         published,
         publicationFailures,
       };
-      logger.info(summary, 'Official trader AI research scan completed');
+      if (candidates.length === 0) {
+        logger.warn(summary, 'Official trader AI research found no supported signals');
+      } else {
+        logger.info(summary, 'Official trader AI research scan completed');
+      }
       if (candidates.length > 0 && published === 0 && aiRejected === 0 && publicationFailures > 0) {
         throw new Error('Official trader could not publish any AI-researched candidate signal');
       }

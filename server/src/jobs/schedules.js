@@ -89,6 +89,7 @@ export async function registerAllSchedules({ scheduler }) {
     name: 'marketplace-official-trader-scan',
     type: 'marketplace_official_trader_scan',
     intervalMs: 15 * 60 * 1000,
+    runOnce: true,
     priority: 70,
   });
 

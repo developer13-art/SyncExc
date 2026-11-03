@@ -10,6 +10,7 @@ import {
 } from '../../src/modules/marketplace/official-trader.service.js';
 import { createMarketDataService } from '../../src/modules/connections/market-data.service.js';
 import { registerAllHandlers } from '../../src/jobs/handlers.js';
+import { registerAllSchedules } from '../../src/jobs/schedules.js';
 import { createSignalsListeners } from '../../src/modules/signals/listeners.js';
 
 test('parses market type, order type, entry, stop, and targets from a signal', async () => {
@@ -481,10 +482,59 @@ test('official trader sends only a rotating catalog batch to AI research', async
   const result = await scanner.scanNow();
   const researchedCatalog = JSON.parse(researchRequest.messages[0].content).activeCryptoInstrumentCatalog;
   assert.equal(result.instrumentsScanned, 45);
-  assert.equal(result.instrumentsResearched, 20);
-  assert.equal(researchedCatalog.length, 20);
-  assert.equal(new Set(researchedCatalog.map(({ symbol }) => symbol)).size, 20);
+  assert.equal(result.instrumentsResearched, 8);
+  assert.equal(researchedCatalog.length, 8);
+  assert.equal(new Set(researchedCatalog.map(({ symbol }) => symbol)).size, 8);
   assert.equal(researchRequest.maxTokens, 1200);
+  assert.equal(result.aiResearched, 8);
+});
+
+test('official trader schedule scans immediately on startup', async () => {
+  const schedules = [];
+  await registerAllSchedules({
+    scheduler: {
+      add(schedule) {
+        schedules.push(schedule);
+      },
+      list() {
+        return schedules;
+      },
+    },
+  });
+
+  const officialTraderSchedule = schedules.find(
+    (schedule) => schedule.name === 'marketplace-official-trader-scan',
+  );
+  assert.equal(officialTraderSchedule.runOnce, true);
+  assert.equal(officialTraderSchedule.intervalMs, 15 * 60 * 1000);
+});
+
+test('official trader logs a visible warning when AI finds no candidates', async () => {
+  const warnings = [];
+  const scanner = createOfficialTraderService({
+    db: {
+      query: async (sql) => sql.includes('FROM marketplace_provider_profiles')
+        ? { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] }
+        : sql.includes('FROM exchange_instruments')
+          ? { rows: [{ symbol: 'BTCUSDT', marketType: 'spot' }] }
+          : { rows: [] },
+    },
+    ai: {
+      chatJson: async () => ({ data: { signals: [] } }),
+    },
+    publication: {},
+    logger: {
+      info() {},
+      warn: (...args) => warnings.push(args),
+      error() {},
+    },
+  });
+
+  const result = await scanner.scanNow();
+  assert.equal(result.candidates, 0);
+  assert.equal(result.published, 0);
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0][1], 'Official trader AI research found no supported signals');
 });
 
 test('official trader defers cleanly when Groq hits its token rate limit', async () => {
