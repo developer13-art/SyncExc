@@ -7,6 +7,19 @@ import { formatCurrency } from '../../../lib/formatters/currency.formatter.js';
 
 export function SubscribeDialog({ open, onOpenChange, provider, plan, onConfirm, isSubmitting }) {
   const [error, setError] = useState(null);
+  const pricing = plan?.pricing ?? {};
+  const price = plan?.price ?? (
+    pricing.amountMinor == null ? undefined : Number(pricing.amountMinor) / 100
+  );
+  const currency = plan?.currency ?? pricing.currency ?? 'USD';
+  const billingInterval = plan?.billingInterval ?? (
+    pricing.billingInterval === 'yearly'
+      ? 'year'
+      : pricing.billingInterval === 'monthly'
+        ? 'month'
+        : pricing.billingInterval ?? 'month'
+  );
+  const isPaidPlan = Number(pricing.amountMinor ?? price * 100) > 0;
 
   const handleConfirm = async () => {
     setError(null);
@@ -25,7 +38,7 @@ export function SubscribeDialog({ open, onOpenChange, provider, plan, onConfirm,
       title={`Subscribe to ${provider?.displayName ?? 'provider'}`}
       description={
         plan
-          ? `${plan.name} — ${formatCurrency(plan.price, plan.currency ?? 'USD')} / ${plan.billingInterval ?? 'month'}`
+          ? `${plan.name} — ${formatCurrency(price, currency)} / ${billingInterval}`
           : ''
       }
       footer={
@@ -34,7 +47,7 @@ export function SubscribeDialog({ open, onOpenChange, provider, plan, onConfirm,
             Cancel
           </Button>
           <Button onClick={handleConfirm} disabled={isSubmitting}>
-            {isSubmitting ? 'Subscribing…' : 'Confirm subscription'}
+            {isSubmitting ? 'Processing…' : isPaidPlan ? 'Continue to payment' : 'Confirm subscription'}
           </Button>
         </>
       }

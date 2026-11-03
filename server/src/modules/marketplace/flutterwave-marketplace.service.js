@@ -299,6 +299,21 @@ export function createFlutterwaveMarketplaceService({
           traderNetAmountMinor: amountMinor - platformFeeMinor,
           currency: verified.currency.toUpperCase(),
         });
+        const replacedFreeSubscriptions = await queries.expireActiveFreeSubscriptions(tx, {
+          providerId: subscription.provider_id,
+          subscriberUserId: subscription.subscriber_user_id,
+          exceptSubscriptionId: subscription.id,
+        });
+        for (const replaced of replacedFreeSubscriptions) {
+          await queries.insertSubscriptionEvent(tx, {
+            subscriptionId: replaced.id,
+            eventType: 'subscription_upgraded',
+            metadata: {
+              billingProvider: 'flutterwave',
+              replacementSubscriptionId: subscription.id,
+            },
+          });
+        }
         const periodStart = verified.created_at ? new Date(verified.created_at) : new Date();
         const periodEnd = nextBillingDate(periodStart, subscription.plan_pricing?.billingInterval);
         await queries.updateMarketplaceSubscription(subscription.id, {

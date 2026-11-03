@@ -100,6 +100,7 @@ test('verifies successful recurring charges and records net Trader earnings idem
       return {
         id: 'subscription-1',
         provider_id: 'provider-1',
+        subscriber_user_id: 'subscriber-1',
         plan_pricing: { amountMinor: 10000, currency: 'NGN', billingInterval: 'monthly' },
       };
     },
@@ -112,6 +113,15 @@ test('verifies successful recurring charges and records net Trader earnings idem
       assert.equal(client, transaction);
       savedEarnings.push(earning);
       return { id: 'earning-1' };
+    },
+    async expireActiveFreeSubscriptions(client, input) {
+      assert.equal(client, transaction);
+      assert.deepEqual(input, {
+        providerId: 'provider-1',
+        subscriberUserId: 'subscriber-1',
+        exceptSubscriptionId: 'subscription-1',
+      });
+      return [];
     },
     async updateMarketplaceSubscription(id, fields, client) {
       assert.equal(client, transaction);

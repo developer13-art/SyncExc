@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { createMarketplaceController } from '../../src/modules/marketplace/marketplace.controller.js';
 import {
   serializeProvider,
+  serializeProviderPlan,
   serializeProviderSubscriber,
   serializeMarketplaceSubscription,
   serializePublishedSignal,
@@ -2121,6 +2122,50 @@ describe('Trader Studio API', () => {
     }), existing);
   });
 
+  it('starts paid checkout when the subscriber currently has an active free subscription', async () => {
+    let checkoutParameters;
+    const service = createSubscriptionService({
+      db: {},
+      queries: {
+        async findProviderById() {
+          return { id: 'provider-1', moderation_state: 'approved', visibility: 'public' };
+        },
+        async findProviderPlanById() {
+          return {
+            id: 'paid-plan',
+            provider_id: 'provider-1',
+            status: 'active',
+            pricing: { amountMinor: 1200, currency: 'NGN', billingInterval: 'monthly' },
+          };
+        },
+        async findExistingSubscriptionForCheckout() {
+          return {
+            id: 'free-subscription',
+            plan_id: 'free-plan',
+            status: 'active',
+            plan_pricing: { amountMinor: 0, currency: 'NGN', billingInterval: 'monthly' },
+          };
+        },
+      },
+      flutterwaveMarketplace: {
+        async createSubscriptionCheckout(params) {
+          checkoutParameters = params;
+          return { subscriptionId: 'pending-subscription', redirectUrl: 'https://flutterwave.test/checkout' };
+        },
+      },
+    });
+
+    const result = await service.subscribe({
+      userId: 'subscriber-1',
+      providerId: 'provider-1',
+      planId: 'paid-plan',
+      workspaceId: 'workspace-1',
+    });
+
+    assert.equal(result.redirectUrl, 'https://flutterwave.test/checkout');
+    assert.equal(checkoutParameters.plan.id, 'paid-plan');
+  });
+
   it('explains when an existing past-due subscription blocks access', async () => {
     const service = createSubscriptionService({
       db: {},
@@ -2210,6 +2255,26 @@ describe('Trader Studio API', () => {
       'createdAt',
     ]);
     assert.equal(subscriber.username, 'subscriber');
+  });
+
+  it('exposes plan price fields in the shape used by marketplace cards', () => {
+    const plan = serializeProviderPlan({
+      id: 'plan-1',
+      provider_id: 'provider-1',
+      name: 'Starter',
+      pricing: { amountMinor: 1250, currency: 'NGN', billingInterval: 'monthly' },
+      entitlements: {},
+      status: 'active',
+    });
+
+    assert.equal(plan.price, 12.5);
+    assert.equal(plan.currency, 'NGN');
+    assert.equal(plan.billingInterval, 'month');
+    assert.deepEqual(plan.pricing, {
+      amountMinor: 1250,
+      currency: 'NGN',
+      billingInterval: 'monthly',
+    });
   });
 
   it('serializes only the subscriber-facing fields for Stripe subscriptions', () => {

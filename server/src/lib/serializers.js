@@ -612,11 +612,19 @@ export function serializePublishedSignal(row) {
 
 export function serializeProviderPlan(row) {
   if (!row) return null;
+  const pricing = row.pricing || {};
   return {
     id: row.id,
     providerId: row.provider_id,
     name: row.name,
-    pricing: row.pricing || {},
+    pricing,
+    price: pricing.amountMinor == null ? undefined : Number(pricing.amountMinor) / 100,
+    currency: pricing.currency || 'USD',
+    billingInterval: pricing.billingInterval === 'yearly'
+      ? 'year'
+      : pricing.billingInterval === 'monthly'
+        ? 'month'
+        : pricing.billingInterval || null,
     entitlements: row.entitlements || {},
     status: row.status,
     version: row.version,

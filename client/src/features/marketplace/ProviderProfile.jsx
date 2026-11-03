@@ -82,9 +82,17 @@ export default function ProviderProfile() {
     setSubscribing(true);
     try {
       const result = await providerQuery.subscribe({ planId });
-      if (result?.redirectUrl) {
-        window.location.assign(result.redirectUrl);
+      const redirectUrl = result?.redirectUrl ?? result?.checkoutUrl;
+      if (redirectUrl) {
+        window.location.assign(redirectUrl);
         return;
+      }
+      const paidPlanAmount = Number(
+        subscribePlan?.pricing?.amountMinor ?? (subscribePlan?.price ?? 0) * 100,
+      );
+      const returnedPlanId = result?.planId ?? result?.plan_id;
+      if (paidPlanAmount > 0 && returnedPlanId !== subscribePlan?.id) {
+        throw new Error('Payment checkout was not started. Please try again or contact support.');
       }
       toast.success('Subscribed');
       setSubscribePlan(null);

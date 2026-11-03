@@ -16,6 +16,19 @@ export function PlanCard({
     return null;
   }
 
+  const pricing = plan.pricing ?? {};
+  const price = plan.price ?? (
+    pricing.amountMinor == null ? undefined : Number(pricing.amountMinor) / 100
+  );
+  const currency = plan.currency ?? pricing.currency;
+  const billingInterval = plan.billingInterval ?? (
+    pricing.billingInterval === 'yearly'
+      ? 'year'
+      : pricing.billingInterval === 'monthly'
+        ? 'month'
+        : pricing.billingInterval
+  );
+
   return (
     <Card
       className={cn(
@@ -38,10 +51,10 @@ export function PlanCard({
         <div className="mt-4">
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-semibold text-foreground">
-              {formatCurrency(plan.price, plan.currency, { showSymbol: true })}
+              {formatCurrency(price, currency, { showSymbol: true })}
             </span>
             <span className="text-sm text-muted-foreground">
-              /{plan.billingInterval ?? 'month'}
+              /{billingInterval ?? 'month'}
             </span>
           </div>
         </div>

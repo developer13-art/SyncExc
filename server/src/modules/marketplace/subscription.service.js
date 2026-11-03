@@ -35,7 +35,20 @@ export function createSubscriptionService({
 
     const existing = await queries.findExistingSubscriptionForCheckout(providerId, userId);
     if (existing && ['active', 'trialing'].includes(existing.status)) {
-      return existing;
+      if (!plan || existing.plan_id === plan.id) {
+        return existing;
+      }
+
+      const currentPlanIsFree = Number(existing.plan_pricing?.amountMinor ?? 0) === 0;
+      const currentSubscriptionIsPaid = Boolean(
+        existing.stripe_subscription_id || existing.flutterwave_subscription_id,
+      );
+      if (!(Number(plan.pricing?.amountMinor) > 0 && currentPlanIsFree && !currentSubscriptionIsPaid)) {
+        throw new ConflictError(
+          'You already have an active subscription to this provider. Cancel it before selecting a different plan.',
+          'ACTIVE_SUBSCRIPTION_EXISTS'
+        );
+      }
     }
     if (existing?.status === 'past_due') {
       throw new ConflictError(

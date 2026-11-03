@@ -1407,9 +1407,11 @@ export function createMarketplaceQueries({ db }) {
     async findExistingSubscriptionForCheckout(providerId, subscriberUserId) {
       const result = await db.query(
         `
-        SELECT * FROM marketplace_subscriptions
-        WHERE provider_id = $1 AND subscriber_user_id = $2
-          AND status IN ('active', 'trialing', 'past_due')
+        SELECT subscription.*, plan.pricing AS plan_pricing
+        FROM marketplace_subscriptions subscription
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
+        WHERE subscription.provider_id = $1 AND subscription.subscriber_user_id = $2
+          AND subscription.status IN ('active', 'trialing', 'past_due')
         LIMIT 1
         `,
         [providerId, subscriberUserId]
@@ -1472,6 +1474,35 @@ export function createMarketplaceQueries({ db }) {
         `,
         [reference, subscriptionId],
       );
+    },
+
+    async expireActiveFreeSubscriptions(client, { providerId, subscriberUserId, exceptSubscriptionId }) {
+      const result = await client.query(
+        `
+        UPDATE marketplace_subscriptions subscription
+        SET status = 'canceled',
+            canceled_at = now(),
+            updated_at = now()
+        WHERE subscription.provider_id = $1
+          AND subscription.subscriber_user_id = $2
+          AND subscription.id <> $3
+          AND subscription.status IN ('active', 'trialing')
+          AND subscription.stripe_subscription_id IS NULL
+          AND subscription.flutterwave_subscription_id IS NULL
+          AND (
+            subscription.plan_id IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM marketplace_provider_plans plan
+              WHERE plan.id = subscription.plan_id
+                AND COALESCE((plan.pricing->>'amountMinor')::bigint, 0) = 0
+            )
+          )
+        RETURNING id
+        `,
+        [providerId, subscriberUserId, exceptSubscriptionId],
+      );
+      return result.rows;
     },
 
     async findSubscriptionByFlutterwaveId(flutterwaveSubscriptionId, client = db) {
