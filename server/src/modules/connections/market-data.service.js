@@ -33,6 +33,8 @@ const EXCHANGES = {
 const CACHE_TTL_MS = 5_000;
 const PRICE_CACHE_TTL_MS = 30_000;
 const MAX_CACHE_ENTRIES = 300;
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
+const DEFAULT_IP_BAN_COOLDOWN_MS = 5 * 60_000;
 
 const asNumber = (value) => {
   const number = Number(value);
@@ -376,12 +378,57 @@ function overviewFrom(exchangeCode, ticker, metrics, now) {
 export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, now = Date.now } = {}) {
   const cache = new Map();
   const priceCache = new Map();
+  const rateLimitCooldowns = new Map();
+
+  function rateLimitError(exchangeCode, status, retryAfterMs) {
+    return new AppError(`Market-data requests to ${exchangeCode} are temporarily paused`, {
+      code: 'MARKET_DATA_RATE_LIMITED',
+      status: 503,
+      expose: true,
+      details: { exchangeCode, status, retryAfterMs },
+    });
+  }
+
+  function retryAfterMs(response) {
+    const header = response.headers?.get?.('retry-after');
+    if (header) {
+      const seconds = Number(header);
+      if (Number.isFinite(seconds) && seconds >= 0) return Math.max(1_000, seconds * 1_000);
+      const retryAt = Date.parse(header);
+      if (Number.isFinite(retryAt)) return Math.max(1_000, retryAt - now());
+    }
+    return response.status === 418 ? DEFAULT_IP_BAN_COOLDOWN_MS : DEFAULT_RATE_LIMIT_COOLDOWN_MS;
+  }
+
+  function assertNotRateLimited(exchangeCode) {
+    const cooldown = rateLimitCooldowns.get(exchangeCode);
+    if (!cooldown) return;
+    const remainingMs = cooldown.until - now();
+    if (remainingMs <= 0) {
+      rateLimitCooldowns.delete(exchangeCode);
+      return;
+    }
+    throw rateLimitError(exchangeCode, cooldown.status, remainingMs);
+  }
 
   async function request(url, exchangeCode) {
+    assertNotRateLimited(exchangeCode);
     const response = await fetchImpl(url, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(8_000),
     });
+    if (response.status === 418 || response.status === 429) {
+      const cooldownMs = retryAfterMs(response);
+      rateLimitCooldowns.set(exchangeCode, {
+        until: now() + cooldownMs,
+        status: response.status,
+      });
+      logger?.warn?.(
+        { exchangeCode, status: response.status, retryAfterMs: cooldownMs },
+        'Exchange market-data rate limit triggered; pausing requests',
+      );
+      throw rateLimitError(exchangeCode, response.status, cooldownMs);
+    }
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return checkProviderResponse(exchangeCode, await response.json());
   }

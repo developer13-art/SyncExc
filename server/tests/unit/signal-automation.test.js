@@ -334,6 +334,50 @@ test('candle-only market data uses one exchange request', async () => {
   assert.match(requests[0], /interval=15m/);
 });
 
+test('market data pauses an exchange after 418 and honors Retry-After', async () => {
+  let currentTime = 1_000_000;
+  let requests = 0;
+  const service = createMarketDataService({
+    now: () => currentTime,
+    fetchImpl: async () => {
+      requests += 1;
+      if (requests === 1) {
+        return new Response('IP banned', {
+          status: 418,
+          headers: { 'Retry-After': '2' },
+        });
+      }
+      return new Response(JSON.stringify([
+        [currentTime, '1', '2', '0.5', '1.5', '10'],
+      ]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+  });
+  const query = {
+    exchangeCode: 'binance',
+    symbol: 'BTCUSDT',
+    marketType: 'spot',
+    timeframe: '15m',
+    limit: 25,
+  };
+
+  await assert.rejects(service.getCandles(query), (error) => {
+    assert.equal(error.code, 'MARKET_DATA_RATE_LIMITED');
+    assert.equal(error.details.status, 418);
+    assert.equal(error.details.retryAfterMs, 2_000);
+    return true;
+  });
+  await assert.rejects(service.getCandles(query), { code: 'MARKET_DATA_RATE_LIMITED' });
+  assert.equal(requests, 1);
+
+  currentTime += 2_001;
+  const result = await service.getCandles(query);
+  assert.equal(result.candles[0].close, 1.5);
+  assert.equal(requests, 2);
+});
+
 test('official trader publishes AI-reviewed market signals through marketplace publication', async () => {
   const candles = Array.from({ length: 80 }, (_, index) => {
     const close = 100 + index * 0.1 + Math.sin(index * 0.4);
@@ -379,6 +423,58 @@ test('official trader publishes AI-reviewed market signals through marketplace p
   assert.equal(publishedSignals[0].instrument, 'BTCUSDT');
   assert.equal(publishedSignals[0].orderType, 'market');
   assert.equal(publishedSignals[0].targets.length, 1);
+});
+
+test('official trader stops retrying a rate-limited exchange and falls back to others', async () => {
+  const instruments = Array.from({ length: 5 }, (_, index) => {
+    const symbol = `COIN${index}USDT`;
+    return [
+      { exchange_code: 'binance', exchange_symbol: symbol, normalized_symbol: symbol, market_type: 'spot' },
+      { exchange_code: 'bybit', exchange_symbol: symbol, normalized_symbol: symbol, market_type: 'spot' },
+    ];
+  }).flat();
+  const warnings = [];
+  let binanceRequests = 0;
+  let bybitRequests = 0;
+  const scanner = createOfficialTraderService({
+    db: {
+      query: async (sql) => {
+        if (sql.includes('FROM marketplace_provider_profiles')) {
+          return { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] };
+        }
+        if (sql.includes('FROM exchange_instruments')) return { rows: instruments };
+        return { rows: [] };
+      },
+    },
+    marketData: {
+      getCandles: async ({ exchangeCode }) => {
+        if (exchangeCode === 'binance') {
+          binanceRequests += 1;
+          const error = new Error('Rate limited');
+          error.code = 'MARKET_DATA_RATE_LIMITED';
+          throw error;
+        }
+        bybitRequests += 1;
+        return { candles: [] };
+      },
+    },
+    ai: {},
+    publication: {},
+    logger: {
+      info() {},
+      warn: (...args) => warnings.push(args),
+      error() {},
+    },
+  });
+
+  const result = await scanner.scanNow();
+  assert.equal(result.instrumentsScanned, 5);
+  assert.ok(binanceRequests <= 3);
+  assert.equal(bybitRequests, 5);
+  assert.equal(
+    warnings.filter(([, message]) => message === 'Official trader paused requests to a rate-limited exchange').length,
+    1,
+  );
 });
 
 test('registers the official trader scan as an independently scheduled job handler', async () => {

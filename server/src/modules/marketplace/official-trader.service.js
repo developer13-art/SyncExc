@@ -55,6 +55,7 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
       let dataFailures = 0;
       let nextIndex = 0;
       const workerCount = Math.min(3, instruments.length);
+      const rateLimitedExchanges = new Set();
 
       await Promise.all(Array.from({ length: workerCount }, async () => {
         while (nextIndex < instruments.length) {
@@ -62,6 +63,7 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
           nextIndex += 1;
           let receivedMarketData = false;
           for (const instrument of instrumentGroup) {
+            if (rateLimitedExchanges.has(instrument.exchange_code)) continue;
             try {
               const result = await marketData.getCandles({
                 exchangeCode: instrument.exchange_code,
@@ -75,9 +77,15 @@ export function createOfficialTraderService({ db, marketData, ai, publication, l
               if (analysis) candidates.push({ ...instrument, ...analysis });
               break;
             } catch (error) {
+              const isRateLimited = error?.code === 'MARKET_DATA_RATE_LIMITED';
+              const alreadyRateLimited = rateLimitedExchanges.has(instrument.exchange_code);
+              if (isRateLimited) rateLimitedExchanges.add(instrument.exchange_code);
+              if (isRateLimited && alreadyRateLimited) continue;
               logger.warn(
                 { err: error, exchangeCode: instrument.exchange_code, symbol: instrument.exchange_symbol },
-                'Official trader could not analyze instrument on exchange',
+                isRateLimited
+                  ? 'Official trader paused requests to a rate-limited exchange'
+                  : 'Official trader could not analyze instrument on exchange',
               );
             }
           }
