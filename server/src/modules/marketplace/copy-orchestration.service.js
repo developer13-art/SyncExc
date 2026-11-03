@@ -82,6 +82,20 @@ export function createCopyOrchestrationService({
       throw new NotFoundError('Active copy configuration');
     }
 
+    if (
+      config.created_by === signal.user_id ||
+      (signal.source_account_id &&
+        Array.isArray(destinationAccountIds) &&
+        destinationAccountIds.some((accountId) =>
+          String(accountId) === String(signal.source_account_id)
+        ))
+    ) {
+      throw new ConflictError(
+        'A trader cannot copy their own signal or copy it to the account that generated it.',
+        'SELF_COPY',
+      );
+    }
+
     const subscription = await subscriptionService.getSubscription({
       userId,
       providerId: signal.provider_id,
@@ -121,6 +135,12 @@ export function createCopyOrchestrationService({
       );
       if (selected.length !== new Set(destinationAccountIds).size) {
         throw new NotFoundError('Configured destination account');
+      }
+      if (selected.some((destination) => providerAccountIds.has(String(destination.account_id)))) {
+        throw new ConflictError(
+          'This account is already used by the signal provider; copying here would submit a duplicate trade.',
+          'SELF_COPY',
+        );
       }
 
       const requestConfig = {
@@ -211,7 +231,7 @@ export function createCopyOrchestrationService({
       await processConfigForSignal({
         config: { ...config, subscriber_user_id: userId },
         signal,
-        providerAccountIds,
+        providerAccountIds: await getProviderAccountIds(signal),
       });
       records = await queries.listCopyRecordsForSignalConfiguration(
         signalId,
@@ -248,6 +268,17 @@ export function createCopyOrchestrationService({
   }
 
   async function processConfigForSignal({ config, signal, providerAccountIds }) {
+    if (config.subscriber_user_id === signal.user_id) {
+      await recordSkip({
+        config,
+        signal,
+        destination: null,
+        reason: COPY_SKIP_REASON.SELF_COPY,
+        message: 'A trader cannot copy their own signal back to their exchange accounts.',
+      });
+      return;
+    }
+
     const destinations = await queries.listCopyDestinations(config.id);
 
     // Apply instrument filter
@@ -291,6 +322,20 @@ export function createCopyOrchestrationService({
 
     // For each destination, run the full pipeline
     for (const destination of destinations) {
+      if (
+        signal.source_account_id &&
+        String(destination.account_id) === String(signal.source_account_id)
+      ) {
+        await recordSkip({
+          config,
+          signal,
+          destination,
+          reason: COPY_SKIP_REASON.SELF_COPY,
+          message: 'This account generated the signal and cannot also be its copy destination.',
+        });
+        continue;
+      }
+
       try {
         await processDestination({ config, signal, destination, providerAccountIds });
       } catch (err) {
@@ -882,13 +927,15 @@ export function createCopyOrchestrationService({
     if (record.outcome !== COPY_PROCESSING_OUTCOME.HELD || !record.copy_intent_id) {
       throw new ConflictError('This copy signal is not awaiting confirmation', 'INVALID_STATE');
     }
-    const initialIntent = typeof record.intent_payload === 'string'
-      ? JSON.parse(record.intent_payload)
-      : record.intent_payload;
+
     const intentStatus = record.intent_status;
     if (!['awaiting_confirmation', 'terminal_confirmation_required'].includes(intentStatus)) {
       throw new ConflictError('This copy confirmation has already been processed', 'INVALID_STATE');
     }
+
+    const initialIntent = typeof record.intent_payload === 'string'
+      ? JSON.parse(record.intent_payload)
+      : record.intent_payload;
     const signal = await queries.findPublishedSignalById(record.published_signal_id);
     if (!signal) throw new NotFoundError('Published signal');
     const providerAccountIds = await getProviderAccountIds(signal);

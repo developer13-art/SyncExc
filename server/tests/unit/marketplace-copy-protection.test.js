@@ -49,6 +49,181 @@ test('resolves percentage protection in the signal direction and falls back per 
   assert.equal(alignedShortProtection.takeProfit, '105.7');
 });
 
+test('does not copy a published trade back to its source exchange account', async () => {
+  const insertedRecords = [];
+  const destinationResults = [];
+  const signal = {
+    id: 'signal-self-copy',
+    provider_id: 'provider-1',
+    user_id: 'trader-1',
+    source_account_id: 'source-account-1',
+    status: 'published',
+  };
+  const service = createCopyOrchestrationService({
+    db: {
+      async tx(callback) {
+        return callback({});
+      },
+    },
+    queries: {
+      async findPublishedSignalById() {
+        return signal;
+      },
+      async listActiveCopyConfigurationsForProvider() {
+        return [{
+          id: 'config-1',
+          provider_id: 'provider-1',
+          workspace_id: 'workspace-1',
+          subscriber_user_id: 'subscriber-1',
+          current_version: 1,
+          execution_mode: 'confirm_before_execution',
+        }];
+      },
+      async listTraderSignalExecutionAccounts() {
+        return [];
+      },
+      async listCopyDestinations() {
+        return [{
+          id: 'destination-1',
+          account_id: 'source-account-1',
+          connection_id: 'source-connection-1',
+        }];
+      },
+      async insertCopyProcessingRecord(_tx, data) {
+        insertedRecords.push(data);
+        return { id: 'processing-1' };
+      },
+      async insertCopyDestinationResult(_tx, data) {
+        destinationResults.push(data);
+      },
+    },
+    events: { async publish() {} },
+    logger: { warn() {}, info() {}, error() {} },
+  });
+
+  await service.processPublishedSignal({ publishedSignalId: signal.id });
+
+  assert.equal(insertedRecords.length, 1);
+  assert.equal(insertedRecords[0].skipReason, 'self_copy');
+  assert.equal(destinationResults.length, 1);
+  assert.equal(destinationResults[0].skipReason, 'self_copy');
+});
+
+test('does not copy a provider signal into another account already used by the provider', async () => {
+  const insertedRecords = [];
+  const destinationResults = [];
+  const signal = {
+    id: 'signal-provider-account',
+    provider_id: 'provider-1',
+    user_id: 'trader-1',
+    workspace_id: 'trader-workspace',
+    source_account_id: null,
+    status: 'published',
+  };
+  const service = createCopyOrchestrationService({
+    db: {
+      async tx(callback) {
+        return callback({});
+      },
+    },
+    queries: {
+      async findPublishedSignalById() {
+        return signal;
+      },
+      async listActiveCopyConfigurationsForProvider() {
+        return [{
+          id: 'config-1',
+          provider_id: 'provider-1',
+          workspace_id: 'subscriber-workspace',
+          subscriber_user_id: 'subscriber-1',
+          current_version: 1,
+          execution_mode: 'confirm_before_execution',
+        }];
+      },
+      async listTraderSignalExecutionAccounts(userId, workspaceId) {
+        assert.equal(userId, signal.user_id);
+        assert.equal(workspaceId, signal.workspace_id);
+        return [{ account_id: 'provider-account' }];
+      },
+      async listCopyDestinations() {
+        return [{
+          id: 'destination-1',
+          account_id: 'provider-account',
+          connection_id: 'provider-connection',
+        }];
+      },
+      async insertCopyProcessingRecord(_tx, data) {
+        insertedRecords.push(data);
+        return { id: 'processing-1' };
+      },
+      async insertCopyDestinationResult(_tx, data) {
+        destinationResults.push(data);
+      },
+    },
+    events: { async publish() {} },
+    logger: { warn() {}, info() {}, error() {} },
+  });
+
+  await service.processPublishedSignal({ publishedSignalId: signal.id });
+
+  assert.equal(insertedRecords.length, 1);
+  assert.equal(insertedRecords[0].skipReason, 'duplicate_intent');
+  assert.equal(destinationResults.length, 1);
+  assert.match(destinationResults[0].errorMessage, /already used by the signal provider/);
+});
+
+test('does not automatically copy a trader own signal to any of their configured accounts', async () => {
+  const insertedRecords = [];
+  let destinationLookupCount = 0;
+  const signal = {
+    id: 'signal-own',
+    provider_id: 'provider-1',
+    user_id: 'trader-1',
+    status: 'published',
+  };
+  const service = createCopyOrchestrationService({
+    db: {
+      async tx(callback) {
+        return callback({});
+      },
+    },
+    queries: {
+      async findPublishedSignalById() {
+        return signal;
+      },
+      async listActiveCopyConfigurationsForProvider() {
+        return [{
+          id: 'config-1',
+          provider_id: 'provider-1',
+          workspace_id: 'workspace-1',
+          subscriber_user_id: 'trader-1',
+          current_version: 1,
+          execution_mode: 'confirm_before_execution',
+        }];
+      },
+      async listTraderSignalExecutionAccounts() {
+        return [];
+      },
+      async listCopyDestinations() {
+        destinationLookupCount += 1;
+        return [];
+      },
+      async insertCopyProcessingRecord(_tx, data) {
+        insertedRecords.push(data);
+        return { id: 'processing-1' };
+      },
+    },
+    events: { async publish() {} },
+    logger: { warn() {}, info() {}, error() {} },
+  });
+
+  await service.processPublishedSignal({ publishedSignalId: signal.id });
+
+  assert.equal(destinationLookupCount, 0);
+  assert.equal(insertedRecords.length, 1);
+  assert.equal(insertedRecords[0].skipReason, 'self_copy');
+});
+
 test('validates copy protection percentage overrides in the shared request schema', () => {
   const valid = CreateCopyConfigurationRequestSchema.validate({
     providerId: '4e132c7c-8a3b-4e90-a8df-e2cbe187d2ce',
@@ -246,90 +421,4 @@ test('uses current market reference and tick-aligned protection overrides in cop
   assert.equal(riskPayload.takeProfit, '114.4');
   assert.equal(intentPayload.stopLoss, '107.9');
   assert.equal(intentPayload.takeProfit, '114.4');
-});
-
-test('does not copy a provider signal into an account already used by the provider', async () => {
-  const signal = {
-    id: 'signal-from-provider',
-    provider_id: 'provider-1',
-    user_id: 'trader-1',
-    workspace_id: 'trader-workspace',
-    source_account_id: null,
-    status: 'published',
-    instrument: 'BTCUSDT',
-    market_type: 'futures',
-    direction: 'short',
-    order_type: 'market',
-  };
-  const config = {
-    id: 'config-1',
-    provider_id: 'provider-1',
-    workspace_id: 'trader-workspace',
-    subscriber_user_id: 'trader-1',
-    current_version: 1,
-    sizing_rule: { type: 'fixed_amount', config: { amount: '100' } },
-    execution_mode: 'confirm_before_execution',
-  };
-  const destination = {
-    id: 'destination-1',
-    account_id: 'trader-account',
-    connection_id: 'connection-1',
-    exchange_code: 'bybit',
-    connection_status: 'active',
-    account_status: 'active',
-    account_type: 'unified',
-    environment: 'demo',
-  };
-  const inserted = [];
-  const destinationResults = [];
-  const service = createCopyOrchestrationService({
-    db: {
-      async tx(callback) {
-        return callback({});
-      },
-    },
-    queries: {
-      async findPublishedSignalById() {
-        return signal;
-      },
-      async listActiveCopyConfigurationsForProvider() {
-        return [config];
-      },
-      async listTraderSignalExecutionAccounts(userId, workspaceId) {
-        assert.equal(userId, signal.user_id);
-        assert.equal(workspaceId, signal.workspace_id);
-        return [{ account_id: 'trader-account' }];
-      },
-      async listCopyDestinations() {
-        return [destination];
-      },
-      async insertCopyProcessingRecord(_tx, record) {
-        inserted.push(record);
-        return { id: 'processing-1', ...record };
-      },
-      async insertCopyDestinationResult(_tx, result) {
-        destinationResults.push(result);
-      },
-    },
-    subscriptionService: {},
-    copyConfigurationService: {},
-    risk: {},
-    terminal: {
-      async submitOrder() {
-        assert.fail('A duplicate order must not be submitted');
-      },
-    },
-    connections: {},
-    marketData: {},
-    events: { async publish() {} },
-    logger: { info() {}, warn() {}, error() {} },
-  });
-
-  await service.processPublishedSignal({ publishedSignalId: signal.id });
-
-  assert.equal(inserted.length, 1);
-  assert.equal(inserted[0].outcome, 'skipped');
-  assert.equal(inserted[0].skipReason, 'duplicate_intent');
-  assert.equal(destinationResults.length, 1);
-  assert.match(destinationResults[0].errorMessage, /already used by the signal provider/);
 });

@@ -140,9 +140,7 @@ describe('Trader Studio API', () => {
       outcome: 'held',
       copy_intent_id: 'intent-duplicate',
       intent_status: 'awaiting_confirmation',
-      intent_payload: {
-        accountId: 'provider-account',
-      },
+      intent_payload: { accountId: 'provider-account' },
     };
     const updated = [];
     const service = createCopyOrchestrationService({
@@ -271,7 +269,6 @@ describe('Trader Studio API', () => {
         const intent = intents.get(record.executionIntentId);
         return {
           ...record,
-          published_signal_id: signal.id,
           workspace_id: config.workspace_id,
           copy_intent_id: intent.id,
           intent_status: intent.status,
@@ -338,7 +335,6 @@ describe('Trader Studio API', () => {
   it('submits a user-confirmed signal to the active selected copy configuration', async () => {
     const record = {
       id: 'record-1',
-      published_signal_id: 'signal-1',
       subscriber_user_id: 'subscriber-1',
       outcome: 'held',
       copy_intent_id: 'intent-1',
@@ -357,13 +353,7 @@ describe('Trader Studio API', () => {
     let submittedOrder;
     const queries = {
       async findPublishedSignalById() {
-        return {
-          id: 'signal-1',
-          provider_id: 'provider-1',
-          user_id: 'trader-1',
-          workspace_id: 'trader-workspace',
-          status: 'published',
-        };
+        return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
       },
       async listTraderSignalExecutionAccounts() { return []; },
       async findCopyConfigurationById() {
@@ -475,6 +465,7 @@ describe('Trader Studio API', () => {
       db: { async tx(callback) { return callback({}); } },
       queries: {
         async findPublishedSignalById() { return signal; },
+        async listTraderSignalExecutionAccounts() { return []; },
         async findCopyConfigurationById() {
           return {
             id: 'config-1',
@@ -487,7 +478,6 @@ describe('Trader Studio API', () => {
             market_types: ['futures'],
           };
         },
-        async listTraderSignalExecutionAccounts() { return []; },
         async listCopyDestinations() { return destinations; },
         async cancelPendingCopyIntentsForSignal() { return 0; },
         async insertCopyProcessingRecord(_tx, data) {
@@ -517,7 +507,6 @@ describe('Trader Studio API', () => {
           const intent = intents.get(record.executionIntentId);
           return {
             ...record,
-            published_signal_id: signal.id,
             workspace_id: 'workspace-1',
             copy_intent_id: intent.id,
             intent_payload: intent.intent_payload,
@@ -607,7 +596,6 @@ describe('Trader Studio API', () => {
   it('returns and persists the exchange rejection reason for copied signals', async () => {
     const record = {
       id: 'record-rejected',
-      published_signal_id: 'signal-1',
       subscriber_user_id: 'subscriber-1',
       outcome: 'held',
       copy_intent_id: 'intent-rejected',
@@ -626,13 +614,7 @@ describe('Trader Studio API', () => {
     let destinationResult;
     const queries = {
       async findPublishedSignalById() {
-        return {
-          id: 'signal-1',
-          provider_id: 'provider-1',
-          user_id: 'trader-1',
-          workspace_id: 'trader-workspace',
-          status: 'published',
-        };
+        return { id: 'signal-1', provider_id: 'provider-1', status: 'published' };
       },
       async listTraderSignalExecutionAccounts() { return []; },
       async findCopyConfigurationById() {
@@ -726,6 +708,66 @@ describe('Trader Studio API', () => {
       { code: 'NOT_FOUND' },
     );
     assert.equal(subscriptionLookup, false);
+  });
+
+  it('rejects a manual copy to any account already used by the signal provider', async () => {
+    let orderSubmissionCalls = 0;
+    const service = createCopyOrchestrationService({
+      db: {},
+      queries: {
+        async findPublishedSignalById() {
+          return {
+            id: 'signal-1',
+            provider_id: 'provider-1',
+            user_id: 'trader-1',
+            workspace_id: 'trader-workspace',
+            status: 'published',
+          };
+        },
+        async findCopyConfigurationById() {
+          return {
+            id: 'config-1',
+            workspace_id: 'subscriber-workspace',
+            created_by: 'subscriber-1',
+            provider_id: 'provider-1',
+            status: 'active',
+            execution_mode: 'confirm_before_execution',
+          };
+        },
+        async listTraderSignalExecutionAccounts() {
+          return [{ account_id: 'provider-account' }];
+        },
+        async listCopyDestinations() {
+          return [{
+            id: 'destination-1',
+            account_id: 'provider-account',
+            connection_id: 'provider-connection',
+          }];
+        },
+      },
+      subscriptionService: {
+        async getSubscription() { return { status: 'active' }; },
+      },
+      terminal: {
+        async submitOrder() {
+          orderSubmissionCalls += 1;
+          assert.fail('A provider account must not receive a manual copy order');
+        },
+      },
+    });
+
+    await assert.rejects(
+      service.copySignalNow({
+        userId: 'subscriber-1',
+        workspaceId: 'subscriber-workspace',
+        signalId: 'signal-1',
+        configId: 'config-1',
+        destinationAccountIds: ['provider-account'],
+        amount: 100,
+      }),
+      { code: 'SELF_COPY' },
+    );
+    assert.equal(orderSubmissionCalls, 0);
   });
 
   it('activates paid marketplace subscriptions only after a successful Stripe invoice webhook', async () => {

@@ -807,6 +807,7 @@ export const COPY_SKIP_REASON = Object.freeze({
   DUPLICATE_INTENT: 'duplicate_intent',
   RATE_LIMITED: 'rate_limited',
   RECONCILIATION_REQUIRED: 'reconciliation_required',
+  SELF_COPY: 'self_copy',
 });
 
 export const PERFORMANCE_METHODOLOGY_VERSION = Object.freeze({
