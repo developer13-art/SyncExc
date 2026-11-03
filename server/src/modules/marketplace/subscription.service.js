@@ -4,7 +4,13 @@
 
 import { NotFoundError, ConflictError } from '../../lib/errors.js';
 
-export function createSubscriptionService({ db, queries, stripeMarketplace, events }) {
+export function createSubscriptionService({
+  db,
+  queries,
+  stripeMarketplace,
+  flutterwaveMarketplace,
+  events,
+}) {
   async function subscribe({ userId, providerId, planId, workspaceId }) {
     const provider = await queries.findProviderById(providerId);
     if (!provider) throw new NotFoundError('Provider');
@@ -21,8 +27,8 @@ export function createSubscriptionService({ db, queries, stripeMarketplace, even
         throw new NotFoundError('Subscription plan');
       }
       if (Number(plan.pricing?.amountMinor) !== 0) {
-        if (!stripeMarketplace) {
-          throw new ConflictError('Stripe marketplace billing is unavailable', 'STRIPE_NOT_CONFIGURED');
+        if (!flutterwaveMarketplace) {
+          throw new ConflictError('Flutterwave marketplace billing is unavailable', 'FLUTTERWAVE_NOT_CONFIGURED');
         }
       }
     }
@@ -39,7 +45,7 @@ export function createSubscriptionService({ db, queries, stripeMarketplace, even
     }
 
     if (plan && Number(plan.pricing?.amountMinor) > 0) {
-      return stripeMarketplace.createSubscriptionCheckout({
+      return flutterwaveMarketplace.createSubscriptionCheckout({
         userId,
         provider,
         plan,
@@ -98,6 +104,24 @@ export function createSubscriptionService({ db, queries, stripeMarketplace, even
         await queries.insertSubscriptionEvent(tx, {
           subscriptionId,
           eventType: 'cancellation_scheduled',
+        });
+      });
+      return updated;
+    }
+
+    if (
+      subscription.flutterwave_subscription_id &&
+      ['active', 'past_due'].includes(subscription.status)
+    ) {
+      if (!flutterwaveMarketplace) {
+        throw new ConflictError('Flutterwave marketplace billing is unavailable', 'FLUTTERWAVE_NOT_CONFIGURED');
+      }
+      const updated = await flutterwaveMarketplace.cancelPaidSubscription(subscription);
+      await db.tx(async (tx) => {
+        await queries.insertSubscriptionEvent(tx, {
+          subscriptionId,
+          eventType: 'canceled',
+          metadata: { billingProvider: 'flutterwave' },
         });
       });
       return updated;

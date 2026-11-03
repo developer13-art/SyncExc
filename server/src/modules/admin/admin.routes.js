@@ -75,6 +75,15 @@ const InitiateRefundSchema = Joi.object({
   reason: Joi.string().min(10).max(1000).required(),
 });
 
+const MarketplaceEarningsQuerySchema = PaginationSchema.keys({
+  status: Joi.string().valid('pending', 'paid', 'reversed').optional(),
+});
+
+const MarkMarketplaceEarningPaidSchema = Joi.object({
+  payoutReference: Joi.string().trim().min(1).max(200).required(),
+  note: Joi.string().trim().max(500).optional().allow(''),
+});
+
 const RestrictExchangeSchema = Joi.object({
   capabilityKey: Joi.string().required(),
   reason: Joi.string().min(10).max(500).required(),
@@ -372,6 +381,22 @@ export function createAdminRoutes(services) {
     '/payments/:paymentId',
     middleware.requireAdminPermission('admin.payments.view'),
     middleware.asyncHandler(controller.getPayment)
+  );
+
+  router.get(
+    '/marketplace/trader-earnings',
+    middleware.requireAdminPermission('admin.marketplace.earnings.view'),
+    middleware.validateQuery(MarketplaceEarningsQuerySchema),
+    middleware.asyncHandler(controller.listMarketplaceTraderEarnings)
+  );
+
+  router.post(
+    '/marketplace/trader-earnings/:earningId/mark-paid',
+    middleware.requireAdminPermission('admin.marketplace.earnings.manage'),
+    middleware.requireStepUp(),
+    middleware.validateParams(Joi.object({ earningId: UuidSchema.required() })),
+    middleware.validateBody(MarkMarketplaceEarningPaidSchema),
+    middleware.asyncHandler(controller.markMarketplaceTraderEarningPaid)
   );
 
   /* Refunds */

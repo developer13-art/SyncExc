@@ -90,6 +90,9 @@ export const marketplaceApi = {
   startPayoutAccountOnboarding: (country) =>
     api.post('/marketplace/me/payout-account/onboarding', { country }),
 
+  getMyEarnings: (params) =>
+    api.get('/marketplace/me/earnings', { params }),
+
   createMyProviderPlan: (payload) =>
     api.post(endpoints.marketplace.myPlans, payload),
 

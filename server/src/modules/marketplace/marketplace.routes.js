@@ -77,7 +77,7 @@ const MySignalsQuerySchema = PaginationSchema.keys({
 const CreateProviderPlanSchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required(),
   pricing: Joi.object({
-    currency: Joi.string().valid('USD').required(),
+    currency: Joi.string().valid('NGN', 'USD').required(),
     amountMinor: Joi.number().integer().min(0).max(100000000).required(),
     billingInterval: Joi.string().valid('monthly', 'yearly').required(),
   }).required(),
@@ -130,6 +130,12 @@ export function createMarketplaceRoutes(services) {
     '/webhooks/stripe-connect',
     middleware.verifyStripeSignature({ connectAccount: true }),
     middleware.asyncHandler(controller.handleStripeWebhook)
+  );
+
+  router.post(
+    '/webhooks/flutterwave',
+    middleware.verifyFlutterwaveSignature(),
+    middleware.asyncHandler(controller.handleFlutterwaveWebhook)
   );
 
   router.get(
@@ -349,6 +355,13 @@ export function createMarketplaceRoutes(services) {
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.asyncHandler(controller.getPayoutStatus)
+  );
+
+  router.get(
+    '/me/earnings',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.getMyEarnings)
   );
 
   router.post(

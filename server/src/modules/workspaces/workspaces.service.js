@@ -294,7 +294,7 @@ export function createWorkspacesService({ db, queries, rateLimiter, mailer, even
     }
 
     await ensurePersonalWorkspace(userId);
-    const limit = await getWorkspaceLimit(userId, type);
+    const limit = Math.min(1, await getWorkspaceLimit(userId, type));
 
     const suffix = randomUUID().slice(0, 6);
     const baseSlug = String(name)

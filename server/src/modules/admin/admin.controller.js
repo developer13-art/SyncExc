@@ -36,6 +36,7 @@ export function createAdminController(services) {
     alertEventService,
     operationJobService,
     exportService,
+    marketplaceFinancials,
     db,
   } = services;
 
@@ -295,6 +296,33 @@ export function createAdminController(services) {
       const result = await adminPaymentService.getPayment({
         paymentId: req.params.paymentId,
         actorId: req.auth.userId,
+      });
+      return success(res, result);
+    },
+
+    async listMarketplaceTraderEarnings(req, res) {
+      const { limit, offset } = pageOptions(req);
+      const result = await marketplaceFinancials.listAdminEarnings({
+        status: req.query.status,
+        limit,
+        offset,
+      });
+      return success(res, result);
+    },
+
+    async markMarketplaceTraderEarningPaid(req, res) {
+      const result = await marketplaceFinancials.markEarningPaid({
+        earningId: req.params.earningId,
+        actorId: req.auth.userId,
+        payoutReference: req.body.payoutReference,
+        note: req.body.note,
+      });
+      await adminAuditService.write({
+        actorId: req.auth.userId,
+        action: 'marketplace_earning.marked_paid',
+        targetResource: 'marketplace_trader_earning',
+        targetId: req.params.earningId,
+        reason: req.body.note || `Flutterwave payout reference: ${req.body.payoutReference}`,
       });
       return success(res, result);
     },

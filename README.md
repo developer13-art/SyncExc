@@ -157,14 +157,32 @@ catalog symbol, source URLs, confidence, and risk levels pass validation.
 
 ### Marketplace payments
 
-Paid Trader plans require `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Configure the
-Stripe platform webhook to send `checkout.session.completed`, `checkout.session.expired`,
-`invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, and
-`customer.subscription.deleted` events to
-`/api/v1/marketplace/webhooks/stripe`. Configure a connected-account webhook for
-`account.updated` at `/api/v1/marketplace/webhooks/stripe-connect`, and set its signing secret
-as `STRIPE_CONNECT_WEBHOOK_SECRET`. Apply the database migrations before enabling marketplace
-payments. `MARKETPLACE_PLATFORM_FEE_PERCENT` defaults to `2`.
+New paid marketplace plans use Flutterwave recurring card payments. Set `FLUTTERWAVE_SECRET_KEY`
+and `FLUTTERWAVE_WEBHOOK_SECRET` in the server environment. Configure the Flutterwave webhook
+URL as `/api/v1/marketplace/webhooks/flutterwave` and enable charge and subscription events,
+including `charge.completed` and `subscription.cancelled`. Apply database migrations before
+enabling the integration. `MARKETPLACE_PLATFORM_FEE_PERCENT` defaults to `2`.
+
+The server verifies successful charge events with Flutterwave before granting subscription access
+or recording Trader earnings. Trader shares are stored in the marketplace earnings ledger;
+SyncExc administrators must transfer them manually and record the payout reference in the
+admin marketplace earnings workflow at `/app/admin/marketplace-earnings`. These records do not
+send money automatically. Flutterwave transaction fees and any payout costs are separate from
+the recorded platform fee and Trader share.
+
+The plan editor supports NGN and USD, subject to the currencies and payment methods enabled for
+SyncExc's Flutterwave account. Flutterwave recurring plans require card payments. Availability
+for Traders and subscribers depends on Flutterwave's current country, verification, and account
+rules; this is not a universal payment method. Confirm that Flutterwave has approved SyncExc's
+marketplace activity and that manual payouts are permitted for the relevant jurisdictions before
+launching. See the [Flutterwave payment plans](https://developer.flutterwave.com/docs/payment-plans-1),
+[recurring payments](https://developer.flutterwave.com/docs/recurring-payments), and
+[webhooks](https://developer.flutterwave.com/docs/webhooks) documentation.
+
+Existing Stripe subscriptions remain in the database and continue to use their existing Stripe
+webhooks for lifecycle events. New marketplace checkouts use Flutterwave. The legacy Stripe
+Connect onboarding routes are retained for existing account records, but are no longer required
+for new paid Trader plans.
 
 Development
 Workspace Commands

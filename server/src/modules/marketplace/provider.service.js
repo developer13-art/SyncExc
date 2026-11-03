@@ -167,24 +167,13 @@ export function createProviderService({ db, queries, events, profileImages, conf
       }
       if (Number(plan.pricing?.amountMinor) !== 0) {
         if (
-          !config?.payments?.stripe?.enabled ||
-          !config.payments.stripe.secretKey ||
-          !config.payments.stripe.webhookSecret
+          !config?.payments?.flutterwave?.enabled ||
+          !config.payments.flutterwave.secretKey ||
+          !config.payments.flutterwave.webhookSecret
         ) {
           throw new ConflictError(
-            'Stripe marketplace billing and webhook signing are not configured',
-            'STRIPE_NOT_CONFIGURED',
-          );
-        }
-        if (
-          !provider.stripe_connect_account_id ||
-          !provider.stripe_details_submitted ||
-          !provider.stripe_transfers_enabled ||
-          !provider.stripe_payouts_enabled
-        ) {
-          throw new ConflictError(
-            'Complete Stripe payout onboarding before activating a paid plan',
-            'PROVIDER_PAYOUTS_NOT_READY',
+            'Flutterwave marketplace billing and webhook verification are not configured',
+            'FLUTTERWAVE_NOT_CONFIGURED',
           );
         }
       }

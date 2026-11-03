@@ -30,6 +30,7 @@ const CreateCopyConfiguration = lazy(() => import('../features/marketplace/Creat
 const CopyConfigurationDetails = lazy(() => import('../features/marketplace/CopyConfigurationDetails.jsx'));
 const CopyResults = lazy(() => import('../features/marketplace/CopyResults.jsx'));
 const TraderRoutes = lazy(() => import('./TraderRoutes.jsx'));
+const MarketplaceTraderEarnings = lazy(() => import('../features/admin/MarketplaceTraderEarnings.jsx'));
 const Developer = lazy(() => import('../features/developer/ApplicationsOverview.jsx'));
 const CommunityFeed = lazy(() => import('../features/community/Feed.jsx'));
 const CommunityLayout = lazy(() => import('../features/community/CommunityLayout.jsx'));
@@ -103,6 +104,10 @@ export function AppRoutes() {
         <Route
           path="dashboard"
           element={<Fallback><Dashboard /></Fallback>}
+        />
+        <Route
+          path="admin/marketplace-earnings"
+          element={<Fallback><MarketplaceTraderEarnings /></Fallback>}
         />
         <Route path="terminal/*" element={<Fallback><Terminal /></Fallback>} />
         <Route path="connections/new" element={<Fallback><ConnectExchange /></Fallback>} />

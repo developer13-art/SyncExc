@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Plus } from 'lucide-react';
-import { Link } from 'react-router-dom';
 
 import { marketplaceApi } from '../../api/index.js';
 import { getErrorMessage } from '../../api/errors.js';
@@ -15,7 +14,7 @@ import { Label } from '../../components/ui/Label.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { useToast } from '../../hooks/useToast.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
-import { ROUTES } from '../../config/routes.config.js';
+import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
 
 const plansKey = (workspaceId) => ['marketplace', 'my-provider-plans', workspaceId];
 
@@ -24,15 +23,10 @@ export default function SubscriptionPlans() {
   const toast = useToast();
   const { activeWorkspaceId } = useWorkspaceContext();
   const [isCreating, setIsCreating] = useState(false);
-  const [form, setForm] = useState({ name: '', price: '0', features: '' });
+  const [form, setForm] = useState({ name: '', price: '0', currency: 'NGN', features: '' });
   const plansQuery = useQuery({
     queryKey: plansKey(activeWorkspaceId),
     queryFn: () => marketplaceApi.getMyProviderPlans(),
-  });
-  const payoutQuery = useQuery({
-    queryKey: ['marketplace', 'payout-account', activeWorkspaceId],
-    queryFn: () => marketplaceApi.getPayoutAccountStatus(),
-    enabled: Boolean(activeWorkspaceId),
   });
   const refreshPlans = () => queryClient.invalidateQueries({ queryKey: plansKey(activeWorkspaceId) });
   const createPlan = useMutation({
@@ -40,7 +34,7 @@ export default function SubscriptionPlans() {
     onSuccess: async () => {
       await refreshPlans();
       setIsCreating(false);
-      setForm({ name: '', price: '0', features: '' });
+      setForm({ name: '', price: '0', currency: 'NGN', features: '' });
       toast.success('Subscription plan saved as a draft');
     },
   });
@@ -56,13 +50,13 @@ export default function SubscriptionPlans() {
     event.preventDefault();
     const price = Number(form.price);
     if (!Number.isFinite(price) || price < 0 || price > 1_000_000) {
-      toast.error('Enter a valid monthly price between $0 and $1,000,000');
+      toast.error('Enter a valid monthly price between 0 and 1,000,000');
       return;
     }
     createPlan.mutate({
       name: form.name.trim(),
       pricing: {
-        currency: 'USD',
+        currency: form.currency,
         amountMinor: Math.round(price * 100),
         billingInterval: 'monthly',
       },
@@ -99,18 +93,10 @@ export default function SubscriptionPlans() {
 
       <Card className="border-warning/30 bg-warning/5">
         <CardContent className="p-4 text-sm text-muted-foreground">
-          {payoutQuery.isLoading
-            ? 'Checking your Stripe payout setup. Free plans can be activated after your profile is approved and public.'
-            : payoutQuery.isError
-              ? 'Could not verify your Stripe payout setup. Free plans can still be activated; retry payout setup or check Revenue & payouts before activating a paid plan.'
-              : payoutQuery.data?.status === 'ready'
-                ? 'Stripe payouts are connected. Paid plan activation also requires marketplace billing and webhooks to be enabled by SyncExc.'
-                : 'Paid plans need a connected Stripe payout account and SyncExc marketplace billing. Free plans can be activated after your profile is approved and public.'}
-          {payoutQuery.data?.status !== 'ready' ? (
-            <Button variant="link" className="ml-1 h-auto p-0" asChild>
-              <Link to={ROUTES.app.trader.revenue}>Open Revenue & payouts</Link>
-            </Button>
-          ) : null}
+          Paid plans use Flutterwave recurring card payments. Subscriber access starts only after
+          payment verification. Trader earnings are recorded in Revenue & payouts and are paid
+          manually by SyncExc; Flutterwave credentials and webhook verification must be configured
+          before a paid plan can be activated.
         </CardContent>
       </Card>
 
@@ -131,7 +117,19 @@ export default function SubscriptionPlans() {
                   <Input id="provider-plan-name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} maxLength={100} required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="provider-plan-price">Monthly price (USD)</Label>
+                  <Label htmlFor="provider-plan-currency">Currency</Label>
+                  <select
+                    id="provider-plan-currency"
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    value={form.currency}
+                    onChange={(event) => setForm({ ...form, currency: event.target.value })}
+                  >
+                    <option value="NGN">NGN — Nigerian naira</option>
+                    <option value="USD">USD — US dollar</option>
+                  </select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="provider-plan-price">Monthly price ({form.currency})</Label>
                   <Input id="provider-plan-price" type="number" min="0" max="1000000" step="0.01" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required />
                 </div>
               </div>
@@ -159,8 +157,7 @@ export default function SubscriptionPlans() {
           {plans.map((plan) => {
             const amountMinor = Number(plan.pricing?.amountMinor ?? 0);
             const isFree = amountMinor === 0;
-            const payoutsReady = payoutQuery.data?.status === 'ready';
-            const canActivate = plan.status === 'draft' && (isFree || payoutsReady);
+            const canActivate = plan.status === 'draft' && isFree;
             return (
               <Card key={plan.id}>
                 <CardHeader>
@@ -169,10 +166,7 @@ export default function SubscriptionPlans() {
                     <Badge variant={plan.status === 'active' ? 'success' : 'muted'}>{plan.status}</Badge>
                   </div>
                   <CardDescription>
-                    {new Intl.NumberFormat(undefined, {
-                      style: 'currency',
-                      currency: plan.pricing?.currency ?? 'USD',
-                    }).format(amountMinor / 100)} / month
+                    {formatCurrency(amountMinor / 100, plan.pricing?.currency ?? 'NGN')} / month
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4">
@@ -202,19 +196,13 @@ export default function SubscriptionPlans() {
                     </Button>
                   ) : null}
                   {!isFree && plan.status === 'draft' ? (
-                    payoutsReady ? (
-                      <Button
-                        variant="outline"
-                        disabled={updatePlan.isPending}
-                        onClick={() => updatePlan.mutate({ planId: plan.id, status: 'active' })}
-                      >
-                        Activate paid plan
-                      </Button>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Connect Stripe payouts before activating this paid plan.
-                      </p>
-                    )
+                    <Button
+                      variant="outline"
+                      disabled={updatePlan.isPending}
+                      onClick={() => updatePlan.mutate({ planId: plan.id, status: 'active' })}
+                    >
+                      Activate paid plan
+                    </Button>
                   ) : null}
                 </CardContent>
               </Card>

@@ -29,6 +29,7 @@ export function createMarketplaceController(services) {
     moderationService,
     signalDiscussionService,
     stripeMarketplaceService,
+    flutterwaveMarketplaceService,
     traderSignalExecutionService,
     strategyService,
   } = services;
@@ -295,6 +296,21 @@ export function createMarketplaceController(services) {
     async handleStripeWebhook(req, res) {
       const result = await stripeMarketplaceService.handleWebhook({
         event: req.webhookEvent,
+      });
+      return success(res, result);
+    },
+
+    async handleFlutterwaveWebhook(req, res) {
+      const result = await flutterwaveMarketplaceService.handleWebhook({
+        event: req.body,
+      });
+      return success(res, result);
+    },
+
+    async getMyEarnings(req, res) {
+      const result = await flutterwaveMarketplaceService.getMyEarnings({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
       });
       return success(res, result);
     },

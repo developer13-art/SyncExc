@@ -48,6 +48,12 @@ export const adminApi = {
 
   getPayment: (paymentId) => api.get(endpoints.admin.payment(paymentId)),
 
+  listMarketplaceTraderEarnings: (params) =>
+    api.get(endpoints.admin.marketplaceTraderEarnings, { params }),
+
+  markMarketplaceTraderEarningPaid: (earningId, payload) =>
+    api.post(endpoints.admin.marketplaceTraderEarningPaid(earningId), payload),
+
   initiateRefund: (paymentId, payload) =>
     api.post(`${endpoints.admin.refundRequests}/${paymentId}`, payload),
 

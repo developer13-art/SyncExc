@@ -1993,7 +1993,7 @@ describe('Trader Studio API', () => {
     assert.equal(planVersionClient, transaction);
   });
 
-  it('does not activate paid plans when Stripe billing is not configured', async () => {
+  it('does not activate paid plans when Flutterwave billing is not configured', async () => {
     let transactionStarted = false;
     const service = createProviderService({
       db: {
@@ -2031,7 +2031,7 @@ describe('Trader Studio API', () => {
         planId: 'plan-1',
         status: 'active',
       }),
-      { code: 'STRIPE_NOT_CONFIGURED' },
+      { code: 'FLUTTERWAVE_NOT_CONFIGURED' },
     );
     assert.equal(transactionStarted, false);
   });
@@ -2140,7 +2140,7 @@ describe('Trader Studio API', () => {
     );
   });
 
-  it('starts Stripe checkout without activating a paid subscription before its webhook', async () => {
+  it('starts Flutterwave checkout without activating a paid subscription before its webhook', async () => {
     let checkoutParameters;
     let databaseTransactionStarted = false;
     const service = createSubscriptionService({
@@ -2168,10 +2168,10 @@ describe('Trader Studio API', () => {
         },
         async findExistingSubscriptionForCheckout() { return null; },
       },
-      stripeMarketplace: {
+      flutterwaveMarketplace: {
         async createSubscriptionCheckout(params) {
           checkoutParameters = params;
-          return { subscriptionId: 'subscription-1', redirectUrl: 'https://stripe.test/checkout' };
+          return { subscriptionId: 'subscription-1', redirectUrl: 'https://flutterwave.test/checkout' };
         },
       },
     });
@@ -2184,7 +2184,7 @@ describe('Trader Studio API', () => {
     });
     assert.deepEqual(result, {
       subscriptionId: 'subscription-1',
-      redirectUrl: 'https://stripe.test/checkout',
+      redirectUrl: 'https://flutterwave.test/checkout',
     });
     assert.equal(checkoutParameters.userId, 'subscriber-1');
     assert.equal(checkoutParameters.plan.id, 'plan-1');

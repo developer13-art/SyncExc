@@ -29,6 +29,8 @@ export const ADMIN_PERMISSIONS = [
   { key: 'admin.subscriptions.view', category: 'billing', description: 'View subscriptions' },
   { key: 'admin.subscriptions.manage', category: 'billing', description: 'Manage subscription exceptions' },
   { key: 'admin.payments.view', category: 'billing', description: 'View payment records' },
+  { key: 'admin.marketplace.earnings.view', category: 'billing', description: 'View Trader marketplace earnings' },
+  { key: 'admin.marketplace.earnings.manage', category: 'billing', description: 'Record manual Trader marketplace payouts' },
   { key: 'admin.refunds.initiate', category: 'billing', description: 'Initiate refunds' },
   { key: 'admin.refunds.approve', category: 'billing', description: 'Approve refunds (separate from initiator)' },
 
@@ -128,6 +130,7 @@ export const DEFAULT_ADMIN_ROLES = [
       'admin.subscriptions.view',
       'admin.subscriptions.manage',
       'admin.payments.view',
+      'admin.marketplace.earnings.view',
       'admin.refunds.initiate',
     ],
   },
@@ -136,6 +139,8 @@ export const DEFAULT_ADMIN_ROLES = [
     description: 'Independent approval of configured refunds, adjustments, or payouts.',
     permissions: [
       'admin.payments.view',
+      'admin.marketplace.earnings.view',
+      'admin.marketplace.earnings.manage',
       'admin.refunds.approve',
       'admin.approvals.view',
       'admin.approvals.decide',

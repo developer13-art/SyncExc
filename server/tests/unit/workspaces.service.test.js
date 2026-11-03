@@ -117,6 +117,106 @@ describe('workspace creation audit events', () => {
       },
     );
   });
+
+  it('caps Trader workspace creation at one even when the billing entitlement is higher', async () => {
+    const transaction = {
+      async query(sql) {
+        if (sql.includes('SELECT id FROM users')) return { rows: [{ id: 'user-1' }] };
+        if (sql.includes('SELECT count(*)::int AS count')) return { rows: [{ count: 1 }] };
+        return { rows: [] };
+      },
+    };
+    const service = createWorkspacesService({
+      db: {
+        async query() { return { rows: [{ count: 1 }] }; },
+        async tx(callback) { return callback(transaction); },
+      },
+      queries: {
+        async findPersonalWorkspaceForUser() {
+          return { id: 'personal-workspace' };
+        },
+        async insertRole() {},
+        async ensureOwnerMembership() {},
+        async insertWorkspace() {
+          assert.fail('A second Trader workspace must not be created');
+        },
+      },
+      events: { async publish() {} },
+      getBilling: () => ({
+        async listEntitlementsForScope() {
+          return { 'traderWorkspaces.max': 5 };
+        },
+      }),
+    });
+
+    await assert.rejects(
+      service.createSpecializedWorkspace({
+        userId: 'user-1',
+        type: 'trader',
+        name: 'Another trading desk',
+      }),
+      (error) => {
+        assert.equal(error.code, 'WORKSPACE_LIMIT_REACHED');
+        assert.deepEqual(error.details, {
+          type: 'trader',
+          current: 1,
+          limit: 1,
+          entitlement: 'traderWorkspaces.max',
+        });
+        return true;
+      },
+    );
+  });
+
+  it('caps Developer workspace creation at one even when the billing entitlement is higher', async () => {
+    const transaction = {
+      async query(sql) {
+        if (sql.includes('SELECT id FROM users')) return { rows: [{ id: 'user-1' }] };
+        if (sql.includes('SELECT count(*)::int AS count')) return { rows: [{ count: 1 }] };
+        return { rows: [] };
+      },
+    };
+    const service = createWorkspacesService({
+      db: {
+        async query() { return { rows: [{ count: 1 }] }; },
+        async tx(callback) { return callback(transaction); },
+      },
+      queries: {
+        async findPersonalWorkspaceForUser() {
+          return { id: 'personal-workspace' };
+        },
+        async insertRole() {},
+        async ensureOwnerMembership() {},
+        async insertWorkspace() {
+          assert.fail('A second Developer workspace must not be created');
+        },
+      },
+      events: { async publish() {} },
+      getBilling: () => ({
+        async listEntitlementsForScope() {
+          return { 'developerWorkspaces.max': 5 };
+        },
+      }),
+    });
+
+    await assert.rejects(
+      service.createSpecializedWorkspace({
+        userId: 'user-1',
+        type: 'developer',
+        name: 'Another developer workspace',
+      }),
+      (error) => {
+        assert.equal(error.code, 'WORKSPACE_LIMIT_REACHED');
+        assert.deepEqual(error.details, {
+          type: 'developer',
+          current: 1,
+          limit: 1,
+          entitlement: 'developerWorkspaces.max',
+        });
+        return true;
+      },
+    );
+  });
 });
 
 describe('workspace capabilities', () => {

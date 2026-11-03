@@ -27,6 +27,7 @@ import { createDisclosureService } from './disclosure.service.js';
 import { createModerationService } from './moderation.service.js';
 import { createSignalDiscussionService } from './signal-discussion.service.js';
 import { createStripeMarketplaceService } from './stripe-marketplace.service.js';
+import { createFlutterwaveMarketplaceService } from './flutterwave-marketplace.service.js';
 import { createMarketplaceRoutes } from './marketplace.routes.js';
 import { createMarketplaceListeners } from './listeners.js';
 import { createTraderSignalExecutionService } from './trader-signal-execution.service.js';
@@ -49,6 +50,14 @@ export function createMarketplaceModule({ services }) {
   });
 
   const stripeMarketplaceService = createStripeMarketplaceService({
+    db: services.db,
+    queries,
+    providerService,
+    config: services.config,
+    logger,
+  });
+
+  const flutterwaveMarketplaceService = createFlutterwaveMarketplaceService({
     db: services.db,
     queries,
     providerService,
@@ -81,6 +90,7 @@ export function createMarketplaceModule({ services }) {
     db: services.db,
     queries,
     stripeMarketplace: stripeMarketplaceService,
+    flutterwaveMarketplace: flutterwaveMarketplaceService,
     events: services.events,
     logger,
   });
@@ -160,6 +170,7 @@ export function createMarketplaceModule({ services }) {
     moderationService,
     signalDiscussionService,
     stripeMarketplaceService,
+    flutterwaveMarketplaceService,
     traderSignalExecutionService,
     strategyService,
     middleware: services.middleware,
@@ -221,6 +232,10 @@ export function createMarketplaceModule({ services }) {
     moderation: moderationService,
     signalDiscussion: signalDiscussionService,
     stripeMarketplace: stripeMarketplaceService,
+    financials: {
+      listAdminEarnings: (params) => flutterwaveMarketplaceService.listAdminEarnings(params),
+      markEarningPaid: (params) => flutterwaveMarketplaceService.markEarningPaid(params),
+    },
     publicApi,
 
     async shutdown() {

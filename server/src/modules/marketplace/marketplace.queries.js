@@ -1290,6 +1290,20 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async updateProviderPlanFlutterwaveId(planId, flutterwavePlanId) {
+      const result = await db.query(
+        `
+        UPDATE marketplace_provider_plans
+        SET flutterwave_payment_plan_id = COALESCE(flutterwave_payment_plan_id, $2),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [planId, flutterwavePlanId],
+      );
+      return result.rows[0] || null;
+    },
+
     async listProviderPlans(providerId) {
       const result = await db.query(
         `
@@ -1361,9 +1375,9 @@ export function createMarketplaceQueries({ db }) {
       const result = await client.query(
         `
         INSERT INTO marketplace_subscriptions (
-          provider_id, plan_id, subscriber_user_id, workspace_id, status
+          provider_id, plan_id, subscriber_user_id, workspace_id, status, billing_provider
         )
-        VALUES ($1, $2, $3, $4, 'subscription_pending')
+        VALUES ($1, $2, $3, $4, 'subscription_pending', $5)
         RETURNING *
         `,
         [
@@ -1371,6 +1385,7 @@ export function createMarketplaceQueries({ db }) {
           data.planId || null,
           data.subscriberUserId,
           data.workspaceId || null,
+          data.billingProvider || null,
         ]
       );
       return result.rows[0];
@@ -1431,6 +1446,65 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0] || null;
     },
 
+    async findSubscriptionByFlutterwaveReference(reference, client = db) {
+      const result = await client.query(
+        `
+        SELECT subscription.*, plan.pricing AS plan_pricing
+        FROM marketplace_subscriptions subscription
+        JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
+        LEFT JOIN marketplace_flutterwave_checkout_references checkout
+          ON checkout.subscription_id = subscription.id
+        WHERE subscription.flutterwave_checkout_reference = $1 OR checkout.reference = $1
+        ORDER BY checkout.created_at DESC NULLS LAST
+        LIMIT 1
+        `,
+        [reference],
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertMarketplaceFlutterwaveCheckoutReference(client, { reference, subscriptionId }) {
+      await client.query(
+        `
+        INSERT INTO marketplace_flutterwave_checkout_references (reference, subscription_id)
+        VALUES ($1, $2)
+        ON CONFLICT (reference) DO NOTHING
+        `,
+        [reference, subscriptionId],
+      );
+    },
+
+    async findSubscriptionByFlutterwaveId(flutterwaveSubscriptionId, client = db) {
+      const result = await client.query(
+        `
+        SELECT subscription.*, plan.pricing AS plan_pricing
+        FROM marketplace_subscriptions subscription
+        JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
+        WHERE subscription.flutterwave_subscription_id = $1
+        LIMIT 1
+        `,
+        [flutterwaveSubscriptionId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async findSubscriptionByFlutterwavePlanCustomer(planId, customerId, client = db) {
+      const result = await client.query(
+        `
+        SELECT subscription.*, plan.pricing AS plan_pricing
+        FROM marketplace_subscriptions subscription
+        JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
+        WHERE subscription.flutterwave_payment_plan_id = $1
+          AND subscription.flutterwave_customer_id = $2
+          AND subscription.status IN ('active', 'past_due')
+        ORDER BY subscription.updated_at DESC
+        LIMIT 1
+        `,
+        [String(planId), String(customerId)],
+      );
+      return result.rows[0] || null;
+    },
+
     async updateMarketplaceSubscription(subscriptionId, fields, client = db) {
       const result = await client.query(
         `
@@ -1444,6 +1518,12 @@ export function createMarketplaceQueries({ db }) {
             current_period_end = COALESCE($8, current_period_end),
             cancel_at_period_end = COALESCE($9, cancel_at_period_end),
             canceled_at = COALESCE($10, canceled_at),
+            billing_provider = COALESCE($11, billing_provider),
+            flutterwave_checkout_reference = COALESCE($12, flutterwave_checkout_reference),
+            flutterwave_checkout_url = COALESCE($13, flutterwave_checkout_url),
+            flutterwave_payment_plan_id = COALESCE($14, flutterwave_payment_plan_id),
+            flutterwave_customer_id = COALESCE($15, flutterwave_customer_id),
+            flutterwave_subscription_id = COALESCE($16, flutterwave_subscription_id),
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -1459,7 +1539,142 @@ export function createMarketplaceQueries({ db }) {
           fields.currentPeriodEnd ?? null,
           fields.cancelAtPeriodEnd ?? null,
           fields.canceledAt ?? null,
+          fields.billingProvider ?? null,
+          fields.flutterwaveCheckoutReference ?? null,
+          fields.flutterwaveCheckoutUrl ?? null,
+          fields.flutterwavePaymentPlanId ?? null,
+          fields.flutterwaveCustomerId ?? null,
+          fields.flutterwaveSubscriptionId ?? null,
         ]
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertMarketplaceFlutterwaveWebhookEvent(client, { eventId, eventType }) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_flutterwave_webhook_events (event_id, event_type)
+        VALUES ($1, $2)
+        ON CONFLICT (event_id) DO NOTHING
+        RETURNING event_id
+        `,
+        [eventId, eventType],
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertMarketplaceTraderEarning(client, data) {
+      const result = await client.query(
+        `
+        INSERT INTO marketplace_trader_earnings (
+          provider_id, subscription_id, provider_payment_reference,
+          gross_amount_minor, platform_fee_minor, trader_net_amount_minor, currency
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (provider_payment_reference) DO NOTHING
+        RETURNING *
+        `,
+        [
+          data.providerId,
+          data.subscriptionId,
+          data.paymentReference,
+          data.grossAmountMinor,
+          data.platformFeeMinor,
+          data.traderNetAmountMinor,
+          data.currency,
+        ],
+      );
+      return result.rows[0] || null;
+    },
+
+    async listMarketplaceTraderEarnings(providerId, { limit = 50, offset = 0 } = {}) {
+      const [rows, totals] = await Promise.all([
+        db.query(
+          `
+          SELECT id, subscription_id, provider_payment_reference, gross_amount_minor,
+                 platform_fee_minor, trader_net_amount_minor, currency, status,
+                 payout_reference, paid_at, created_at
+          FROM marketplace_trader_earnings
+          WHERE provider_id = $1
+          ORDER BY created_at DESC
+          LIMIT $2 OFFSET $3
+          `,
+          [providerId, limit, offset],
+        ),
+        db.query(
+          `
+          SELECT currency,
+                 COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'pending'), 0)::bigint AS pending_minor,
+                 COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_minor,
+                 COALESCE(SUM(platform_fee_minor), 0)::bigint AS platform_fee_minor
+          FROM marketplace_trader_earnings
+          WHERE provider_id = $1
+          GROUP BY currency
+          ORDER BY currency
+          `,
+          [providerId],
+        ),
+      ]);
+      return {
+        items: rows.rows,
+        totals: totals.rows.map((row) => ({
+          currency: row.currency,
+          pendingMinor: Number(row.pending_minor),
+          paidMinor: Number(row.paid_minor),
+          platformFeeMinor: Number(row.platform_fee_minor),
+        })),
+      };
+    },
+
+    async listMarketplaceTraderEarningsForAdmin({ status, limit = 50, offset = 0 } = {}) {
+      const params = [];
+      let where = '';
+      if (status) {
+        params.push(status);
+        where = `WHERE earning.status = $${params.length}`;
+      }
+      params.push(limit, offset);
+      const result = await db.query(
+        `
+        SELECT earning.*, provider.display_name AS provider_name,
+               provider.handle AS provider_handle, workspace.id AS workspace_id,
+               owner.email AS trader_email
+        FROM marketplace_trader_earnings earning
+        JOIN marketplace_provider_profiles provider ON provider.id = earning.provider_id
+        JOIN workspaces workspace ON workspace.id = provider.workspace_id
+        JOIN users owner ON owner.id = workspace.owner_id
+        ${where}
+        ORDER BY earning.created_at DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}
+        `,
+        params,
+      );
+      return result.rows;
+    },
+
+    async markMarketplaceTraderEarningPaid(client, {
+      earningId,
+      actorId,
+      payoutReference,
+      note,
+    }) {
+      const result = await client.query(
+        `
+        UPDATE marketplace_trader_earnings
+        SET status = 'paid', payout_reference = $3, payout_note = $4,
+            paid_by = $2, paid_at = now()
+        WHERE id = $1 AND status = 'pending'
+        RETURNING *
+        `,
+        [earningId, actorId, payoutReference, note || null],
+      );
+      return result.rows[0] || null;
+    },
+
+    async findMarketplaceTraderEarningById(earningId) {
+      const result = await db.query(
+        `SELECT * FROM marketplace_trader_earnings WHERE id = $1`,
+        [earningId],
       );
       return result.rows[0] || null;
     },

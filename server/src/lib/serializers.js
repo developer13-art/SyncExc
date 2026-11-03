@@ -698,7 +698,9 @@ export function serializeMarketplaceSubscription(row) {
     currentPeriodStart: row.current_period_start || null,
     currentPeriodEnd: row.current_period_end || null,
     cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
-    checkoutUrl: row.status === 'subscription_pending' ? row.stripe_checkout_url || null : null,
+    checkoutUrl: row.status === 'subscription_pending'
+      ? row.flutterwave_checkout_url || row.stripe_checkout_url || null
+      : null,
     createdAt: row.created_at,
   };
 }

@@ -551,6 +551,8 @@ export const apiConfig = Object.freeze({
       subscription: (id) => `/admin/subscriptions/${id}`,
       payments: '/admin/payments',
       payment: (id) => `/admin/payments/${id}`,
+      marketplaceTraderEarnings: '/admin/marketplace/trader-earnings',
+      marketplaceTraderEarningPaid: (id) => `/admin/marketplace/trader-earnings/${id}/mark-paid`,
       refundRequests: '/admin/payments/refund-requests',
       refunds: '/admin/refunds',
       exchanges: '/admin/exchanges',

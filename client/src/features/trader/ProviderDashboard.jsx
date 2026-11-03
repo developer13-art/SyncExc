@@ -51,8 +51,8 @@ export default function ProviderDashboard() {
     staleTime: 30_000,
   });
   const payoutQuery = useQuery({
-    queryKey: ['marketplace', 'payout-account', activeWorkspaceId],
-    queryFn: () => marketplaceApi.getPayoutAccountStatus(),
+    queryKey: ['marketplace', 'earnings', activeWorkspaceId],
+    queryFn: () => marketplaceApi.getMyEarnings(),
     enabled: activeWorkspace?.type === 'trader'
       && Boolean(dashboardQuery.data?.provider)
       && activeTab === 'payouts',
@@ -88,6 +88,11 @@ export default function ProviderDashboard() {
 
   const stats = dashboard.stats ?? {};
   const signals = signalsQuery.data?.items ?? dashboard.recentSignals ?? [];
+  const pendingEarnings = payoutQuery.data?.totals?.length
+    ? payoutQuery.data.totals
+      .map((total) => formatCurrency(total.pendingMinor / 100, total.currency))
+      .join(', ')
+    : 'No pending earnings';
   const subscribers = subscribersQuery.data?.items ?? [];
   const publishedSignals = signals.map((signal) => ({
       id: signal.id,
@@ -320,21 +325,15 @@ export default function ProviderDashboard() {
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/40 p-4">
                 <div>
                   <p className="font-medium text-foreground">
-                    {payoutQuery.data?.status === 'ready'
-                      ? 'Payout account ready'
-                      : payoutQuery.data?.status === 'onboarding_required'
-                        ? 'Complete payout account setup'
-                        : 'Payout account not connected'}
+                    'Manual payout tracking is active'
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {payoutQuery.data?.payoutsEnabled
-                      ? 'Payouts are enabled for your account.'
-                      : 'Complete provider verification to enable payouts.'}
+                    Pending earnings are paid manually by SyncExc after payment verification.
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={payoutQuery.data?.status === 'ready' ? 'success' : 'warning'}>
-                    {payoutQuery.data?.status?.replaceAll('_', ' ') || 'unknown'}
+                  <Badge variant="warning">
+                    {pendingEarnings}
                   </Badge>
                   <Button variant="outline" asChild>
                     <Link to={ROUTES.app.trader.revenue}><Wallet className="h-4 w-4" /> Manage payouts</Link>
