@@ -1091,18 +1091,8 @@ export function createMarketplaceQueries({ db }) {
     }) {
       const result = await client.query(
         `
-        WITH candidate AS (
-          SELECT
-            signal.id,
-            COALESCE((
-              SELECT SUM(closed_trade.realized_pnl)
-              FROM trading_closed_trades closed_trade
-              WHERE closed_trade.account_id = $1
-                AND closed_trade.instrument = $2
-                AND closed_trade.side = $3
-                AND closed_trade.closed_at >= signal.entry_time
-                AND closed_trade.closed_at <= $4
-            ), 0)::numeric AS realized_pnl
+        WITH candidates AS (
+          SELECT signal.id
           FROM marketplace_published_signals signal
           WHERE signal.source_account_id = $1
             AND signal.instrument = $2
@@ -1118,23 +1108,29 @@ export function createMarketplaceQueries({ db }) {
                 AND position.side = $3
                 AND position.quantity > 0
             )
-          ORDER BY signal.created_at DESC
-          LIMIT 1
-          FOR UPDATE
+          FOR UPDATE OF signal
         )
         UPDATE marketplace_published_signals signal
         SET status = 'closed',
-            realized_pnl = candidate.realized_pnl,
+            realized_pnl = COALESCE((
+              SELECT SUM(closed_trade.realized_pnl)
+              FROM trading_closed_trades closed_trade
+              WHERE closed_trade.account_id = $1
+                AND closed_trade.instrument = $2
+                AND closed_trade.side = $3
+                AND closed_trade.closed_at >= signal.entry_time
+                AND closed_trade.closed_at <= $4
+            ), 0)::numeric,
             pnl_asset = $5,
             closed_at = $4,
             updated_at = now()
-        FROM candidate
-        WHERE signal.id = candidate.id
+        FROM candidates
+        WHERE signal.id = candidates.id
         RETURNING signal.*
         `,
         [accountId, instrument, side, closedAt, pnlAsset || null],
       );
-      return result.rows[0] || null;
+      return result.rows;
     },
 
     async hasActiveSourceSignalForClosedTrade(client, {

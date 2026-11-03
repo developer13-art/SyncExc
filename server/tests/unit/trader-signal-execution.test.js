@@ -533,11 +533,18 @@ test('records realized signal PnL only after an exact exchange order link', asyn
 test('closes externally sourced marketplace signals with realized exchange PnL', async () => {
   const { service, observations, sourceCloseRequests } = createDependencies({
     executionForClosedTrade: null,
-    sourceSignalClosed: {
-      id: 'external-signal-1',
-      realized_pnl: '4.25',
-      pnl_asset: 'USDT',
-    },
+    sourceSignalClosed: [
+      {
+        id: 'external-signal-1',
+        realized_pnl: '4.25',
+        pnl_asset: 'USDT',
+      },
+      {
+        id: 'external-signal-2',
+        realized_pnl: '4.25',
+        pnl_asset: 'USDT',
+      },
+    ],
   });
 
   await service.handleClosedTrade({
@@ -553,7 +560,11 @@ test('closes externally sourced marketplace signals with realized exchange PnL',
   assert.equal(sourceCloseRequests.length, 1);
   assert.equal(sourceCloseRequests[0].accountId, 'account-source');
   assert.equal(sourceCloseRequests[0].side, 'long');
-  assert.equal(observations.length, 1);
+  assert.equal(observations.length, 2);
   assert.equal(observations[0].signalId, 'external-signal-1');
   assert.equal(observations[0].outcome, 'win');
+  assert.equal(observations[0].sourceClosedTradeId, 'closed-trade-external');
+  assert.equal(observations[1].signalId, 'external-signal-2');
+  assert.equal(observations[1].outcome, 'win');
+  assert.equal(observations[1].sourceClosedTradeId, null);
 });

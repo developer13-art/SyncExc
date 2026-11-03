@@ -1458,6 +1458,37 @@ describe('Trader Studio API', () => {
     assert.match(queryText, /SUM\(closed_trade\.realized_pnl\)/);
   });
 
+  it('closes every active signal linked to the now-flat source position', async () => {
+    let queryText;
+    const closedSignals = [
+      { id: 'signal-1', realized_pnl: '12.5' },
+      { id: 'signal-2', realized_pnl: '12.5' },
+    ];
+    const queries = createMarketplaceQueries({
+      db: {},
+    });
+
+    const result = await queries.closeSourceSignalForClosedTrade(
+      {
+        async query(sql) {
+          queryText = sql;
+          return { rows: closedSignals };
+        },
+      },
+      {
+        accountId: 'account-1',
+        instrument: 'BTCUSDT',
+        side: 'long',
+        closedAt: new Date('2026-10-29T10:00:00.000Z'),
+        pnlAsset: 'USDT',
+      },
+    );
+
+    assert.match(queryText, /FOR UPDATE OF signal/);
+    assert.doesNotMatch(queryText, /LIMIT 1/);
+    assert.deepEqual(result, closedSignals);
+  });
+
   it('includes closed signals in public marketplace listings', async () => {
     let queryText;
     const queries = createMarketplaceQueries({

@@ -700,38 +700,43 @@ export function createTraderSignalExecutionService({
       });
     }
 
-    const closedSourceSignal = await db.tx(async (tx) => {
-      const signal = await queries.closeSourceSignalForClosedTrade(tx, {
+    const closedSourceSignals = await db.tx(async (tx) => {
+      const signals = await queries.closeSourceSignalForClosedTrade(tx, {
         accountId: trade.accountId,
         instrument: trade.instrument,
         side: trade.side,
         closedAt,
         pnlAsset: trade.pnlAsset,
       });
-      if (!signal) return null;
-      const totalPnl = Number(signal.realized_pnl);
-      const finalOutcome = totalPnl > 0 ? 'win' : totalPnl < 0 ? 'loss' : 'breakeven';
-      await performance.recordObservation({
-        signalId: signal.id,
-        observedAt: closedAt,
-        outcome: finalOutcome,
-        sourceClosedTradeId: trade.closedTradeId,
-        client: tx,
-        evidence: {
-          attribution: 'source_account_position',
-          accountId: trade.accountId,
-          instrument: trade.instrument,
-          realizedPnl: String(signal.realized_pnl),
-          pnlAsset: signal.pnl_asset || null,
-        },
-      });
-      return signal;
+      const closedSignals = Array.isArray(signals) ? signals : signals ? [signals] : [];
+      for (const [index, signal] of closedSignals.entries()) {
+        const totalPnl = Number(signal.realized_pnl);
+        const finalOutcome = totalPnl > 0 ? 'win' : totalPnl < 0 ? 'loss' : 'breakeven';
+        await performance.recordObservation({
+          signalId: signal.id,
+          observedAt: closedAt,
+          outcome: finalOutcome,
+          sourceClosedTradeId: index === 0 ? trade.closedTradeId : null,
+          client: tx,
+          evidence: {
+            attribution: 'source_account_position',
+            accountId: trade.accountId,
+            instrument: trade.instrument,
+            realizedPnl: String(signal.realized_pnl),
+            pnlAsset: signal.pnl_asset || null,
+          },
+        });
+      }
+      return closedSignals;
     });
-    if (closedSourceSignal) {
+    if (closedSourceSignals.length > 0) {
       matchedSignal = true;
       logger.info(
-        { signalId: closedSourceSignal.id, outcome, realizedPnl: closedSourceSignal.realized_pnl },
-        'Source marketplace trade closed with exchange-reported PnL',
+        {
+          signalIds: closedSourceSignals.map((signal) => signal.id),
+          closedSignalCount: closedSourceSignals.length,
+        },
+        'Source marketplace signals closed with exchange-reported PnL',
       );
     } else {
       matchedSignal = matchedSignal || await queries.hasActiveSourceSignalForClosedTrade(db, {
