@@ -49,7 +49,7 @@ export default function DashboardOverview() {
   );
   const ordersQuery = useTerminalOrders(
     canMonitorTrading ? workspaceId : null,
-    { limit: 10 },
+    { status: 'open', limit: 10 },
   );
   const connectionsQuery = useConnections(
     {},

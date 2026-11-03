@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTerminalQueries } from '../../src/modules/terminal/terminal.queries.js';
+import { serializeFill } from '../../src/lib/serializers.js';
 
 test('filters trade history by the selected account', async () => {
   const queriesMade = [];
@@ -28,6 +29,10 @@ test('filters trade history by the selected account', async () => {
   const queryText = queriesMade[1].text;
   const queryParams = queriesMade[1].params;
   assert.match(queryText, /JOIN trading_orders o ON o\.id = f\.order_id/);
+  assert.match(queryText, /JOIN exchange_connections c ON c\.id = o\.connection_id/);
+  assert.match(queryText, /JOIN exchange_accounts a ON a\.id = o\.account_id/);
+  assert.match(queryText, /JOIN exchange_connections c ON c\.id = ct\.connection_id/);
+  assert.match(queryText, /JOIN exchange_accounts a ON a\.id = ct\.account_id/);
   assert.match(queryText, /t\.account_id = \$2/);
   assert.match(queryText, /t\.instrument = \$3/);
   assert.match(queryText, /t\.executed_at < \$4/);
@@ -45,6 +50,24 @@ test('filters trade history by the selected account', async () => {
   assert.equal(result.rows.length, 1);
   assert.equal(result.nextCursor, null);
   assert.equal(result.total, 61);
+});
+
+test('serializes the exchange account with closed-trade history', () => {
+  const trade = serializeFill({
+    id: 'closed-trade-1',
+    account_id: 'account-1',
+    connection_label: 'Bybit demo',
+    environment: 'demo',
+    account_type: 'unified',
+    quantity: '2',
+    price: '110',
+    executed_at: new Date('2026-10-21T09:00:00.000Z'),
+    realized_pnl: '20',
+  });
+
+  assert.equal(trade.accountId, 'account-1');
+  assert.equal(trade.accountLabel, 'Bybit demo · demo · unified');
+  assert.equal(trade.realizedPnl, '20');
 });
 
 test('pages through retained trades and reports the full filtered count', async () => {

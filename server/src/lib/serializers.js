@@ -343,6 +343,10 @@ export function serializeFill(row) {
   return {
     id: row.id,
     orderId: row.order_id,
+    accountId: row.account_id || null,
+    accountLabel: [row.connection_label, row.environment, row.account_type]
+      .filter(Boolean)
+      .join(' · ') || null,
     exchangeTradeId: row.exchange_trade_id || null,
     instrument: row.instrument,
     side: row.side,

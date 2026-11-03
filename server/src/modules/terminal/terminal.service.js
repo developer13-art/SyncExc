@@ -114,8 +114,23 @@ export function createTerminalService({
     });
   }
 
-  async function listTradesForScope({ workspaceId, limit, cursor, accountId, instrument }) {
-    return queries.listTradesForScope(workspaceId, { limit, cursor, accountId, instrument });
+  async function listTradesForScope({
+    workspaceId,
+    limit,
+    page,
+    pageSize,
+    cursor,
+    accountId,
+    instrument,
+  }) {
+    return queries.listTradesForScope(workspaceId, {
+      limit,
+      page,
+      pageSize,
+      cursor,
+      accountId,
+      instrument,
+    });
   }
 
   async function listPositions({ workspaceId, accountId, instrument }) {

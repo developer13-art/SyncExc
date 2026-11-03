@@ -115,6 +115,40 @@ test('backfills and persists exchange closed P&L during account sync', async () 
   assert.equal(syncStates[0].backfilled, true);
 });
 
+test('forwards trade-history pagination through the terminal service', async () => {
+  let request;
+  const service = createTerminalService({
+    queries: {
+      async listTradesForScope(workspaceId, options) {
+        request = { workspaceId, options };
+        return { rows: [], total: 0 };
+      },
+    },
+  });
+
+  await service.listTradesForScope({
+    workspaceId: 'workspace-id',
+    limit: 25,
+    page: 3,
+    pageSize: 25,
+    cursor: null,
+    accountId: 'account-id',
+    instrument: 'BTCUSDT',
+  });
+
+  assert.deepEqual(request, {
+    workspaceId: 'workspace-id',
+    options: {
+      limit: 25,
+      page: 3,
+      pageSize: 25,
+      cursor: null,
+      accountId: 'account-id',
+      instrument: 'BTCUSDT',
+    },
+  });
+});
+
 test('returns an actionable exchange error when closed P&L fetch fails', async () => {
   const loggedFailures = [];
   const service = createSyncService({

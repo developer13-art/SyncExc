@@ -429,9 +429,12 @@ export function createTerminalQueries({ db }) {
           SELECT f.id, f.order_id, f.exchange_trade_id, f.instrument, f.side,
                  f.quantity, f.price, f.entry_price,
                  f.fee_amount, f.fee_asset, f.executed_at,
-                 f.realized_pnl, o.account_id, f.workspace_id
+                 f.realized_pnl, o.account_id, f.workspace_id,
+                 c.label AS connection_label, c.environment, a.account_type
           FROM trading_fills f
           JOIN trading_orders o ON o.id = f.order_id
+          JOIN exchange_connections c ON c.id = o.connection_id
+          JOIN exchange_accounts a ON a.id = o.account_id
           WHERE NOT EXISTS (
             SELECT 1
             FROM trading_closed_trades ct
@@ -443,8 +446,11 @@ export function createTerminalQueries({ db }) {
                  ct.instrument, ct.side,
                  ct.quantity, ct.exit_price AS price, ct.entry_price,
                  ct.fee_amount, ct.fee_asset,
-                 ct.closed_at AS executed_at, ct.realized_pnl, ct.account_id, ct.workspace_id
+                 ct.closed_at AS executed_at, ct.realized_pnl, ct.account_id, ct.workspace_id,
+                 c.label AS connection_label, c.environment, a.account_type
           FROM trading_closed_trades ct
+          JOIN exchange_connections c ON c.id = ct.connection_id
+          JOIN exchange_accounts a ON a.id = ct.account_id
           WHERE ct.workspace_id = $1
       `;
       const filterSql = conditions.join(' AND ');
