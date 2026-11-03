@@ -1,5 +1,7 @@
 const OFFICIAL_HANDLE = 'syncexc-official';
 const AI_RESEARCH_LIMIT = 5;
+const AI_RESEARCH_UNIVERSE_LIMIT = 20;
+const AI_RESEARCH_ROTATION_MS = 15 * 60 * 1000;
 const MIN_CONFIDENCE = 0.8;
 
 export function createOfficialTraderService({ db, ai, publication, logger }) {
@@ -43,7 +45,28 @@ export function createOfficialTraderService({ db, ai, publication, logger }) {
         );
       if (universe.length === 0) throw new Error('Official trader has no active catalog instruments to research');
 
-      const candidates = await researchWithAi(universe);
+      const researchUniverse = selectResearchUniverse(universe, Date.now());
+      let candidates;
+      try {
+        candidates = await researchWithAi(researchUniverse);
+      } catch (error) {
+        if (error?.code !== 'AI_RATE_LIMITED') throw error;
+        logger.warn(
+          {
+            err: error,
+            instrumentsAvailable: universe.length,
+            instrumentsResearched: researchUniverse.length,
+          },
+          'Official trader research deferred by AI provider rate limit',
+        );
+        return {
+          skipped: true,
+          reason: 'AI provider rate limit',
+          instrumentsAvailable: universe.length,
+          instrumentsResearched: researchUniverse.length,
+        };
+      }
+
       let published = 0;
       let aiRejected = 0;
       let publicationFailures = 0;
@@ -108,6 +131,7 @@ export function createOfficialTraderService({ db, ai, publication, logger }) {
 
       const summary = {
         instrumentsScanned: universe.length,
+        instrumentsResearched: researchUniverse.length,
         candidates: candidates.length,
         aiResearched: Math.min(candidates.length, AI_RESEARCH_LIMIT),
         aiRejected,
@@ -147,7 +171,7 @@ export function createOfficialTraderService({ db, ai, publication, logger }) {
           activeCryptoInstrumentCatalog: universe,
         }),
       }],
-      maxTokens: 2400,
+      maxTokens: 1200,
       temperature: 0.2,
       rateKey: 'marketplace:official-trader',
       webSearch: true,
@@ -202,6 +226,17 @@ export function createOfficialTraderService({ db, ai, publication, logger }) {
   }
 
   return { scanNow };
+}
+
+function selectResearchUniverse(universe, time = Date.now()) {
+  if (universe.length <= AI_RESEARCH_UNIVERSE_LIMIT) return universe;
+  const batchCount = Math.ceil(universe.length / AI_RESEARCH_UNIVERSE_LIMIT);
+  const batchIndex = Math.floor(time / AI_RESEARCH_ROTATION_MS) % batchCount;
+  const start = batchIndex * AI_RESEARCH_UNIVERSE_LIMIT;
+  return Array.from(
+    { length: AI_RESEARCH_UNIVERSE_LIMIT },
+    (_, index) => universe[(start + index) % universe.length],
+  );
 }
 
 function positivePrice(value) {

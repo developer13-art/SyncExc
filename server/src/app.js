@@ -31,6 +31,7 @@ export function buildApp({ services = {} } = {}) {
   applyRequestMiddleware(app);
   applyContextMiddleware(app, services);
 
+  app.get('/', (_req, res) => success(res, { status: 'ok' }));
   app.get(['/health', '/health/live'], (_req, res) =>
     success(res, { status: 'ok' })
   );

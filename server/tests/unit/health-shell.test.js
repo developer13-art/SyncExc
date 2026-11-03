@@ -23,6 +23,12 @@ before(async () => {
 });
 
 describe('server health and API routes', () => {
+  it('reports root health for platform probes', async () => {
+    const response = await request(app).get('/').expect(200);
+
+    assert.equal(response.body.data.status, 'ok');
+  });
+
   it('reports liveness', async () => {
     const response = await request(app).get('/health/live').expect(200);
 

@@ -220,6 +220,55 @@ describe('Groq AI provider', () => {
     }
   });
 
+  it('classifies Groq token-limit errors as rate-limited without retrying', async () => {
+    const originalProvider = config.ai.provider;
+    const originalGroqConfig = config.ai.groq;
+    const originalFetch = globalThis.fetch;
+    let requests = 0;
+
+    config.ai.provider = 'groq';
+    config.ai.groq = { apiKey: 'test-groq-key', model: 'openai/gpt-oss-20b', maxTokens: 4096 };
+    globalThis.fetch = async () => {
+      requests += 1;
+      return new Response(JSON.stringify({
+        error: {
+          message: 'Token rate exceeded',
+          type: 'tokens',
+          code: 'rate_limit_exceeded',
+        },
+      }), {
+        status: 413,
+        headers: { 'Content-Type': 'application/json', 'x-request-id': 'req_test_tokens' },
+      });
+    };
+
+    try {
+      const ai = await initAI();
+      await assert.rejects(
+        ai.chat({
+          messages: [{ role: 'user', content: 'Test' }],
+          rateKey: 'groq-token-limit-test',
+        }),
+        (error) => {
+          assert.equal(error.code, 'AI_RATE_LIMITED');
+          assert.deepEqual(error.details, {
+            status: 413,
+            providerCode: 'rate_limit_exceeded',
+            providerType: 'tokens',
+            requestId: 'req_test_tokens',
+          });
+          assert.equal(shouldRetryAIError(error), false);
+          return true;
+        }
+      );
+      assert.equal(requests, 1);
+    } finally {
+      config.ai.provider = originalProvider;
+      config.ai.groq = originalGroqConfig;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('rejects web research when Groq is not the selected provider', async () => {
     const originalProvider = config.ai.provider;
     config.ai.provider = 'openai';

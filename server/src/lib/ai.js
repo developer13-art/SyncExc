@@ -271,17 +271,23 @@ async function callGroq({ system, messages, maxTokens, temperature = 0, webSearc
       const providerCode = typeof providerError.code === 'string' ? providerError.code : null;
       const providerType = typeof providerError.type === 'string' ? providerError.type : null;
       const requestId = res.headers.get('x-request-id');
+      const tokenRateLimited = providerCode === 'rate_limit_exceeded' && providerType === 'tokens';
 
-      throw new AppError(`Groq request failed: ${res.status}`, {
-        code: 'AI_PROVIDER_ERROR',
-        status: 502,
-        details: {
-          status: res.status,
-          ...(providerCode ? { providerCode } : {}),
-          ...(providerType ? { providerType } : {}),
-          ...(requestId ? { requestId } : {}),
+      throw new AppError(
+        tokenRateLimited
+          ? 'Groq token rate limit reached'
+          : `Groq request failed: ${res.status}`,
+        {
+          code: tokenRateLimited ? 'AI_RATE_LIMITED' : 'AI_PROVIDER_ERROR',
+          status: 502,
+          details: {
+            status: res.status,
+            ...(providerCode ? { providerCode } : {}),
+            ...(providerType ? { providerType } : {}),
+            ...(requestId ? { requestId } : {}),
+          },
         },
-      });
+      );
     }
 
     const json = await res.json();

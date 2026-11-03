@@ -454,6 +454,74 @@ test('official trader researches catalog symbols with AI and publishes sourced s
   assert.equal(publishedSignals[0].sourceEvidence.sources.length, 2);
 });
 
+test('official trader sends only a rotating catalog batch to AI research', async () => {
+  const catalog = Array.from({ length: 45 }, (_, index) => ({
+    symbol: `ASSET${String(index).padStart(3, '0')}USDT`,
+    marketType: index % 2 === 0 ? 'spot' : 'futures',
+  }));
+  let researchRequest;
+  const scanner = createOfficialTraderService({
+    db: {
+      query: async (sql) => sql.includes('FROM marketplace_provider_profiles')
+        ? { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] }
+        : sql.includes('FROM exchange_instruments')
+          ? { rows: catalog }
+          : { rows: [] },
+    },
+    ai: {
+      chatJson: async (request) => {
+        researchRequest = request;
+        return { data: { signals: [] } };
+      },
+    },
+    publication: {},
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  const result = await scanner.scanNow();
+  const researchedCatalog = JSON.parse(researchRequest.messages[0].content).activeCryptoInstrumentCatalog;
+  assert.equal(result.instrumentsScanned, 45);
+  assert.equal(result.instrumentsResearched, 20);
+  assert.equal(researchedCatalog.length, 20);
+  assert.equal(new Set(researchedCatalog.map(({ symbol }) => symbol)).size, 20);
+  assert.equal(researchRequest.maxTokens, 1200);
+});
+
+test('official trader defers cleanly when Groq hits its token rate limit', async () => {
+  const warnings = [];
+  const scanner = createOfficialTraderService({
+    db: {
+      query: async (sql) => sql.includes('FROM marketplace_provider_profiles')
+        ? { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] }
+        : sql.includes('FROM exchange_instruments')
+          ? { rows: [{ symbol: 'BTCUSDT', marketType: 'spot' }] }
+          : { rows: [] },
+    },
+    ai: {
+      chatJson: async () => {
+        const error = new Error('Groq token rate limit reached');
+        error.code = 'AI_RATE_LIMITED';
+        throw error;
+      },
+    },
+    publication: {},
+    logger: {
+      info() {},
+      warn: (...args) => warnings.push(args),
+      error() {},
+    },
+  });
+
+  const result = await scanner.scanNow();
+  assert.deepEqual(result, {
+    skipped: true,
+    reason: 'AI provider rate limit',
+    instrumentsAvailable: 1,
+    instrumentsResearched: 1,
+  });
+  assert.equal(warnings.length, 1);
+});
+
 test('registers the official trader scan as an independently scheduled job handler', async () => {
   const handlers = new Map();
   await registerAllHandlers({
