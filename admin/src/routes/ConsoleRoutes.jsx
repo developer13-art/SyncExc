@@ -62,6 +62,9 @@ const AlertEvents = lazy(() => import('../features/alerts/AlertEvents.jsx'));
 
 const JobsList = lazy(() => import('../features/operation-jobs/JobsList.jsx'));
 const JobDetails = lazy(() => import('../features/operation-jobs/JobDetails.jsx'));
+const IncidentsList = lazy(() => import('../features/incidents/IncidentsList.jsx'));
+const IncidentDetails = lazy(() => import('../features/incidents/IncidentDetails.jsx'));
+const AdminCatalogRoute = lazy(() => import('../features/catalog/AdminCatalogRoute.jsx'));
 
 function Fallback({ children }) {
   return <Suspense fallback={<LoadingState />}>{children}</Suspense>;
@@ -155,6 +158,14 @@ export function ConsoleRoutes() {
         <Route
           path="operation-jobs/:jobId"
           element={<Fallback><JobDetails /></Fallback>}
+        />
+
+        <Route path="incidents" element={<Fallback><IncidentsList /></Fallback>} />
+        <Route path="incidents/:incidentId" element={<Fallback><IncidentDetails /></Fallback>} />
+
+        <Route
+          path="catalog/:sectionId/:pageId"
+          element={<Fallback><AdminCatalogRoute /></Fallback>}
         />
 
         <Route path="*" element={<NotFoundRoute />} />

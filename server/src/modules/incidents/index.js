@@ -42,7 +42,11 @@ export function createIncidentsModule({ services }) {
   const publicApi = {
     service: {
       create: (params) => incidentService.createIncident(params),
-      resolve: (incidentId) => incidentService.resolveIncident(incidentId),
+      list: (params) => incidentService.listIncidents(params),
+      get: (params) => incidentService.getIncident(params),
+      update: (params) => incidentService.updateIncident(params),
+      resolve: (incidentId) => incidentService.resolveIncident({ incidentId }),
+      resolveWithContext: (params) => incidentService.resolveIncident(params),
       addEvent: (params) => incidentService.addEvent(params),
     },
   };

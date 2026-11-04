@@ -1,102 +1,53 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { useEffect, useState } from 'react';
 import {
   PanelLeftClose,
   PanelLeftOpen,
-  Activity,
-  Users,
-  Building2,
-  CreditCard,
-  Receipt,
-  DollarSign,
-  Wallet,
-  Repeat,
-  Compass,
-  Radio,
-  Coins,
-  Headphones,
-  ToggleRight,
+  ChevronDown,
+  FolderOpen,
   ShieldCheck,
-  CheckSquare,
-  FileSearch,
-  Bell,
-  Cpu,
 } from 'lucide-react';
 
 import { cn } from '../../lib/utils/cn.util.js';
+import { ADMIN_SECTIONS } from '../../config/admin-navigation.js';
 import {
   adminUiActions,
   selectAdminSidebarCollapsed,
 } from '../../app/slices/adminUiSlice.js';
 
-const SECTIONS = [
-  {
-    id: 'operations',
-    label: 'Operations',
-    items: [
-      { id: 'overview', label: 'Overview', path: '/overview', icon: Activity },
-      { id: 'users', label: 'Users', path: '/users', icon: Users },
-      { id: 'workspaces', label: 'Workspaces', path: '/workspaces', icon: Building2 },
-      {
-        id: 'operation-jobs',
-        label: 'Operation Jobs',
-        path: '/operation-jobs',
-        icon: Cpu,
-      },
-    ],
-  },
-  {
-    id: 'billing',
-    label: 'Billing',
-    items: [
-      { id: 'plans', label: 'Plans', path: '/plans', icon: CreditCard },
-      { id: 'subscriptions', label: 'Subscriptions', path: '/subscriptions', icon: Receipt },
-      { id: 'payments', label: 'Payments', path: '/payments', icon: DollarSign },
-      { id: 'marketplace-earnings', label: 'Trader monetization', path: '/marketplace/earnings', icon: Wallet },
-      { id: 'refunds', label: 'Refunds', path: '/refunds', icon: Repeat },
-    ],
-  },
-  {
-    id: 'platform',
-    label: 'Platform',
-    items: [
-      { id: 'exchanges', label: 'Exchanges', path: '/exchanges', icon: Building2 },
-      {
-        id: 'source-discovery',
-        label: 'Source Discovery',
-        path: '/source-discovery',
-        icon: Compass,
-      },
-      {
-        id: 'signal-sources',
-        label: 'Signal Sources',
-        path: '/signal-sources',
-        icon: Radio,
-      },
-      { id: 'referrals', label: 'Referrals', path: '/referrals', icon: Coins },
-      { id: 'support', label: 'Support', path: '/support', icon: Headphones },
-    ],
-  },
-  {
-    id: 'governance',
-    label: 'Governance',
-    items: [
-      { id: 'feature-flags', label: 'Feature Flags', path: '/feature-flags', icon: ToggleRight },
-      { id: 'roles', label: 'Roles', path: '/roles', icon: ShieldCheck },
-      { id: 'approvals', label: 'Approvals', path: '/approvals', icon: CheckSquare },
-      { id: 'audit', label: 'Audit', path: '/audit', icon: FileSearch },
-      { id: 'alerts', label: 'Alerts', path: '/alerts', icon: Bell },
-    ],
-  },
-];
-
 export function AdminSidebar() {
   const dispatch = useDispatch();
   const location = useLocation();
   const collapsed = useSelector(selectAdminSidebarCollapsed);
+  const [expandedSection, setExpandedSection] = useState(null);
+  const [search, setSearch] = useState('');
 
-  const isActive = (path) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const isActive = (path) => {
+    const [pathname, search] = path.split('?');
+    if (search) return location.pathname === pathname && location.search === `?${search}`;
+    return location.pathname === pathname || location.pathname.startsWith(`${pathname}/`);
+  };
+  const activeSection = ADMIN_SECTIONS.find((section) =>
+    section.items.some((item) => isActive(item.path)),
+  )?.id;
+
+  useEffect(() => {
+    if (activeSection) setExpandedSection(activeSection);
+  }, [activeSection]);
+
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleSections = ADMIN_SECTIONS.map((section) => {
+    if (!normalizedSearch || section.label.toLowerCase().includes(normalizedSearch)) {
+      return section;
+    }
+    return {
+      ...section,
+      items: section.items.filter((item) =>
+        item.label.toLowerCase().includes(normalizedSearch),
+      ),
+    };
+  }).filter((section) => section.items.length > 0);
 
   return (
     <aside
@@ -122,37 +73,79 @@ export function AdminSidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
-        {SECTIONS.map((section) => (
+        {!collapsed ? (
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSearch(value);
+              const normalized = value.trim().toLowerCase();
+              if (!normalized) return;
+              const match = ADMIN_SECTIONS.find((section) =>
+                section.label.toLowerCase().includes(normalized) ||
+                section.items.some((item) => item.label.toLowerCase().includes(normalized)),
+              );
+              if (match) setExpandedSection(match.id);
+            }}
+            placeholder="Find an admin page"
+            aria-label="Find an admin page"
+            className="mb-3 h-9 w-full rounded-md border border-input bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        ) : null}
+        {visibleSections.map((section) => (
           <div key={section.id} className="mb-4">
-            {!collapsed ? (
-              <p className="mb-1 px-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {section.label}
-              </p>
+            <button
+              type="button"
+              onClick={() => setExpandedSection((current) =>
+                current === section.id ? null : section.id,
+              )}
+              title={collapsed ? section.label : undefined}
+              aria-expanded={expandedSection === section.id}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide transition',
+                activeSection === section.id
+                  ? 'text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                collapsed && 'justify-center px-1',
+              )}
+            >
+              <FolderOpen className="h-4 w-4 shrink-0" />
+              {!collapsed ? <span className="flex-1">{section.label}</span> : null}
+              {!collapsed ? (
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 transition-transform',
+                    expandedSection === section.id && 'rotate-180',
+                  )}
+                />
+              ) : null}
+            </button>
+            {expandedSection === section.id || Boolean(normalizedSearch) ? (
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {section.items.map((item) => {
+                  const active = isActive(item.path);
+                  return (
+                    <li key={item.id}>
+                      <NavLink
+                        to={item.path}
+                        title={collapsed ? item.label : undefined}
+                        className={cn(
+                          'flex items-center gap-2 rounded-md py-1.5 text-xs font-medium transition',
+                          collapsed ? 'justify-center px-1' : 'pl-8 pr-2',
+                          active
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        {!collapsed ? <span className="truncate">{item.label}</span> : null}
+                        {collapsed ? <span className="h-1 w-1 rounded-full bg-current" /> : null}
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
             ) : null}
-            <ul className="flex flex-col gap-0.5">
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.path);
-                return (
-                  <li key={item.id}>
-                    <NavLink
-                      to={item.path}
-                      title={collapsed ? item.label : undefined}
-                      className={cn(
-                        'flex items-center gap-3 rounded-md px-2 py-1.5 text-sm font-medium transition',
-                        collapsed && 'justify-center px-2',
-                        active
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                      )}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      {!collapsed ? <span className="truncate">{item.label}</span> : null}
-                    </NavLink>
-                  </li>
-                );
-              })}
-            </ul>
           </div>
         ))}
       </nav>

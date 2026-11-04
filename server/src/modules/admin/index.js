@@ -258,6 +258,7 @@ export function createAdminModule({ services }) {
     operationJobService,
     exportService,
     marketplaceFinancials: services.marketplace.financials,
+    incidentService: services.incidents.service,
     identity: services.identity,
     adminPermissionService,
     middleware: services.middleware,

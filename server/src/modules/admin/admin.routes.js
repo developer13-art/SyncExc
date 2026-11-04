@@ -108,6 +108,46 @@ const UpdateMarketplacePlanStatusSchema = Joi.object({
   status: Joi.string().valid('draft', 'active', 'retired', 'archived').required(),
 });
 
+const AdminIncidentsQuerySchema = PaginationSchema.keys({
+  status: Joi.string().valid('investigating', 'identified', 'monitoring', 'resolved').optional(),
+  severity: Joi.string().valid('sev1', 'sev2', 'sev3', 'sev4').optional(),
+});
+
+const CreateAdminIncidentSchema = Joi.object({
+  title: Joi.string().min(5).max(200).required(),
+  severity: Joi.string().valid('sev1', 'sev2', 'sev3', 'sev4').required(),
+  summary: Joi.string().min(10).max(2000).required(),
+  affectedServices: Joi.array().items(Joi.string().max(64)).optional(),
+  affectedFeatures: Joi.array().items(Joi.string().max(64)).optional(),
+  incidentOwnerId: UuidSchema.optional(),
+  customerFacingStatus: Joi.object({
+    title: Joi.string().max(200).optional(),
+    summary: Joi.string().max(2000).optional(),
+    status: Joi.string().max(32).optional(),
+  }).optional(),
+});
+
+const UpdateAdminIncidentSchema = Joi.object({
+  title: Joi.string().min(5).max(200).optional(),
+  severity: Joi.string().valid('sev1', 'sev2', 'sev3', 'sev4').optional(),
+  status: Joi.string().valid('investigating', 'identified', 'monitoring').optional(),
+  summary: Joi.string().min(10).max(2000).optional(),
+  affectedServices: Joi.array().items(Joi.string().max(64)).optional(),
+  affectedFeatures: Joi.array().items(Joi.string().max(64)).optional(),
+  reason: Joi.string().max(500).optional(),
+}).min(1);
+
+const ResolveAdminIncidentSchema = Joi.object({
+  summary: Joi.string().min(10).max(2000).optional(),
+  postMortemRef: Joi.string().max(500).optional(),
+});
+
+const AdminIncidentEventSchema = Joi.object({
+  eventType: Joi.string().max(64).required(),
+  message: Joi.string().max(2000).optional(),
+  metadata: Joi.object().unknown(true).optional(),
+});
+
 const MarkMarketplaceEarningPaidSchema = Joi.object({
   payoutReference: Joi.string().trim().min(1).max(200).required(),
   note: Joi.string().trim().max(500).optional().allow(''),
@@ -246,6 +286,47 @@ export function createAdminRoutes(services) {
     '/health',
     middleware.requireAdminPermission('admin.metrics.view'),
     middleware.asyncHandler(controller.getHealth)
+  );
+
+  router.get(
+    '/incidents',
+    middleware.requireAdminPermission('admin.metrics.view'),
+    middleware.validateQuery(AdminIncidentsQuerySchema),
+    middleware.asyncHandler(controller.listIncidents)
+  );
+  router.get(
+    '/incidents/:incidentId',
+    middleware.requireAdminPermission('admin.metrics.view'),
+    middleware.validateParams(Joi.object({ incidentId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.getIncident)
+  );
+  router.post(
+    '/incidents',
+    middleware.requireAdminPermission('admin.alerts.manage'),
+    middleware.validateBody(CreateAdminIncidentSchema),
+    middleware.asyncHandler(controller.createIncident)
+  );
+  router.patch(
+    '/incidents/:incidentId',
+    middleware.requireAdminPermission('admin.alerts.manage'),
+    middleware.validateParams(Joi.object({ incidentId: UuidSchema.required() })),
+    middleware.validateBody(UpdateAdminIncidentSchema),
+    middleware.asyncHandler(controller.updateIncident)
+  );
+  router.post(
+    '/incidents/:incidentId/resolve',
+    middleware.requireAdminPermission('admin.alerts.manage'),
+    middleware.requireStepUp(),
+    middleware.validateParams(Joi.object({ incidentId: UuidSchema.required() })),
+    middleware.validateBody(ResolveAdminIncidentSchema),
+    middleware.asyncHandler(controller.resolveIncident)
+  );
+  router.post(
+    '/incidents/:incidentId/events',
+    middleware.requireAdminPermission('admin.alerts.manage'),
+    middleware.validateParams(Joi.object({ incidentId: UuidSchema.required() })),
+    middleware.validateBody(AdminIncidentEventSchema),
+    middleware.asyncHandler(controller.addIncidentEvent)
   );
 
   /* Users */

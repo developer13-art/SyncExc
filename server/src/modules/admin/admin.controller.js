@@ -37,6 +37,7 @@ export function createAdminController(services) {
     operationJobService,
     exportService,
     marketplaceFinancials,
+    incidentService,
     db,
   } = services;
 
@@ -61,6 +62,68 @@ export function createAdminController(services) {
         activeIncidents: [],
         dataFreshness: null,
       });
+    },
+
+    async listIncidents(req, res) {
+      const { limit } = pageOptions(req);
+      const result = await incidentService.list({
+        status: req.query.status,
+        severity: req.query.severity,
+        limit,
+        cursor: req.query.cursor || null,
+      });
+      return paginated(res, result.rows, {
+        nextCursor: result.nextCursor,
+        limit,
+      });
+    },
+
+    async getIncident(req, res) {
+      const result = await incidentService.get({
+        incidentId: req.params.incidentId,
+        actorId: req.auth.userId,
+        isStaff: true,
+      });
+      return success(res, result);
+    },
+
+    async createIncident(req, res) {
+      const incident = await incidentService.create({
+        ...req.body,
+        actorId: req.auth.userId,
+      });
+      return created(res, incident);
+    },
+
+    async updateIncident(req, res) {
+      const incident = await incidentService.update({
+        incidentId: req.params.incidentId,
+        actorId: req.auth.userId,
+        updates: req.body,
+        reason: req.body.reason,
+      });
+      return success(res, incident);
+    },
+
+    async resolveIncident(req, res) {
+      const incident = await incidentService.resolveWithContext({
+        incidentId: req.params.incidentId,
+        actorId: req.auth.userId,
+        summary: req.body.summary,
+        postMortemRef: req.body.postMortemRef,
+      });
+      return success(res, incident);
+    },
+
+    async addIncidentEvent(req, res) {
+      const event = await incidentService.addEvent({
+        incidentId: req.params.incidentId,
+        actorId: req.auth.userId,
+        eventType: req.body.eventType,
+        message: req.body.message,
+        metadata: req.body.metadata,
+      });
+      return created(res, event);
     },
 
     /* Users */
