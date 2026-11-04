@@ -322,8 +322,62 @@ export function createAdminController(services) {
 
     async listMarketplaceTraderSubscriptions(req, res) {
       const { limit, offset } = pageOptions(req);
-      const result = await marketplaceFinancials.listAdminSubscriptions({ limit, offset });
+      const result = await marketplaceFinancials.listAdminSubscriptions({
+        status: req.query.status,
+        limit,
+        offset,
+      });
       return success(res, result);
+    },
+
+    async listMarketplaceTraderPlans(req, res) {
+      const { limit, offset } = pageOptions(req);
+      const result = await marketplaceFinancials.listAdminPlans({
+        status: req.query.status,
+        limit,
+        offset,
+      });
+      return success(res, result);
+    },
+
+    async listMarketplaceTraders(req, res) {
+      const { limit, offset } = pageOptions(req);
+      const result = await marketplaceFinancials.listAdminTraders({ limit, offset });
+      return success(res, result);
+    },
+
+    async createMarketplaceTraderPlan(req, res) {
+      const result = await marketplaceFinancials.createAdminPlan(req.body);
+      await adminAuditService.write({
+        actorId: req.auth.userId,
+        action: 'marketplace_trader_plan.created',
+        targetResource: 'marketplace_provider_plan',
+        targetId: result.id,
+        after: {
+          providerId: result.provider_id,
+          name: result.name,
+          pricing: result.pricing,
+        },
+      });
+      return created(res, result);
+    },
+
+    async setMarketplaceTraderPlanStatus(req, res) {
+      const result = await marketplaceFinancials.setAdminPlanStatus({
+        planId: req.params.planId,
+        status: req.body.status,
+      });
+      if (result.previousStatus !== result.plan.status) {
+        await adminAuditService.write({
+          actorId: req.auth.userId,
+          action: 'marketplace_trader_plan.status_changed',
+          targetResource: 'marketplace_provider_plan',
+          targetId: result.plan.id,
+          before: { status: result.previousStatus },
+          after: { status: result.plan.status },
+        });
+      }
+      return success(res, result.plan);
     },
 
     async markMarketplaceTraderEarningPaid(req, res) {

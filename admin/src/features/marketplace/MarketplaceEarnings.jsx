@@ -33,10 +33,31 @@ const REQUEST_STATUS_FILTERS = [
   { value: 'all', label: 'All' },
 ];
 
+const SUBSCRIPTION_STATUS_FILTERS = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'following', label: 'Following' },
+  { value: 'subscription_pending', label: 'Pending' },
+  { value: 'active', label: 'Active' },
+  { value: 'past_due', label: 'Past due' },
+  { value: 'canceled', label: 'Canceled' },
+  { value: 'expired', label: 'Expired' },
+  { value: 'suspended', label: 'Suspended' },
+  { value: 'access_revoked', label: 'Access revoked' },
+];
+
+const PLAN_STATUS_FILTERS = [
+  { value: 'all', label: 'All plans' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Active' },
+  { value: 'retired', label: 'Retired' },
+  { value: 'archived', label: 'Archived' },
+];
+
 const VIEWS = [
   { value: 'earnings', label: 'Payments' },
   { value: 'requests', label: 'Payout requests' },
-  { value: 'subscriptions', label: 'Active subscriptions' },
+  { value: 'subscriptions', label: 'Subscriptions' },
+  { value: 'plans', label: 'Trader plans' },
 ];
 
 export default function MarketplaceEarnings() {
@@ -46,6 +67,19 @@ export default function MarketplaceEarnings() {
   const [view, setView] = useState('earnings');
   const [status, setStatus] = useState('pending');
   const [requestStatus, setRequestStatus] = useState('pending');
+  const [subscriptionStatus, setSubscriptionStatus] = useState('all');
+  const [planStatus, setPlanStatus] = useState('all');
+  const [createPlanOpen, setCreatePlanOpen] = useState(false);
+  const [planToUpdate, setPlanToUpdate] = useState(null);
+  const [updatingPlan, setUpdatingPlan] = useState(false);
+  const [planForm, setPlanForm] = useState({
+    providerId: '',
+    name: '',
+    amount: '',
+    currency: 'USD',
+    billingInterval: 'monthly',
+  });
+  const [creatingPlan, setCreatingPlan] = useState(false);
   const [earningToPay, setEarningToPay] = useState(null);
   const [payoutAction, setPayoutAction] = useState('paid');
   const [payoutReference, setPayoutReference] = useState('');
@@ -74,22 +108,43 @@ export default function MarketplaceEarnings() {
     queryFn: () => marketplaceEarningsApi.listRequests(requestParams),
     enabled: view === 'requests',
   });
-  const subscriptionsParams = { page: pagination.page, pageSize: pagination.pageSize };
+  const subscriptionsParams = {
+    status: subscriptionStatus === 'all' ? undefined : subscriptionStatus,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  };
   const subscriptionsQuery = useQuery({
     queryKey: ['admin', 'marketplace-trader-subscriptions', subscriptionsParams],
     queryFn: () => marketplaceEarningsApi.listSubscriptions(subscriptionsParams),
     enabled: view === 'subscriptions',
   });
+  const plansParams = {
+    status: planStatus === 'all' ? undefined : planStatus,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  };
+  const plansQuery = useQuery({
+    queryKey: ['admin', 'marketplace-trader-plans', plansParams],
+    queryFn: () => marketplaceEarningsApi.listPlans(plansParams),
+    enabled: view === 'plans',
+  });
+  const tradersQuery = useQuery({
+    queryKey: ['admin', 'marketplace-traders', { pageSize: 100 }],
+    queryFn: () => marketplaceEarningsApi.listTraders({ pageSize: 100 }),
+    enabled: view === 'plans' && createPlanOpen,
+  });
   const earnings = earningsQuery.data?.items ?? [];
   const totals = earningsQuery.data?.totals ?? [];
   const requests = requestsQuery.data?.items ?? [];
   const subscriptions = subscriptionsQuery.data?.items ?? [];
+  const plans = plansQuery.data?.items ?? [];
+  const traders = tradersQuery.data?.items ?? [];
 
   useEffect(() => {
-    dispatch(adminUiActions.setPageTitle('Trader earnings'));
+    dispatch(adminUiActions.setPageTitle('Trader monetization'));
     dispatch(adminUiActions.setBreadcrumbs([
       { label: 'Billing', path: '/payments' },
-      { label: 'Trader earnings', path: '/marketplace/earnings' },
+      { label: 'Trader monetization', path: '/marketplace/earnings' },
     ]));
   }, [dispatch]);
 
@@ -98,15 +153,74 @@ export default function MarketplaceEarnings() {
       ? earningsQuery.data?.total
       : view === 'requests'
         ? requestsQuery.data?.total
-        : subscriptionsQuery.data?.total;
+        : view === 'subscriptions'
+          ? subscriptionsQuery.data?.total
+          : plansQuery.data?.total;
     if (total !== undefined) pagination.setTotal(total);
   }, [
     view,
     earningsQuery.data?.total,
     requestsQuery.data?.total,
     subscriptionsQuery.data?.total,
+    plansQuery.data?.total,
     pagination.setTotal,
   ]);
+
+  const handleCreatePlan = async (event) => {
+    event.preventDefault();
+    const amountMinor = Math.round(Number(planForm.amount) * 100);
+    if (!planForm.providerId || !planForm.name.trim() ||
+      !Number.isSafeInteger(amountMinor) || amountMinor < 0) {
+      setSubmitError('Enter a provider ID, plan name, and a valid non-negative price.');
+      return;
+    }
+    setCreatingPlan(true);
+    setSubmitError(null);
+    try {
+      await marketplaceEarningsApi.createPlan({
+        providerId: planForm.providerId.trim(),
+        name: planForm.name.trim(),
+        pricing: {
+          amountMinor,
+          currency: planForm.currency,
+          billingInterval: planForm.billingInterval,
+        },
+        entitlements: {},
+      });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'marketplace-trader-plans'] });
+      toast.success('Trader plan created', {
+        description: 'The plan starts as a draft and is not visible to subscribers until activated.',
+      });
+      setPlanForm({
+        providerId: '',
+        name: '',
+        amount: '',
+        currency: 'USD',
+        billingInterval: 'monthly',
+      });
+      setCreatePlanOpen(false);
+    } catch (error) {
+      setSubmitError(getErrorMessage(error));
+    } finally {
+      setCreatingPlan(false);
+    }
+  };
+
+  const handleUpdatePlanStatus = async () => {
+    if (!planToUpdate) return;
+    setUpdatingPlan(true);
+    setSubmitError(null);
+    try {
+      await marketplaceEarningsApi.setPlanStatus(planToUpdate.id, planToUpdate.nextStatus);
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'marketplace-trader-plans'] });
+      toast.success(`Trader plan ${planToUpdate.nextStatus}`);
+      setPlanToUpdate(null);
+    } catch (error) {
+      setSubmitError(getErrorMessage(error));
+    } finally {
+      setUpdatingPlan(false);
+    }
+  };
 
   const handleMarkPaid = async () => {
     if (!earningToPay || (payoutAction === 'paid' && !payoutReference.trim())) {
@@ -396,6 +510,86 @@ export default function MarketplaceEarnings() {
     },
   ];
 
+  const planColumns = [
+    {
+      key: 'name',
+      label: 'Plan',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.name}</p>
+          <p className="text-xs text-muted-foreground">v{row.version}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'trader',
+      label: 'Trader',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.provider_name}</p>
+          <p className="text-xs text-muted-foreground">{row.trader_email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'price',
+      label: 'Price',
+      align: 'right',
+      render: (row) => formatCurrency(
+        Number(row.pricing?.amountMinor ?? 0) / 100,
+        row.pricing?.currency || 'USD',
+      ),
+    },
+    {
+      key: 'billing',
+      label: 'Billing interval',
+      render: (row) => row.pricing?.billingInterval || '—',
+    },
+    {
+      key: 'subscribers',
+      label: 'Subscribers',
+      align: 'right',
+      render: (row) => row.subscriber_count ?? 0,
+    },
+    {
+      key: 'commission',
+      label: 'Platform commission',
+      align: 'right',
+      render: (row) => formatCurrency(
+        Number(row.platform_commission_minor) / 100,
+        row.pricing?.currency || 'USD',
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (row) => (
+        <div className="flex items-center justify-between gap-3">
+          <Badge variant={row.status === 'active' ? 'success' : row.status === 'draft' ? 'warning' : 'muted'}>
+            {row.status}
+          </Badge>
+          {row.status === 'draft' || row.status === 'retired' ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPlanToUpdate({ ...row, nextStatus: 'active' })}
+            >
+              Activate
+            </Button>
+          ) : row.status === 'active' ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPlanToUpdate({ ...row, nextStatus: 'retired' })}
+            >
+              Retire
+            </Button>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+
   const selectedAmount = earningToPay
     ? Number(earningToPay.amount_minor ?? earningToPay.trader_net_amount_minor) / 100
     : 0;
@@ -404,7 +598,9 @@ export default function MarketplaceEarnings() {
     ? earningsQuery
     : view === 'requests'
       ? requestsQuery
-      : subscriptionsQuery;
+      : view === 'subscriptions'
+        ? subscriptionsQuery
+        : plansQuery;
   const paginationControls = pagination.total > pagination.pageSize ? (
     <div className="mt-4 flex justify-end gap-2">
       <Button
@@ -432,9 +628,9 @@ export default function MarketplaceEarnings() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trader earnings</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trader monetization</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review active subscribers and exact payments, then process traders’ payout requests.
+          Manage trader plans, all marketplace subscriptions, verified earnings and payout requests.
         </p>
       </div>
 
@@ -446,6 +642,25 @@ export default function MarketplaceEarnings() {
           pagination.goToPage(1);
         }}
       />
+
+      {view === 'plans' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SegmentedControl
+            options={PLAN_STATUS_FILTERS}
+            value={planStatus}
+            onChange={(value) => {
+              setPlanStatus(value);
+              pagination.goToPage(1);
+            }}
+          />
+          <Button onClick={() => {
+            setSubmitError(null);
+            setCreatePlanOpen(true);
+          }}>
+            Create trader plan
+          </Button>
+        </div>
+      ) : null}
 
       {view === 'earnings' ? (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -489,13 +704,22 @@ export default function MarketplaceEarnings() {
             pagination.goToPage(1);
           }}
         />
+      ) : view === 'subscriptions' ? (
+        <SegmentedControl
+          options={SUBSCRIPTION_STATUS_FILTERS}
+          value={subscriptionStatus}
+          onChange={(value) => {
+            setSubscriptionStatus(value);
+            pagination.goToPage(1);
+          }}
+        />
       ) : null}
 
       {activeQuery.isLoading ? (
-        <LoadingState label={view === 'subscriptions' ? 'Loading active subscriptions' : view === 'requests' ? 'Loading payout requests' : 'Loading trader earnings'} />
+        <LoadingState label={view === 'subscriptions' ? 'Loading subscriptions' : view === 'plans' ? 'Loading trader plans' : view === 'requests' ? 'Loading payout requests' : 'Loading trader earnings'} />
       ) : activeQuery.isError ? (
         <ErrorState
-          title={view === 'subscriptions' ? 'Active subscriptions unavailable' : view === 'requests' ? 'Payout requests unavailable' : 'Trader earnings unavailable'}
+          title={view === 'subscriptions' ? 'Subscriptions unavailable' : view === 'plans' ? 'Trader plans unavailable' : view === 'requests' ? 'Payout requests unavailable' : 'Trader earnings unavailable'}
           description={getErrorMessage(activeQuery.error)}
           onRetry={activeQuery.refetch}
         />
@@ -503,11 +727,13 @@ export default function MarketplaceEarnings() {
         <Card>
           <CardContent className="p-5">
             <DataTable
-              columns={view === 'subscriptions' ? subscriptionColumns : view === 'requests' ? requestColumns : columns}
-              rows={view === 'subscriptions' ? subscriptions : view === 'requests' ? requests : earnings}
-              emptyTitle={view === 'subscriptions' ? 'No active trader subscriptions' : view === 'requests' ? 'No payout requests' : 'No trader earnings'}
+              columns={view === 'subscriptions' ? subscriptionColumns : view === 'plans' ? planColumns : view === 'requests' ? requestColumns : columns}
+              rows={view === 'subscriptions' ? subscriptions : view === 'plans' ? plans : view === 'requests' ? requests : earnings}
+              emptyTitle={view === 'subscriptions' ? 'No trader subscriptions' : view === 'plans' ? 'No trader plans' : view === 'requests' ? 'No payout requests' : 'No trader earnings'}
               emptyDescription={view === 'subscriptions'
-                ? 'Active marketplace subscribers will appear here with plan price and confirmed payment totals.'
+                ? 'Use the status filter to review active, cancelled, expired, failed, and pending marketplace subscriptions.'
+                : view === 'plans'
+                  ? 'Create draft trader subscription plans and review subscriber counts and platform commission.'
                 : view === 'requests'
                   ? 'Trader payout requests will appear here for review.'
                   : 'Verified marketplace subscription payments will appear here with subscriber details.'}
@@ -516,6 +742,125 @@ export default function MarketplaceEarnings() {
           </CardContent>
         </Card>
       )}
+
+      <Modal
+        open={Boolean(planToUpdate)}
+        onOpenChange={(open) => {
+          if (!updatingPlan && !open) {
+            setPlanToUpdate(null);
+            setSubmitError(null);
+          }
+        }}
+        title={`${planToUpdate?.nextStatus === 'active' ? 'Activate' : 'Retire'} trader plan`}
+        description={planToUpdate
+          ? `This changes "${planToUpdate.name}" from ${planToUpdate.status} to ${planToUpdate.nextStatus}.`
+          : undefined}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPlanToUpdate(null)} disabled={updatingPlan}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdatePlanStatus} disabled={updatingPlan}>
+              {updatingPlan ? 'Saving…' : `Confirm ${planToUpdate?.nextStatus || 'change'}`}
+            </Button>
+          </>
+        }
+      >
+        {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
+      </Modal>
+
+      <Modal
+        open={createPlanOpen}
+        onOpenChange={(open) => {
+          if (!creatingPlan) {
+            setCreatePlanOpen(open);
+            if (!open) setSubmitError(null);
+          }
+        }}
+        title="Create trader subscription plan"
+        description="New plans are created as drafts. Traders remain responsible for publishing and activating them."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => setCreatePlanOpen(false)}
+              disabled={creatingPlan}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" form="create-trader-plan" disabled={creatingPlan || tradersQuery.isLoading}>
+              {creatingPlan ? 'Creating…' : 'Create draft plan'}
+            </Button>
+          </>
+        }
+      >
+        <form id="create-trader-plan" onSubmit={handleCreatePlan} className="grid gap-3">
+          <label className="grid gap-1 text-sm font-medium">
+            Trader profile
+            <select
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              value={planForm.providerId}
+              onChange={(event) => setPlanForm((current) => ({ ...current, providerId: event.target.value }))}
+              required
+            >
+              <option value="">Select a trader</option>
+              {traders.map((trader) => (
+                <option key={trader.id} value={trader.id}>
+                  {trader.display_name} (@{trader.handle}) — {trader.trader_email}
+                </option>
+              ))}
+            </select>
+            {tradersQuery.isError ? (
+              <span className="text-xs text-destructive">Unable to load trader profiles: {getErrorMessage(tradersQuery.error)}</span>
+            ) : null}
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Plan name
+            <Input
+              value={planForm.name}
+              onChange={(event) => setPlanForm((current) => ({ ...current, name: event.target.value }))}
+              maxLength={100}
+              required
+            />
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="grid gap-1 text-sm font-medium">
+              Price
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={planForm.amount}
+                onChange={(event) => setPlanForm((current) => ({ ...current, amount: event.target.value }))}
+                required
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Currency
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={planForm.currency}
+                onChange={(event) => setPlanForm((current) => ({ ...current, currency: event.target.value }))}
+              >
+                <option value="USD">USD</option>
+                <option value="NGN">NGN</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Interval
+              <select
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                value={planForm.billingInterval}
+                onChange={(event) => setPlanForm((current) => ({ ...current, billingInterval: event.target.value }))}
+              >
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </label>
+          </div>
+          {submitError ? <p className="text-xs text-destructive" role="alert">{submitError}</p> : null}
+        </form>
+      </Modal>
 
       <Modal
         open={Boolean(earningToPay)}

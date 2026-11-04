@@ -166,9 +166,11 @@ enabling the integration. `MARKETPLACE_PLATFORM_FEE_PERCENT` defaults to `2`.
 The server verifies successful charge events with Flutterwave before granting subscription access
 or recording Trader earnings. Trader shares are stored in the marketplace earnings ledger;
 SyncExc administrators must transfer them manually and record the payout reference in the
-admin marketplace earnings workflow at `/app/admin/marketplace-earnings`. These records do not
-send money automatically. Flutterwave transaction fees and any payout costs are separate from
-the recorded platform fee and Trader share.
+admin console's Trader monetization workflow. Administrators can review subscriptions across
+their lifecycle, create draft Trader plans, activate or retire plans, and review earnings and
+payout requests. Plan status changes are versioned and require elevated authorization. These
+records do not send money automatically. Flutterwave transaction fees and any payout costs are
+separate from the recorded platform fee and Trader share.
 
 The plan editor supports NGN and USD, subject to the currencies and payment methods enabled for
 SyncExc's Flutterwave account. Flutterwave recurring plans require card payments. Availability

@@ -529,8 +529,33 @@ export function createFlutterwaveMarketplaceService({
     };
   }
 
-  async function listAdminSubscriptions({ limit = 50, offset = 0 }) {
-    return queries.listMarketplaceTraderSubscriptionsForAdmin({ limit, offset });
+  async function listAdminSubscriptions({ status, limit = 50, offset = 0 }) {
+    return queries.listMarketplaceTraderSubscriptionsForAdmin({ status, limit, offset });
+  }
+
+  async function listAdminPlans({ status, limit = 50, offset = 0 }) {
+    return queries.listMarketplaceTraderPlansForAdmin({ status, limit, offset });
+  }
+
+  async function listAdminTraders({ limit = 100, offset = 0 }) {
+    return queries.listMarketplaceTradersForAdmin({ limit, offset });
+  }
+
+  async function createAdminPlan({ providerId, name, pricing, entitlements }) {
+    const plan = await queries.createAdminMarketplaceTraderPlan({
+      providerId,
+      name,
+      pricing,
+      entitlements,
+    });
+    if (!plan) throw new NotFoundError('Trader profile');
+    return plan;
+  }
+
+  async function setAdminPlanStatus({ planId, status }) {
+    const result = await queries.setAdminMarketplaceTraderPlanStatus({ planId, status });
+    if (!result) throw new NotFoundError('Trader subscription plan');
+    return result;
   }
 
   async function markPayoutRequestPaid({ requestId, actorId, payoutReference, note }) {
@@ -578,6 +603,10 @@ export function createFlutterwaveMarketplaceService({
     listAdminEarnings,
     listAdminPayoutRequests,
     listAdminSubscriptions,
+    listAdminPlans,
+    listAdminTraders,
+    createAdminPlan,
+    setAdminPlanStatus,
     markPayoutRequestPaid,
     rejectPayoutRequest,
     markEarningPaid,

@@ -83,6 +83,31 @@ const MarketplacePayoutRequestsQuerySchema = PaginationSchema.keys({
   status: Joi.string().valid('pending', 'paid', 'rejected').optional(),
 });
 
+const MarketplaceSubscriptionsQuerySchema = PaginationSchema.keys({
+  status: Joi.string()
+    .valid('following', 'subscription_pending', 'active', 'past_due', 'canceled', 'expired', 'suspended', 'access_revoked')
+    .optional(),
+});
+
+const MarketplacePlansQuerySchema = PaginationSchema.keys({
+  status: Joi.string().valid('draft', 'active', 'retired', 'archived').optional(),
+});
+
+const CreateMarketplacePlanSchema = Joi.object({
+  providerId: UuidSchema.required(),
+  name: Joi.string().trim().min(1).max(100).required(),
+  pricing: Joi.object({
+    amountMinor: Joi.number().integer().min(0).required(),
+    currency: Joi.string().uppercase().valid('NGN', 'USD').required(),
+    billingInterval: Joi.string().valid('monthly', 'yearly').required(),
+  }).required(),
+  entitlements: Joi.object().unknown(true).default({}),
+});
+
+const UpdateMarketplacePlanStatusSchema = Joi.object({
+  status: Joi.string().valid('draft', 'active', 'retired', 'archived').required(),
+});
+
 const MarkMarketplaceEarningPaidSchema = Joi.object({
   payoutReference: Joi.string().trim().min(1).max(200).required(),
   note: Joi.string().trim().max(500).optional().allow(''),
@@ -410,8 +435,39 @@ export function createAdminRoutes(services) {
   router.get(
     '/marketplace/trader-subscriptions',
     middleware.requireAdminPermission('admin.marketplace.earnings.view'),
-    middleware.validateQuery(PaginationSchema),
+    middleware.validateQuery(MarketplaceSubscriptionsQuerySchema),
     middleware.asyncHandler(controller.listMarketplaceTraderSubscriptions)
+  );
+
+  router.get(
+    '/marketplace/trader-plans',
+    middleware.requireAdminPermission('admin.marketplace.earnings.view'),
+    middleware.validateQuery(MarketplacePlansQuerySchema),
+    middleware.asyncHandler(controller.listMarketplaceTraderPlans)
+  );
+
+  router.get(
+    '/marketplace/traders',
+    middleware.requireAdminPermission('admin.marketplace.earnings.view'),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listMarketplaceTraders)
+  );
+
+  router.post(
+    '/marketplace/trader-plans',
+    middleware.requireAdminPermission('admin.marketplace.earnings.manage'),
+    middleware.requireStepUp(),
+    middleware.validateBody(CreateMarketplacePlanSchema),
+    middleware.asyncHandler(controller.createMarketplaceTraderPlan)
+  );
+
+  router.patch(
+    '/marketplace/trader-plans/:planId/status',
+    middleware.requireAdminPermission('admin.marketplace.earnings.manage'),
+    middleware.requireStepUp(),
+    middleware.validateParams(Joi.object({ planId: UuidSchema.required() })),
+    middleware.validateBody(UpdateMarketplacePlanStatusSchema),
+    middleware.asyncHandler(controller.setMarketplaceTraderPlanStatus)
   );
 
   router.get(

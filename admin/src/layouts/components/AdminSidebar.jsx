@@ -52,7 +52,7 @@ const SECTIONS = [
       { id: 'plans', label: 'Plans', path: '/plans', icon: CreditCard },
       { id: 'subscriptions', label: 'Subscriptions', path: '/subscriptions', icon: Receipt },
       { id: 'payments', label: 'Payments', path: '/payments', icon: DollarSign },
-      { id: 'marketplace-earnings', label: 'Trader earnings', path: '/marketplace/earnings', icon: Wallet },
+      { id: 'marketplace-earnings', label: 'Trader monetization', path: '/marketplace/earnings', icon: Wallet },
       { id: 'refunds', label: 'Refunds', path: '/refunds', icon: Repeat },
     ],
   },

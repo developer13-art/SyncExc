@@ -1824,7 +1824,16 @@ export function createMarketplaceQueries({ db }) {
       return result.rows[0];
     },
 
-    async listMarketplaceTraderSubscriptionsForAdmin({ limit = 50, offset = 0 } = {}) {
+    async listMarketplaceTraderSubscriptionsForAdmin({
+      status,
+      limit = 50,
+      offset = 0,
+    } = {}) {
+      const params = [];
+      const where = status
+        ? (params.push(status), `WHERE subscription.status = $${params.length}`)
+        : '';
+      params.push(limit, offset);
       const result = await db.query(
         `
         SELECT subscription.id, subscription.status, subscription.created_at,
@@ -1854,8 +1863,68 @@ export function createMarketplaceQueries({ db }) {
           WHERE earning.subscription_id = subscription.id
             AND earning.status <> 'reversed'
         ) payments ON true
-        WHERE subscription.status IN ('active', 'trialing')
+        ${where}
         ORDER BY subscription.created_at DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}
+        `,
+        params,
+      );
+      return {
+        items: result.rows.map(({ total_count: _totalCount, ...row }) => row),
+        total: Number(result.rows[0]?.total_count ?? 0),
+      };
+    },
+
+    async listMarketplaceTraderPlansForAdmin({ status, limit = 50, offset = 0 } = {}) {
+      const params = [];
+      const where = status
+        ? (params.push(status), `WHERE plan.status = $${params.length}`)
+        : '';
+      params.push(limit, offset);
+      const result = await db.query(
+        `
+        SELECT plan.id, plan.provider_id, plan.name, plan.pricing, plan.entitlements,
+               plan.status, plan.version, plan.created_at, plan.updated_at,
+               provider.display_name AS provider_name, provider.handle AS provider_handle,
+               workspace.id AS workspace_id, owner.email AS trader_email,
+               COUNT(DISTINCT subscription.id)::int AS subscriber_count,
+               COALESCE(SUM(earning.gross_amount_minor) FILTER (
+                 WHERE earning.status <> 'reversed'
+               ), 0)::bigint AS gross_revenue_minor,
+               COALESCE(SUM(earning.platform_fee_minor) FILTER (
+                 WHERE earning.status <> 'reversed'
+               ), 0)::bigint AS platform_commission_minor,
+               COUNT(*) OVER() AS total_count
+        FROM marketplace_provider_plans plan
+        JOIN marketplace_provider_profiles provider ON provider.id = plan.provider_id
+        JOIN workspaces workspace ON workspace.id = provider.workspace_id
+        JOIN users owner ON owner.id = workspace.owner_id
+        LEFT JOIN marketplace_subscriptions subscription ON subscription.plan_id = plan.id
+        LEFT JOIN marketplace_trader_earnings earning ON earning.subscription_id = subscription.id
+        ${where}
+        GROUP BY plan.id, provider.display_name, provider.handle, workspace.id, owner.email
+        ORDER BY plan.created_at DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}
+        `,
+        params,
+      );
+      return {
+        items: result.rows.map(({ total_count: _totalCount, ...row }) => row),
+        total: Number(result.rows[0]?.total_count ?? 0),
+      };
+    },
+
+    async listMarketplaceTradersForAdmin({ limit = 100, offset = 0 } = {}) {
+      const result = await db.query(
+        `
+        SELECT provider.id, provider.handle, provider.display_name, provider.account_type,
+               provider.moderation_state, provider.visibility, provider.created_at,
+               workspace.id AS workspace_id, owner.email AS trader_email,
+               COUNT(*) OVER() AS total_count
+        FROM marketplace_provider_profiles provider
+        JOIN workspaces workspace ON workspace.id = provider.workspace_id
+        JOIN users owner ON owner.id = workspace.owner_id
+        ORDER BY provider.created_at DESC
         LIMIT $1 OFFSET $2
         `,
         [limit, offset],
@@ -1864,6 +1933,51 @@ export function createMarketplaceQueries({ db }) {
         items: result.rows.map(({ total_count: _totalCount, ...row }) => row),
         total: Number(result.rows[0]?.total_count ?? 0),
       };
+    },
+
+    async createAdminMarketplaceTraderPlan({
+      providerId,
+      name,
+      pricing,
+      entitlements,
+    }) {
+      return db.tx(async (tx) => {
+        const provider = await tx.query(
+          `SELECT id FROM marketplace_provider_profiles WHERE id = $1 FOR UPDATE`,
+          [providerId],
+        );
+        if (!provider.rows[0]) return null;
+        const plan = await this.insertProviderPlan(tx, {
+          providerId,
+          name,
+          pricing,
+          entitlements,
+        });
+        await this.insertProviderPlanVersion(tx, plan);
+        return plan;
+      });
+    },
+
+    async setAdminMarketplaceTraderPlanStatus({ planId, status }) {
+      return db.tx(async (tx) => {
+        const existing = await tx.query(
+          `SELECT * FROM marketplace_provider_plans WHERE id = $1 FOR UPDATE`,
+          [planId],
+        );
+        const plan = existing.rows[0];
+        if (!plan) return null;
+        if (plan.status === status) {
+          return { plan, previousStatus: plan.status };
+        }
+        const updated = await this.updateProviderPlanStatus(
+          plan.provider_id,
+          planId,
+          status,
+          tx,
+        );
+        await this.insertProviderPlanVersion(tx, updated);
+        return { plan: updated, previousStatus: plan.status };
+      });
     },
 
     async listMarketplaceTraderEarningsForAdmin({ status, limit = 50, offset = 0 } = {}) {

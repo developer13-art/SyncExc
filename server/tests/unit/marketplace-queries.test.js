@@ -196,3 +196,121 @@ test('admin active subscription query includes subscriber identities and confirm
   assert.match(sql, /subscriber\.email AS subscriber_email/);
   assert.match(sql, /SUM\(earning\.gross_amount_minor\)/);
 });
+
+test('admin trader subscription query filters each lifecycle status and defaults to all statuses', async () => {
+  const calls = [];
+  const db = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: [{ id: 'subscription-1', total_count: 1 }] };
+    },
+  };
+  const queries = createMarketplaceQueries({ db });
+
+  await queries.listMarketplaceTraderSubscriptionsForAdmin({
+    status: 'expired',
+    limit: 25,
+    offset: 25,
+  });
+  await queries.listMarketplaceTraderSubscriptionsForAdmin({
+    limit: 25,
+    offset: 0,
+  });
+
+  assert.deepEqual(calls[0].params, ['expired', 25, 25]);
+  assert.match(calls[0].sql, /WHERE subscription\.status = \$1/);
+  assert.deepEqual(calls[1].params, [25, 0]);
+  assert.doesNotMatch(calls[1].sql, /WHERE subscription\.status/);
+});
+
+test('admin trader plan creation writes a versioned draft plan transactionally', async () => {
+  const calls = [];
+  const client = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (sql.includes('SELECT id FROM marketplace_provider_profiles')) {
+        return { rows: [{ id: 'provider-1' }] };
+      }
+      if (sql.includes('INSERT INTO marketplace_provider_plans')) {
+        return {
+          rows: [{
+            id: 'plan-1',
+            provider_id: 'provider-1',
+            name: 'Monthly signals',
+            pricing: { amountMinor: 1200, currency: 'USD', billingInterval: 'monthly' },
+            version: 1,
+            status: 'draft',
+          }],
+        };
+      }
+      if (sql.includes('INSERT INTO marketplace_provider_plan_versions')) {
+        return { rows: [{ id: 'plan-version-1' }] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  };
+  const db = {
+    async tx(callback) {
+      return callback(client);
+    },
+  };
+
+  const plan = await createMarketplaceQueries({ db }).createAdminMarketplaceTraderPlan({
+    providerId: 'provider-1',
+    name: 'Monthly signals',
+    pricing: { amountMinor: 1200, currency: 'USD', billingInterval: 'monthly' },
+    entitlements: {},
+  });
+
+  assert.equal(plan.status, 'draft');
+  assert.equal(calls.length, 3);
+  assert.match(calls[1].sql, /VALUES \(\$1, \$2, \$3, \$4, 'draft'\)/);
+  assert.match(calls[2].sql, /marketplace_provider_plan_versions/);
+});
+
+test('admin trader plan status changes update the version and preserve status history', async () => {
+  const calls = [];
+  const client = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (sql.includes('SELECT * FROM marketplace_provider_plans')) {
+        return {
+          rows: [{
+            id: 'plan-1',
+            provider_id: 'provider-1',
+            status: 'draft',
+          }],
+        };
+      }
+      if (sql.includes('UPDATE marketplace_provider_plans')) {
+        return {
+          rows: [{
+            id: 'plan-1',
+            provider_id: 'provider-1',
+            status: 'active',
+            version: 2,
+          }],
+        };
+      }
+      if (sql.includes('INSERT INTO marketplace_provider_plan_versions')) {
+        return { rows: [{ id: 'plan-version-2' }] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  };
+  const db = {
+    async tx(callback) {
+      return callback(client);
+    },
+  };
+
+  const result = await createMarketplaceQueries({ db })
+    .setAdminMarketplaceTraderPlanStatus({ planId: 'plan-1', status: 'active' });
+
+  assert.equal(result.previousStatus, 'draft');
+  assert.equal(result.plan.status, 'active');
+  assert.equal(result.plan.version, 2);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[1].params, ['provider-1', 'plan-1', 'active']);
+  assert.deepEqual(calls[2].params, ['plan-1', 2, JSON.stringify(result.plan)]);
+});
