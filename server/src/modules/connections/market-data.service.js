@@ -30,7 +30,8 @@ const EXCHANGES = {
   },
 };
 
-const CACHE_TTL_MS = 5_000;
+const CACHE_TTL_MS = 30_000;
+const STALE_CACHE_TTL_MS = 5 * 60_000;
 const PRICE_CACHE_TTL_MS = 30_000;
 const MAX_CACHE_ENTRIES = 300;
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
@@ -379,6 +380,7 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
   const cache = new Map();
   const priceCache = new Map();
   const rateLimitCooldowns = new Map();
+  const pendingRequests = new Map();
 
   function rateLimitError(exchangeCode, status, retryAfterMs) {
     return new AppError(`Market-data requests to ${exchangeCode} are temporarily paused`, {
@@ -412,6 +414,19 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
   }
 
   async function request(url, exchangeCode) {
+    const pending = pendingRequests.get(url);
+    if (pending) return pending;
+
+    const requestPromise = requestProvider(url, exchangeCode);
+    pendingRequests.set(url, requestPromise);
+    try {
+      return await requestPromise;
+    } finally {
+      if (pendingRequests.get(url) === requestPromise) pendingRequests.delete(url);
+    }
+  }
+
+  async function requestProvider(url, exchangeCode) {
     assertNotRateLimited(exchangeCode);
     const response = await fetchImpl(url, {
       headers: { accept: 'application/json' },
@@ -429,7 +444,11 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
       );
       throw rateLimitError(exchangeCode, response.status, cooldownMs);
     }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
     return checkProviderResponse(exchangeCode, await response.json());
   }
 
@@ -531,9 +550,12 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
     const safeLimit = Math.max(25, Math.min(300, Number(limit) || 120));
     const key = `${exchange}:${normalizedMarketType}:${normalizedSymbol}:${normalizedTimeframe}:${safeLimit}`;
     const cached = cache.get(key);
-    if (cached && now() - cached.cachedAt < CACHE_TTL_MS) {
-      return { ...cached.value, cacheAgeMs: now() - cached.cachedAt };
+    const cachedAgeMs = cached ? now() - cached.cachedAt : null;
+    if (cached && cachedAgeMs < CACHE_TTL_MS) {
+      return { ...cached.value, cacheAgeMs: cachedAgeMs };
     }
+    const pending = pendingRequests.get(`market-data:${key}`);
+    if (pending) return pending;
 
     const endpoints = providerData(exchange, {
       symbol: normalizedSymbol,
@@ -548,59 +570,92 @@ export function createMarketDataService({ logger, fetchImpl = globalThis.fetch, 
       ['ticker', endpoints.ticker],
       ...endpoints.metrics.map(([url, name]) => [name, [url, name]]),
     ];
-    const settled = await Promise.allSettled(
-      requests.map(async ([name, [url, section]]) => ({
-        name,
-        payload: normalizeProviderRows(exchange, section, await request(url, exchange)),
-      }))
-    );
-    const sections = {};
-    for (let index = 0; index < requests.length; index += 1) {
-      const name = requests[index][0];
-      const result = settled[index];
-      sections[name] = result.status === 'fulfilled'
-        ? { status: 'available' }
-        : { status: 'unavailable', error: 'Exchange data is temporarily unavailable' };
-    }
-    const available = settled
-      .filter((result) => result.status === 'fulfilled')
-      .map((result) => result.value);
-    if (available.length === 0) {
-      logger?.warn?.({ exchangeCode: exchange, symbol: normalizedSymbol }, 'All market-data sections failed');
-      throw new AppError('Exchange market data is temporarily unavailable', {
-        code: 'MARKET_DATA_UNAVAILABLE',
-        status: 503,
-        expose: true,
-      });
-    }
-    const payloads = Object.fromEntries(available.map((item) => [item.name, item.payload]));
-    const receivedAt = now();
-    const sourceTimestamp = timestamp(payloads.ticker?.timestamp) ||
-      timestamp(payloads.recentTrades?.[0]?.timestamp) ||
-      timestamp(payloads.candles?.at(-1)?.timestamp);
-    const result = normalizeMarketDataPayload(exchange, {
-      symbol: normalizedSymbol,
-      marketType: normalizedMarketType,
-      timeframe: normalizedTimeframe,
-      candles: payloads.candles,
-      orderBook: payloads.orderBook,
-      recentTrades: payloads.recentTrades,
-      overview: overviewFrom(exchange, payloads.ticker, {
-        premium: payloads.premium,
-        openInterest: payloads.openInterest,
-        funding: payloads.funding,
-        mark: payloads.mark,
-      }, receivedAt),
-      sourceTimestamp,
-      sections,
-    }, { now: receivedAt });
+    const marketDataPromise = (async () => {
+      const settled = await Promise.allSettled(
+        requests.map(async ([name, [url, section]]) => ({
+          name,
+          payload: normalizeProviderRows(exchange, section, await request(url, exchange)),
+        }))
+      );
+      const sections = {};
+      for (let index = 0; index < requests.length; index += 1) {
+        const name = requests[index][0];
+        const result = settled[index];
+        sections[name] = result.status === 'fulfilled'
+          ? { status: 'available' }
+          : { status: 'unavailable', error: 'Exchange data is temporarily unavailable' };
+      }
+      const available = settled
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value);
+      if (available.length === 0) {
+        logger?.warn?.({
+          exchangeCode: exchange,
+          symbol: normalizedSymbol,
+          failures: settled.flatMap((result, index) => result.status === 'rejected'
+            ? [{
+              section: requests[index][0],
+              errorName: result.reason?.name || 'Error',
+              errorCode: result.reason?.code || null,
+              providerStatus: result.reason?.details?.status || result.reason?.status || null,
+            }]
+            : []),
+        }, 'All market-data sections failed');
+        if (cached && cachedAgeMs <= STALE_CACHE_TTL_MS) {
+          return {
+            ...cached.value,
+            cacheAgeMs: cachedAgeMs,
+            freshness: {
+              ...cached.value.freshness,
+              state: 'stale',
+              ageMs: cachedAgeMs,
+            },
+          };
+        }
+        throw new AppError('Exchange market data is temporarily unavailable', {
+          code: 'MARKET_DATA_UNAVAILABLE',
+          status: 503,
+          expose: true,
+        });
+      }
+      const payloads = Object.fromEntries(available.map((item) => [item.name, item.payload]));
+      const receivedAt = now();
+      const sourceTimestamp = timestamp(payloads.ticker?.timestamp) ||
+        timestamp(payloads.recentTrades?.[0]?.timestamp) ||
+        timestamp(payloads.candles?.at(-1)?.timestamp);
+      const result = normalizeMarketDataPayload(exchange, {
+        symbol: normalizedSymbol,
+        marketType: normalizedMarketType,
+        timeframe: normalizedTimeframe,
+        candles: payloads.candles,
+        orderBook: payloads.orderBook,
+        recentTrades: payloads.recentTrades,
+        overview: overviewFrom(exchange, payloads.ticker, {
+          premium: payloads.premium,
+          openInterest: payloads.openInterest,
+          funding: payloads.funding,
+          mark: payloads.mark,
+        }, receivedAt),
+        sourceTimestamp,
+        sections,
+      }, { now: receivedAt });
 
-    cache.set(key, { cachedAt: receivedAt, value: result });
-    if (cache.size > MAX_CACHE_ENTRIES) {
-      const oldestKey = cache.keys().next().value;
-      if (oldestKey) cache.delete(oldestKey);
+      cache.set(key, { cachedAt: receivedAt, value: result });
+      if (cache.size > MAX_CACHE_ENTRIES) {
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey) cache.delete(oldestKey);
+      }
+      return { ...result, cacheAgeMs: 0 };
+    })();
+
+    pendingRequests.set(`market-data:${key}`, marketDataPromise);
+    try {
+      return await marketDataPromise;
+    } finally {
+      if (pendingRequests.get(`market-data:${key}`) === marketDataPromise) {
+        pendingRequests.delete(`market-data:${key}`);
+      }
     }
-    return { ...result, cacheAgeMs: 0 };
   }
 
   return { getMarketData, getSpotPrice, getCandles };

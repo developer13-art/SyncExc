@@ -74,6 +74,91 @@ test('market data service rejects unrecognized exchanges and symbols', async () 
   );
 });
 
+test('market data service reuses a short-lived cached response when the exchange is temporarily unavailable', async () => {
+  let currentTime = 1_700_000_000_000;
+  let providerUnavailable = false;
+  const marketData = createMarketDataService({
+    now: () => currentTime,
+    fetchImpl: async (url) => {
+      if (providerUnavailable) throw new Error('exchange unavailable');
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith('/klines')) {
+        return jsonResponse([[currentTime, '10', '13', '9', '12', '25']]);
+      }
+      if (parsed.pathname.endsWith('/depth')) return jsonResponse({ bids: [], asks: [] });
+      if (parsed.pathname.endsWith('/trades')) return jsonResponse([]);
+      return jsonResponse({
+        lastPrice: '12',
+        priceChangePercent: '1',
+        highPrice: '13',
+        lowPrice: '9',
+        quoteVolume: '100',
+      });
+    },
+  });
+
+  const fresh = await marketData.getMarketData({
+    exchangeCode: 'binance',
+    symbol: 'BTCUSDT',
+    marketType: 'spot',
+  });
+  providerUnavailable = true;
+  currentTime += 31_000;
+
+  const stale = await marketData.getMarketData({
+    exchangeCode: 'binance',
+    symbol: 'BTCUSDT',
+    marketType: 'spot',
+  });
+
+  assert.equal(stale.candles.length, fresh.candles.length);
+  assert.equal(stale.freshness.state, 'stale');
+  assert.equal(stale.cacheAgeMs, 31_000);
+});
+
+test('market data service still reports an error when the exchange is unavailable and no cached response exists', async () => {
+  const marketData = createMarketDataService({
+    fetchImpl: async () => { throw new Error('exchange unavailable'); },
+  });
+
+  await assert.rejects(
+    marketData.getMarketData({ exchangeCode: 'binance', symbol: 'BTCUSDT' }),
+    { code: 'MARKET_DATA_UNAVAILABLE', status: 503 },
+  );
+});
+
+test('market data service deduplicates concurrent requests for the same market query', async () => {
+  let requestCount = 0;
+  const marketData = createMarketDataService({
+    fetchImpl: async (url) => {
+      requestCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith('/klines')) {
+        return jsonResponse([[1700000000000, '10', '13', '9', '12', '25']]);
+      }
+      if (parsed.pathname.endsWith('/depth')) return jsonResponse({ bids: [], asks: [] });
+      if (parsed.pathname.endsWith('/trades')) return jsonResponse([]);
+      return jsonResponse({ lastPrice: '12', closeTime: Date.now() });
+    },
+  });
+  const params = {
+    exchangeCode: 'binance',
+    symbol: 'BTCUSDT',
+    marketType: 'spot',
+    timeframe: '1h',
+    limit: 50,
+  };
+
+  const results = await Promise.all([
+    marketData.getMarketData(params),
+    marketData.getMarketData(params),
+  ]);
+
+  assert.equal(requestCount, 4);
+  assert.deepEqual(results[0].candles, results[1].candles);
+});
+
 test('market data service preserves extended and case-sensitive Binance intervals', async () => {
   const requests = [];
   const marketData = createMarketDataService({

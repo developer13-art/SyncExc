@@ -271,8 +271,8 @@ export function useTerminalMarketData(workspaceId, params = {}) {
     queryKey: queryKeys.terminal.marketData(workspaceId, params),
     queryFn: () => terminalApi.getMarketData(workspaceId, params),
     enabled,
-    staleTime: 2_000,
-    refetchInterval: 5_000,
-    retry: 1,
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+    retry: false,
   });
 }
