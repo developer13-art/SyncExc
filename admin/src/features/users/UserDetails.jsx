@@ -15,6 +15,7 @@ import { UserProfilePanel } from './UserProfilePanel.jsx';
 import { UserSecurityPanel } from './UserSecurityPanel.jsx';
 import { UserWorkspacesPanel } from './UserWorkspacesPanel.jsx';
 import { UserActionsPanel } from './UserActionsPanel.jsx';
+import { UserTradingPanel } from './UserTradingPanel.jsx';
 import { AuditTimeline } from '../../components/audit/AuditTimeline.jsx';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../api/index.js';
@@ -175,6 +176,7 @@ export default function UserDetails() {
               <TabsTrigger value="profile">Profile</TabsTrigger>
               <TabsTrigger value="security">Security</TabsTrigger>
               <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+              <TabsTrigger value="trading">Trading & subscriptions</TabsTrigger>
               <TabsTrigger value="audit">Activity</TabsTrigger>
             </TabsList>
             <TabsContent value="profile">
@@ -185,6 +187,9 @@ export default function UserDetails() {
             </TabsContent>
             <TabsContent value="workspaces">
               <UserWorkspacesPanel user={user} />
+            </TabsContent>
+            <TabsContent value="trading">
+              <UserTradingPanel userDetails={userQuery.data} />
             </TabsContent>
             <TabsContent value="audit">
               <Card>

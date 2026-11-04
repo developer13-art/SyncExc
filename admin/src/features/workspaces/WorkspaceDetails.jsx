@@ -18,6 +18,7 @@ import { adminApi } from '../../api/index.js';
 import { queryKeys } from '../../hooks/queryKeys.js';
 import { uiActions } from '../../app/slices/uiSlice.js';
 import { formatDateTime, formatRelativeTime } from '../../lib/formatters/date.formatter.js';
+import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
 import { ROUTES } from '../../config/routes.config.js';
 
 export default function WorkspaceDetails() {
@@ -62,7 +63,7 @@ export default function WorkspaceDetails() {
     );
   }
 
-  const { workspace, members: rawMembers = [] } = workspaceQuery.data;
+  const { workspace, members: rawMembers = [], traderInsights } = workspaceQuery.data;
   const members = rawMembers.map((member) => ({
     ...member,
     displayName: member.username,
@@ -123,6 +124,94 @@ export default function WorkspaceDetails() {
           {row.joinedAt ? formatRelativeTime(row.joinedAt) : '—'}
         </span>
       ),
+    },
+  ];
+
+  const balanceColumns = [
+    { key: 'currency', label: 'Currency' },
+    {
+      key: 'available',
+      label: 'Available balance',
+      render: (row) => formatCurrency(Number(row.available_minor) / 100, row.currency),
+    },
+    {
+      key: 'requested',
+      label: 'In payout review',
+      render: (row) => formatCurrency(Number(row.requested_minor) / 100, row.currency),
+    },
+    {
+      key: 'paid',
+      label: 'Paid out',
+      render: (row) => formatCurrency(Number(row.paid_minor) / 100, row.currency),
+    },
+    {
+      key: 'fee',
+      label: 'Platform commission',
+      render: (row) => formatCurrency(Number(row.platform_fee_minor) / 100, row.currency),
+    },
+  ];
+
+  const subscriberColumns = [
+    { key: 'subscriber_email', label: 'Subscriber' },
+    { key: 'plan_name', label: 'Plan' },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (row) => <Badge variant={row.status === 'active' ? 'success' : 'warning'}>{row.status}</Badge>,
+    },
+    {
+      key: 'gross_paid_minor',
+      label: 'Paid',
+      render: (row) => formatCurrency(Number(row.gross_paid_minor) / 100, row.currency || 'USD'),
+    },
+    {
+      key: 'trader_net_minor',
+      label: 'Trader share',
+      render: (row) => formatCurrency(Number(row.trader_net_minor) / 100, row.currency || 'USD'),
+    },
+    {
+      key: 'current_period_end',
+      label: 'Expires',
+      render: (row) => row.current_period_end ? formatDateTime(row.current_period_end) : '—',
+    },
+  ];
+
+  const signalColumns = [
+    { key: 'instrument', label: 'Instrument' },
+    { key: 'direction', label: 'Direction' },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (row) => <Badge variant={row.status === 'published' || row.status === 'closed' ? 'success' : 'muted'}>{row.status}</Badge>,
+    },
+    { key: 'entry', label: 'Entry' },
+    {
+      key: 'realized_pnl',
+      label: 'Realized PnL',
+      render: (row) => row.realized_pnl == null ? '—' : `${row.realized_pnl} ${row.pnl_asset || ''}`.trim(),
+    },
+    {
+      key: 'created_at',
+      label: 'Created',
+      render: (row) => row.created_at ? formatDateTime(row.created_at) : '—',
+    },
+  ];
+
+  const tradeColumns = [
+    { key: 'instrument', label: 'Instrument' },
+    { key: 'side', label: 'Side' },
+    { key: 'quantity', label: 'Quantity' },
+    { key: 'entry_price', label: 'Entry' },
+    { key: 'exit_price', label: 'Exit' },
+    {
+      key: 'realized_pnl',
+      label: 'Realized PnL',
+      render: (row) => row.realized_pnl ?? '—',
+    },
+    {
+      key: 'closed_at',
+      label: 'Closed',
+      render: (row) => row.closed_at ? formatDateTime(row.closed_at) : '—',
     },
   ];
 
@@ -204,6 +293,76 @@ export default function WorkspaceDetails() {
               />
             </CardContent>
           </Card>
+
+          {traderInsights ? (
+            <>
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <CardTitle>Trader profile · {traderInsights.provider.display_name}</CardTitle>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link to="/marketplace/earnings">Review payout requests</Link>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <Field label="Marketplace handle" value={`@${traderInsights.provider.handle}`} />
+                  <Field label="Moderation" value={traderInsights.provider.moderation_state} />
+                  <Field label="Closed trades" value={traderInsights.tradeSummary?.closed_trade_count ?? 0} />
+                  <Field label="Winning trades" value={traderInsights.tradeSummary?.winning_trade_count ?? 0} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle>Trader balance and commission</CardTitle></CardHeader>
+                <CardContent className="p-5 pt-0">
+                  <DataTable
+                    columns={balanceColumns}
+                    rows={traderInsights.balances}
+                    emptyTitle="No trader earnings"
+                    emptyDescription="Verified subscription earnings and commission will appear here."
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle>Marketplace subscribers</CardTitle></CardHeader>
+                <CardContent className="p-5 pt-0">
+                  <DataTable
+                    columns={subscriberColumns}
+                    rows={traderInsights.subscribers}
+                    emptyTitle="No subscribers"
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle>Published signals and performance</CardTitle></CardHeader>
+                <CardContent className="p-5 pt-0">
+                  {traderInsights.signalPnlByAsset.length > 0 ? (
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {traderInsights.signalPnlByAsset.map((pnl) => (
+                        <Badge key={pnl.pnl_asset ?? 'unknown'} variant="muted">
+                          Signal PnL: {pnl.net_pnl} {pnl.pnl_asset || 'unknown asset'}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  <DataTable columns={signalColumns} rows={traderInsights.signals} emptyTitle="No signals" />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle>Recent trading PnL</CardTitle></CardHeader>
+                <CardContent className="p-5 pt-0">
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Exchange-reported PnL is shown per trade; values across different instruments are not combined.
+                  </p>
+                  <DataTable columns={tradeColumns} rows={traderInsights.trades} emptyTitle="No closed trades" />
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
 
           <Tabs defaultValue="members">
             <TabsList>

@@ -93,8 +93,8 @@ export const marketplaceApi = {
   getMyEarnings: (params) =>
     api.get('/marketplace/me/earnings', { params }),
 
-  requestMyPayout: (currency) =>
-    api.post('/marketplace/me/payout-requests', { currency }),
+  requestMyPayout: (payload) =>
+    api.post('/marketplace/me/payout-requests', payload),
 
   createMyProviderPlan: (payload) =>
     api.post(endpoints.marketplace.myPlans, payload),

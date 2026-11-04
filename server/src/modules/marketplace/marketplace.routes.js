@@ -24,6 +24,10 @@ const ConfirmSubscriptionPaymentSchema = Joi.object({
 
 const RequestMarketplacePayoutSchema = Joi.object({
   currency: Joi.string().uppercase().length(3).required(),
+  accountName: Joi.string().trim().min(2).max(120).required(),
+  bankName: Joi.string().trim().min(2).max(120).required(),
+  countryCode: Joi.string().uppercase().length(2).required(),
+  accountNumber: Joi.string().trim().pattern(/^[A-Za-z0-9 -]{4,34}$/).required(),
 });
 
 const CopySignalSchema = Joi.object({

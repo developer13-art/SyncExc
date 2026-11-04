@@ -8,6 +8,7 @@ import {
   ExternalProviderError,
   NotFoundError,
 } from '../../lib/errors.js';
+import { decrypt, encrypt } from '../../lib/crypto.js';
 
 const FLUTTERWAVE_API_URL = 'https://api.flutterwave.com/v3';
 const BILLING_INTERVALS = {
@@ -473,18 +474,33 @@ export function createFlutterwaveMarketplaceService({
     return { ...earnings, payoutRequests };
   }
 
-  async function requestPayout({ userId, workspaceId, currency }) {
+  async function requestPayout({
+    userId,
+    workspaceId,
+    currency,
+    accountName,
+    bankName,
+    countryCode,
+    accountNumber,
+  }) {
     const provider = await providerService.getManagedProvider({ userId, workspaceId });
     try {
       const request = await db.tx((tx) => queries.createMarketplaceTraderPayoutRequest(tx, {
         providerId: provider.id,
         requestedBy: userId,
         currency: currency.toUpperCase(),
+        accountName: accountName.trim(),
+        bankName: bankName.trim(),
+        countryCode: countryCode.toUpperCase(),
+        encryptedAccountNumber: encrypt(accountNumber.trim()),
+        accountLast4: accountNumber.trim().slice(-4),
       }));
       if (!request) {
         throw new ConflictError('There is no available balance to request for this currency', 'NO_PAYOUT_BALANCE');
       }
-      return request;
+      const safeRequest = { ...request };
+      delete safeRequest.payout_account_encrypted;
+      return safeRequest;
     } catch (error) {
       if (error.code === '23505') {
         throw new ConflictError('A payout request is already pending for this currency', 'PAYOUT_REQUEST_PENDING');
@@ -503,7 +519,14 @@ export function createFlutterwaveMarketplaceService({
   }
 
   async function listAdminPayoutRequests({ status, limit = 50, offset = 0 }) {
-    return queries.listMarketplaceTraderPayoutRequestsForAdmin({ status, limit, offset });
+    const result = await queries.listMarketplaceTraderPayoutRequestsForAdmin({ status, limit, offset });
+    return {
+      ...result,
+      items: result.items.map(({ payout_account_encrypted: encryptedAccount, ...request }) => ({
+        ...request,
+        payout_account_number: encryptedAccount ? decrypt(encryptedAccount) : null,
+      })),
+    };
   }
 
   async function listAdminSubscriptions({ limit = 50, offset = 0 }) {

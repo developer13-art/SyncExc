@@ -344,6 +344,10 @@ export function createMarketplaceController(services) {
         userId: req.auth.userId,
         workspaceId: req.workspace.id,
         currency: req.body.currency,
+        accountName: req.body.accountName,
+        bankName: req.body.bankName,
+        countryCode: req.body.countryCode,
+        accountNumber: req.body.accountNumber,
       });
       return created(res, result);
     },

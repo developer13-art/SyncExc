@@ -1643,7 +1643,7 @@ export function createMarketplaceQueries({ db }) {
                  COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_minor,
                  COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'pending' AND payout_request_id IS NULL), 0)::bigint AS available_minor,
                  COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'pending' AND payout_request_id IS NOT NULL), 0)::bigint AS requested_minor,
-                 COALESCE(SUM(platform_fee_minor), 0)::bigint AS platform_fee_minor
+                 COALESCE(SUM(platform_fee_minor) FILTER (WHERE status <> 'reversed'), 0)::bigint AS platform_fee_minor
           FROM marketplace_trader_earnings
           WHERE provider_id = $1
           GROUP BY currency
@@ -1669,7 +1669,8 @@ export function createMarketplaceQueries({ db }) {
       const result = await db.query(
         `
         SELECT id, currency, amount_minor, status, payout_reference, note,
-               created_at, reviewed_at
+               payout_account_name, payout_bank_name, payout_country_code,
+               payout_account_last4, created_at, reviewed_at
         FROM marketplace_trader_payout_requests
         WHERE provider_id = $1
         ORDER BY created_at DESC
@@ -1679,7 +1680,16 @@ export function createMarketplaceQueries({ db }) {
       return result.rows;
     },
 
-    async createMarketplaceTraderPayoutRequest(client, { providerId, requestedBy, currency }) {
+    async createMarketplaceTraderPayoutRequest(client, {
+      providerId,
+      requestedBy,
+      currency,
+      accountName,
+      bankName,
+      countryCode,
+      encryptedAccountNumber,
+      accountLast4,
+    }) {
       const earnings = await client.query(
         `
         SELECT id, trader_net_amount_minor
@@ -1700,11 +1710,22 @@ export function createMarketplaceQueries({ db }) {
       const request = await client.query(
         `
         INSERT INTO marketplace_trader_payout_requests
-          (provider_id, requested_by, currency, amount_minor)
-        VALUES ($1, $2, $3, $4)
+          (provider_id, requested_by, currency, amount_minor, payout_account_encrypted,
+           payout_account_name, payout_bank_name, payout_country_code, payout_account_last4)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         `,
-        [providerId, requestedBy, currency, amountMinor],
+        [
+          providerId,
+          requestedBy,
+          currency,
+          amountMinor,
+          encryptedAccountNumber,
+          accountName,
+          bankName,
+          countryCode,
+          accountLast4,
+        ],
       );
       const earningIds = earnings.rows.map((earning) => earning.id);
       await client.query(
@@ -1731,7 +1752,8 @@ export function createMarketplaceQueries({ db }) {
         SELECT request.*, COUNT(*) OVER() AS total_count,
                provider.display_name AS provider_name,
                provider.handle AS provider_handle,
-               owner.email AS trader_email
+               owner.email AS trader_email,
+               workspace.id AS workspace_id
         FROM marketplace_trader_payout_requests request
         JOIN marketplace_provider_profiles provider ON provider.id = request.provider_id
         JOIN workspaces workspace ON workspace.id = provider.workspace_id
@@ -1830,6 +1852,7 @@ export function createMarketplaceQueries({ db }) {
                  MAX(earning.created_at) AS last_payment_at
           FROM marketplace_trader_earnings earning
           WHERE earning.subscription_id = subscription.id
+            AND earning.status <> 'reversed'
         ) payments ON true
         WHERE subscription.status IN ('active', 'trialing')
         ORDER BY subscription.created_at DESC

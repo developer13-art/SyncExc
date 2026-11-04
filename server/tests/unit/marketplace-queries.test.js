@@ -70,7 +70,17 @@ test('payout requests reserve every available earning for one currency with an e
         };
       }
       if (sql.includes('INSERT INTO marketplace_trader_payout_requests')) {
-        assert.deepEqual(params, ['provider-1', 'user-1', 'USD', '1550']);
+        assert.deepEqual(params, [
+          'provider-1',
+          'user-1',
+          'USD',
+          '1550',
+          'encrypted-account',
+          'Trader Name',
+          'Example Bank',
+          'NG',
+          '1234',
+        ]);
         return { rows: [{ id: 'request-1', amount_minor: '1550', currency: 'USD' }] };
       }
       if (sql.includes('UPDATE marketplace_trader_earnings')) {
@@ -86,11 +96,17 @@ test('payout requests reserve every available earning for one currency with an e
       providerId: 'provider-1',
       requestedBy: 'user-1',
       currency: 'USD',
+      accountName: 'Trader Name',
+      bankName: 'Example Bank',
+      countryCode: 'NG',
+      encryptedAccountNumber: 'encrypted-account',
+      accountLast4: '1234',
     });
 
   assert.equal(request.amount_minor, '1550');
   assert.equal(calls.length, 3);
   assert.match(calls[0].sql, /FOR UPDATE/);
+  assert.match(calls[1].sql, /payout_account_encrypted/);
 });
 
 test('marking a payout request paid settles its reserved earnings with the same transfer reference', async () => {

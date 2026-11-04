@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
 import { Button } from '../../components/ui/Button.jsx';
+import { Input } from '../../components/ui/Input.jsx';
+import { Modal } from '../../components/ui/Modal.jsx';
 import { ErrorState } from '../../components/ui/ErrorState.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { marketplaceApi } from '../../api/index.js';
@@ -19,6 +21,13 @@ export default function RevenueAndPayouts() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [requestingCurrency, setRequestingCurrency] = useState(null);
+  const [payoutCurrency, setPayoutCurrency] = useState(null);
+  const [payoutAccount, setPayoutAccount] = useState({
+    accountName: '',
+    bankName: '',
+    countryCode: '',
+    accountNumber: '',
+  });
   const earningsQuery = useQuery({
     queryKey: ['marketplace', 'earnings', activeWorkspaceId],
     queryFn: () => marketplaceApi.getMyEarnings(),
@@ -45,19 +54,32 @@ export default function RevenueAndPayouts() {
       .map((request) => request.currency),
   );
 
-  const handleRequestPayout = async (currency) => {
-    setRequestingCurrency(currency);
+  const handleRequestPayout = async (event) => {
+    event.preventDefault();
+    if (!payoutCurrency) return;
+    setRequestingCurrency(payoutCurrency);
     try {
-      await marketplaceApi.requestMyPayout(currency);
+      await marketplaceApi.requestMyPayout({
+        currency: payoutCurrency,
+        ...payoutAccount,
+      });
       await queryClient.invalidateQueries({ queryKey: ['marketplace', 'earnings', activeWorkspaceId] });
       toast.success('Payout request submitted', {
-        description: `Your available ${currency} balance has been sent to SyncExc for review.`,
+        description: `Your available ${payoutCurrency} balance has been sent to SyncExc for review.`,
       });
+      setPayoutCurrency(null);
+      setPayoutAccount({ accountName: '', bankName: '', countryCode: '', accountNumber: '' });
     } catch (error) {
       toast.error('Unable to request payout', { description: getErrorMessage(error) });
     } finally {
       setRequestingCurrency(null);
     }
+  };
+
+  const closePayoutDialog = () => {
+    if (requestingCurrency) return;
+    setPayoutCurrency(null);
+    setPayoutAccount({ accountName: '', bankName: '', countryCode: '', accountNumber: '' });
   };
 
   return (
@@ -113,7 +135,7 @@ export default function RevenueAndPayouts() {
                   pendingRequestCurrencies.has(total.currency) ||
                   requestingCurrency === total.currency
                 }
-                onClick={() => handleRequestPayout(total.currency)}
+                onClick={() => setPayoutCurrency(total.currency)}
               >
                 {requestingCurrency === total.currency
                   ? 'Submitting…'
@@ -152,6 +174,78 @@ export default function RevenueAndPayouts() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Modal
+        open={Boolean(payoutCurrency)}
+        onOpenChange={(open) => {
+          if (!open) closePayoutDialog();
+        }}
+        title="Payout destination"
+        description={`Enter the bank account details for your ${payoutCurrency ?? ''} payout. Account numbers are encrypted before storage.`}
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={closePayoutDialog}
+              disabled={Boolean(requestingCurrency)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="trader-payout-request"
+              disabled={Boolean(requestingCurrency)}
+            >
+              {requestingCurrency ? 'Submitting…' : 'Submit payout request'}
+            </Button>
+          </>
+        }
+      >
+        <form id="trader-payout-request" onSubmit={handleRequestPayout} className="grid gap-3">
+          <label className="grid gap-1 text-sm font-medium">
+            Account holder name
+            <Input
+              value={payoutAccount.accountName}
+              onChange={(event) => setPayoutAccount((current) => ({ ...current, accountName: event.target.value }))}
+              autoComplete="name"
+              maxLength={120}
+              required
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Bank or payment provider
+            <Input
+              value={payoutAccount.bankName}
+              onChange={(event) => setPayoutAccount((current) => ({ ...current, bankName: event.target.value }))}
+              maxLength={120}
+              required
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Country code (ISO 3166-1 alpha-2)
+            <Input
+              value={payoutAccount.countryCode}
+              onChange={(event) => setPayoutAccount((current) => ({ ...current, countryCode: event.target.value.toUpperCase() }))}
+              pattern="[A-Za-z]{2}"
+              maxLength={2}
+              autoComplete="country"
+              required
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Account number or IBAN
+            <Input
+              type="password"
+              value={payoutAccount.accountNumber}
+              onChange={(event) => setPayoutAccount((current) => ({ ...current, accountNumber: event.target.value }))}
+              autoComplete="off"
+              minLength={4}
+              maxLength={34}
+              required
+            />
+          </label>
+        </form>
+      </Modal>
 
       <Card>
         <CardHeader>

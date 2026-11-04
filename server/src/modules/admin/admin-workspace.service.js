@@ -84,6 +84,120 @@ export function createAdminWorkspaceService({ db, queries, events, audit, logger
       [workspaceId]
     );
 
+    let traderInsights = null;
+    if (workspace.rows[0].type === 'trader') {
+      const providerResult = await db.query(
+        `SELECT * FROM marketplace_provider_profiles WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+      const provider = providerResult.rows[0] ?? null;
+      if (provider) {
+        const [balances, subscribers, signals, tradeSummary, trades, signalPnlByAsset, orders] = await Promise.all([
+          db.query(
+            `
+            SELECT currency,
+                   COALESCE(SUM(trader_net_amount_minor) FILTER (
+                     WHERE status = 'pending' AND payout_request_id IS NULL
+                   ), 0)::bigint AS available_minor,
+                   COALESCE(SUM(trader_net_amount_minor) FILTER (
+                     WHERE status = 'pending' AND payout_request_id IS NOT NULL
+                   ), 0)::bigint AS requested_minor,
+                   COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_minor,
+                   COALESCE(SUM(platform_fee_minor) FILTER (WHERE status <> 'reversed'), 0)::bigint AS platform_fee_minor
+            FROM marketplace_trader_earnings
+            WHERE provider_id = $1
+            GROUP BY currency
+            ORDER BY currency
+            `,
+            [provider.id],
+          ),
+          db.query(
+            `
+            SELECT subscription.id, subscription.status, subscription.created_at,
+                   subscription.current_period_end, subscriber.email AS subscriber_email,
+                   subscriber.username AS subscriber_username, plan.name AS plan_name,
+                   COALESCE(SUM(earning.gross_amount_minor), 0)::bigint AS gross_paid_minor,
+                   COALESCE(SUM(earning.trader_net_amount_minor), 0)::bigint AS trader_net_minor,
+                   COALESCE(MAX(earning.currency), plan.pricing->>'currency') AS currency
+            FROM marketplace_subscriptions subscription
+            JOIN users subscriber ON subscriber.id = subscription.subscriber_user_id
+            LEFT JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
+            LEFT JOIN marketplace_trader_earnings earning
+              ON earning.subscription_id = subscription.id AND earning.status <> 'reversed'
+            WHERE subscription.provider_id = $1
+            GROUP BY subscription.id, subscriber.email, subscriber.username, plan.name, plan.pricing
+            ORDER BY subscription.created_at DESC
+            LIMIT 50
+            `,
+            [provider.id],
+          ),
+          db.query(
+            `
+            SELECT id, instrument, market_type, direction, status, entry, realized_pnl,
+                   pnl_asset, created_at, closed_at
+            FROM marketplace_published_signals
+            WHERE provider_id = $1
+            ORDER BY created_at DESC
+            LIMIT 20
+            `,
+            [provider.id],
+          ),
+          db.query(
+            `
+            SELECT COUNT(*)::int AS closed_trade_count,
+                   COUNT(*) FILTER (WHERE realized_pnl > 0)::int AS winning_trade_count,
+                   COUNT(*) FILTER (WHERE realized_pnl < 0)::int AS losing_trade_count
+            FROM trading_closed_trades
+            WHERE workspace_id = $1
+            `,
+            [workspaceId],
+          ),
+          db.query(
+            `
+            SELECT id, instrument, side, quantity, entry_price, exit_price, realized_pnl,
+                   fee_asset, exchange_code, closed_at
+            FROM trading_closed_trades
+            WHERE workspace_id = $1
+            ORDER BY closed_at DESC
+            LIMIT 20
+            `,
+            [workspaceId],
+          ),
+          db.query(
+            `
+            SELECT COALESCE(SUM(realized_pnl), 0)::text AS net_pnl,
+                   pnl_asset
+            FROM marketplace_published_signals
+            WHERE provider_id = $1 AND realized_pnl IS NOT NULL
+            GROUP BY pnl_asset
+            ORDER BY pnl_asset
+            `,
+            [provider.id],
+          ),
+          db.query(
+            `
+            SELECT status, COUNT(*)::int AS count
+            FROM trading_orders
+            WHERE workspace_id = $1
+            GROUP BY status
+            ORDER BY status
+            `,
+            [workspaceId],
+          ),
+        ]);
+        traderInsights = {
+          provider,
+          balances: balances.rows,
+          subscribers: subscribers.rows,
+          signals: signals.rows,
+          tradeSummary: tradeSummary.rows[0],
+          signalPnlByAsset: signalPnlByAsset.rows,
+          trades: trades.rows,
+          orders: orders.rows,
+        };
+      }
+    }
+
     await audit.write({
       actorId,
       action: 'workspace.viewed',
@@ -96,6 +210,7 @@ export function createAdminWorkspaceService({ db, queries, events, audit, logger
       members: members.rows,
       subscriptions: subscriptions.rows,
       shares: shares.rows,
+      traderInsights,
     };
   }
 

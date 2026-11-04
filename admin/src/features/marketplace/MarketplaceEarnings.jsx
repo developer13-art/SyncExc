@@ -113,6 +113,11 @@ export default function MarketplaceEarnings() {
       setSubmitError('Enter the payout transfer reference.');
       return;
     }
+    if (earningToPay.payoutKind === 'request' && payoutAction === 'paid' &&
+      !earningToPay.payout_account_number) {
+      setSubmitError('This request has no verified payout account details. Reject it so the trader can submit a new request with account details.');
+      return;
+    }
     if (payoutAction === 'rejected' && note.trim().length < 10) {
       setSubmitError('Provide a reason of at least 10 characters.');
       return;
@@ -274,6 +279,21 @@ export default function MarketplaceEarnings() {
       label: 'Requested amount',
       align: 'right',
       render: (row) => formatCurrency(Number(row.amount_minor) / 100, row.currency),
+    },
+    {
+      key: 'destination',
+      label: 'Payout destination',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.payout_account_name || 'Not provided'}</p>
+          <p className="text-xs text-muted-foreground">
+            {[row.payout_bank_name, row.payout_country_code].filter(Boolean).join(' · ') || '—'}
+          </p>
+          <p className="font-mono text-xs text-muted-foreground">
+            {row.payout_account_last4 ? `•••• ${row.payout_account_last4}` : '—'}
+          </p>
+        </div>
+      ),
     },
     {
       key: 'status',
@@ -513,7 +533,14 @@ export default function MarketplaceEarnings() {
             </Button>
             <Button
               onClick={handleMarkPaid}
-              disabled={submitting || (payoutAction === 'paid' ? !payoutReference.trim() : note.trim().length < 10)}
+              disabled={
+                submitting ||
+                (payoutAction === 'paid' && !payoutReference.trim()) ||
+                (payoutAction === 'rejected' && note.trim().length < 10) ||
+                (earningToPay?.payoutKind === 'request' &&
+                  payoutAction === 'paid' &&
+                  !earningToPay.payout_account_number)
+              }
             >
               {submitting
                 ? payoutAction === 'paid' ? 'Recording…' : 'Rejecting…'
@@ -523,6 +550,20 @@ export default function MarketplaceEarnings() {
         }
       >
         <div className="flex flex-col gap-4">
+          {earningToPay?.payoutKind === 'request' ? (
+            <div className="rounded-md border border-border p-3 text-sm">
+              <p className="font-medium text-foreground">Send payout to</p>
+              <p className="mt-1 text-muted-foreground">
+                {earningToPay.payout_account_name || 'Account holder unavailable'}
+              </p>
+              <p className="text-muted-foreground">
+                {[earningToPay.payout_bank_name, earningToPay.payout_country_code].filter(Boolean).join(' · ') || 'Bank details unavailable'}
+              </p>
+              <p className="font-mono text-xs text-muted-foreground">
+                {earningToPay.payout_account_number || 'Account number unavailable'}
+              </p>
+            </div>
+          ) : null}
           {payoutAction === 'paid' ? (
             <label className="flex flex-col gap-1.5 text-sm font-medium">
               Transfer reference
