@@ -20,6 +20,7 @@ const SubscriptionDetails = lazy(() => import('../features/subscriptions/Subscri
 
 const PaymentsList = lazy(() => import('../features/payments/PaymentsList.jsx'));
 const PaymentDetails = lazy(() => import('../features/payments/PaymentDetails.jsx'));
+const MarketplaceEarnings = lazy(() => import('../features/marketplace/MarketplaceEarnings.jsx'));
 
 const RefundsList = lazy(() => import('../features/refunds/RefundsList.jsx'));
 const RefundDetails = lazy(() => import('../features/refunds/RefundDetails.jsx'));
@@ -92,6 +93,7 @@ export function ConsoleRoutes() {
 
         <Route path="payments" element={<Fallback><PaymentsList /></Fallback>} />
         <Route path="payments/:paymentId" element={<Fallback><PaymentDetails /></Fallback>} />
+        <Route path="marketplace/earnings" element={<Fallback><MarketplaceEarnings /></Fallback>} />
 
         <Route path="refunds" element={<Fallback><RefundsList /></Fallback>} />
         <Route path="refunds/:refundId" element={<Fallback><RefundDetails /></Fallback>} />

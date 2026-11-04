@@ -15,7 +15,7 @@ import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { ROUTES } from '../../config/routes.config.js';
 import { useWorkspaceContext } from '../../context/WorkspaceContext.jsx';
 import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
-import { formatRelativeTime } from '../../lib/formatters/date.formatter.js';
+import { formatDate, formatRelativeTime } from '../../lib/formatters/date.formatter.js';
 import { ProviderPerformance } from '../marketplace/ProviderPerformance.jsx';
 
 const TABS = [
@@ -55,7 +55,7 @@ export default function ProviderDashboard() {
     queryFn: () => marketplaceApi.getMyEarnings(),
     enabled: activeWorkspace?.type === 'trader'
       && Boolean(dashboardQuery.data?.provider)
-      && activeTab === 'payouts',
+      && ['overview', 'payouts'].includes(activeTab),
     staleTime: 30_000,
   });
 
@@ -107,16 +107,24 @@ export default function ProviderDashboard() {
   );
   const totalSignals = Number(stats.total_signals ?? signals.length);
   const activeSignals = Number(stats.active_signals ?? signals.filter(isActiveSignal).length);
-  const totalEarnings = stats.total_earnings ?? stats.totalEarnings;
-  const earningsAmount = Number(totalEarnings);
-  const hasEarnings = totalEarnings != null && Number.isFinite(earningsAmount);
+  const earningsByCurrency = (payoutQuery.data?.totals ?? []).map((total) => ({
+    currency: total.currency,
+    amount: (total.pendingMinor + total.paidMinor) / 100,
+  }));
+  const totalEarnings = earningsByCurrency.length
+    ? earningsByCurrency.map(({ amount, currency }) => formatCurrency(amount, currency)).join(', ')
+    : payoutQuery.isError
+      ? 'Unavailable'
+    : payoutQuery.isLoading
+      ? 'Loading…'
+      : formatCurrency(0, 'USD');
   const metrics = [
     {
       label: 'Total earnings',
-      value: !hasEarnings
-        ? '—'
-        : formatCurrency(earningsAmount, stats.earnings_currency || 'USD'),
-      detail: hasEarnings ? 'Paid subscription revenue' : 'Payment history is not available yet',
+      value: totalEarnings,
+      detail: payoutQuery.isError
+        ? 'Subscription revenue could not be loaded'
+        : 'Pending and paid subscription revenue',
       icon: CircleDollarSign,
     },
     {
@@ -278,7 +286,17 @@ export default function ProviderDashboard() {
                   <div key={subscriber.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                     <div className="min-w-0">
                       <p className="font-medium text-foreground">{subscriber.displayName || subscriber.username}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{subscriber.planName}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {subscriber.planName}
+                        {subscriber.price != null
+                          ? ` · ${formatCurrency(subscriber.price, subscriber.currency)}`
+                          : ''}
+                      </p>
+                      {subscriber.currentPeriodEnd ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Expires {formatDate(subscriber.currentPeriodEnd)}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge variant={subscriber.status === 'active' ? 'success' : 'muted'}>{subscriber.status}</Badge>

@@ -38,6 +38,10 @@ export const queryKeys = {
     refundRequests: (params) => ['admin', 'payments', 'refund-requests', params],
   },
 
+  marketplaceEarnings: {
+    list: (params) => ['admin', 'marketplace-earnings', 'list', params],
+  },
+
   refunds: {
     list: (params) => ['admin', 'refunds', 'list', params],
   },

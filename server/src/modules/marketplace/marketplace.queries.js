@@ -615,7 +615,7 @@ export function createMarketplaceQueries({ db }) {
     async listProviderSubscribers(providerId) {
       const result = await db.query(
         `
-        SELECT s.id, s.status, s.created_at,
+        SELECT s.id, s.status, s.created_at, s.current_period_end,
                u.username, u.display_name,
                plan.name AS plan_name, plan.pricing
         FROM marketplace_subscriptions s
@@ -1407,7 +1407,7 @@ export function createMarketplaceQueries({ db }) {
     async findExistingSubscriptionForCheckout(providerId, subscriberUserId) {
       const result = await db.query(
         `
-        SELECT subscription.*, plan.pricing AS plan_pricing
+        SELECT subscription.*, plan.name AS plan_name, plan.pricing AS plan_pricing
         FROM marketplace_subscriptions subscription
         LEFT JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
         WHERE subscription.provider_id = $1 AND subscription.subscriber_user_id = $2
@@ -1422,9 +1422,13 @@ export function createMarketplaceQueries({ db }) {
     async findPendingSubscription(providerId, subscriberUserId) {
       const result = await db.query(
         `
-        SELECT * FROM marketplace_subscriptions
-        WHERE provider_id = $1 AND subscriber_user_id = $2
-          AND status = 'subscription_pending'
+        SELECT subscription.*, plan.name AS plan_name, plan.pricing AS plan_pricing
+        FROM marketplace_subscriptions subscription
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
+        WHERE subscription.provider_id = $1
+          AND subscription.subscriber_user_id = $2
+          AND subscription.status = 'subscription_pending'
+        ORDER BY subscription.updated_at DESC
         LIMIT 1
         `,
         [providerId, subscriberUserId]
@@ -1665,22 +1669,45 @@ export function createMarketplaceQueries({ db }) {
         where = `WHERE earning.status = $${params.length}`;
       }
       params.push(limit, offset);
-      const result = await db.query(
-        `
-        SELECT earning.*, provider.display_name AS provider_name,
-               provider.handle AS provider_handle, workspace.id AS workspace_id,
-               owner.email AS trader_email
-        FROM marketplace_trader_earnings earning
-        JOIN marketplace_provider_profiles provider ON provider.id = earning.provider_id
-        JOIN workspaces workspace ON workspace.id = provider.workspace_id
-        JOIN users owner ON owner.id = workspace.owner_id
-        ${where}
-        ORDER BY earning.created_at DESC
-        LIMIT $${params.length - 1} OFFSET $${params.length}
-        `,
-        params,
-      );
-      return result.rows;
+      const [rows, totals] = await Promise.all([
+        db.query(
+          `
+          SELECT earning.*, COUNT(*) OVER() AS total_count,
+                 provider.display_name AS provider_name,
+                 provider.handle AS provider_handle, workspace.id AS workspace_id,
+                 owner.email AS trader_email
+          FROM marketplace_trader_earnings earning
+          JOIN marketplace_provider_profiles provider ON provider.id = earning.provider_id
+          JOIN workspaces workspace ON workspace.id = provider.workspace_id
+          JOIN users owner ON owner.id = workspace.owner_id
+          ${where}
+          ORDER BY earning.created_at DESC
+          LIMIT $${params.length - 1} OFFSET $${params.length}
+          `,
+          params,
+        ),
+        db.query(
+          `
+          SELECT currency,
+                 COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'pending'), 0)::bigint AS pending_minor,
+                 COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_minor,
+                 COALESCE(SUM(platform_fee_minor), 0)::bigint AS platform_fee_minor
+          FROM marketplace_trader_earnings
+          GROUP BY currency
+          ORDER BY currency
+          `,
+        ),
+      ]);
+      return {
+        items: rows.rows.map(({ total_count: _totalCount, ...row }) => row),
+        total: Number(rows.rows[0]?.total_count ?? 0),
+        totals: totals.rows.map((row) => ({
+          currency: row.currency,
+          pendingMinor: Number(row.pending_minor),
+          paidMinor: Number(row.paid_minor),
+          platformFeeMinor: Number(row.platform_fee_minor),
+        })),
+      };
     },
 
     async markMarketplaceTraderEarningPaid(client, {

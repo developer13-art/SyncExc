@@ -160,11 +160,18 @@ export function createSubscriptionService({
     return queries.findActiveSubscription(providerId, userId);
   }
 
+  async function getSubscriptionForViewer({ userId, providerId }) {
+    const active = await queries.findExistingSubscriptionForCheckout(providerId, userId);
+    if (active) return active;
+    return queries.findPendingSubscription(providerId, userId);
+  }
+
   return {
     subscribe,
     cancel,
     listSubscriptions,
     getSubscription,
+    getSubscriptionForViewer,
   };
 }
 

@@ -18,6 +18,10 @@ const SubscribeSchema = Joi.object({
   planId: UuidSchema.optional(),
 });
 
+const ConfirmSubscriptionPaymentSchema = Joi.object({
+  transactionId: Joi.string().pattern(/^[1-9]\d*$/).required(),
+});
+
 const CopySignalSchema = Joi.object({
   configurationId: UuidSchema.required(),
   destinationAccountIds: Joi.array().items(UuidSchema).min(1).unique().required(),
@@ -482,6 +486,14 @@ export function createMarketplaceRoutes(services) {
     '/subscriptions/:subscriptionId/cancel',
     middleware.requireAuth(),
     middleware.asyncHandler(controller.cancelSubscription)
+  );
+
+  router.post(
+    '/subscriptions/:subscriptionId/confirm-payment',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ subscriptionId: UuidSchema.required() })),
+    middleware.validateBody(ConfirmSubscriptionPaymentSchema),
+    middleware.asyncHandler(controller.confirmSubscriptionPayment)
   );
 
   router.get(

@@ -176,6 +176,67 @@ test('verifies successful recurring charges and records net Trader earnings idem
   assert.equal(events[0].eventId, 'charge.completed:77');
 });
 
+test('confirms checkout return payments only for the owning subscriber and records the verified payment', async () => {
+  const transaction = {};
+  const updates = [];
+  const savedEarnings = [];
+  const queries = {
+    async findSubscriptionById(id) {
+      assert.equal(id, 'subscription-1');
+      return { id, subscriber_user_id: 'subscriber-1' };
+    },
+    async findSubscriptionByFlutterwaveReference(reference) {
+      assert.equal(reference, 'subscription-1-checkout');
+      return {
+        id: 'subscription-1',
+        provider_id: 'provider-1',
+        subscriber_user_id: 'subscriber-1',
+        plan_pricing: { amountMinor: 10000, currency: 'NGN', billingInterval: 'monthly' },
+      };
+    },
+    async insertMarketplaceFlutterwaveWebhookEvent(client) {
+      assert.equal(client, transaction);
+      return { event_id: 'charge.completed:77' };
+    },
+    async insertMarketplaceTraderEarning(_client, earning) {
+      savedEarnings.push(earning);
+      return { id: 'earning-1' };
+    },
+    async expireActiveFreeSubscriptions() { return []; },
+    async updateMarketplaceSubscription(_id, fields) { updates.push(fields); },
+    async insertSubscriptionEvent() {},
+  };
+  const service = createFlutterwaveMarketplaceService({
+    db: { async tx(callback) { return callback(transaction); } },
+    queries,
+    providerService: {},
+    config,
+    fetchImpl: async (url) => {
+      if (url.includes('/transactions/')) {
+        return jsonResponse({
+          id: 77,
+          tx_ref: 'subscription-1-checkout',
+          status: 'successful',
+          amount: 100,
+          currency: 'NGN',
+          created_at: '2026-11-03T10:00:00.000Z',
+        });
+      }
+      return jsonResponse([]);
+    },
+  });
+
+  const result = await service.confirmCheckoutPayment({
+    userId: 'subscriber-1',
+    subscriptionId: 'subscription-1',
+    transactionId: '77',
+  });
+
+  assert.deepEqual(result, { handled: true, duplicate: false });
+  assert.equal(updates[0].status, 'active');
+  assert.equal(savedEarnings[0].grossAmountMinor, 10000);
+});
+
 test('rejects a successful charge whose amount differs from the active plan', async () => {
   const service = createFlutterwaveMarketplaceService({
     db: { async tx(callback) { return callback({}); } },

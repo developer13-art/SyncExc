@@ -44,7 +44,7 @@ export function useMarketplaceProvider(providerId) {
     queryFn: () => marketplaceApi.getProvider(providerId),
     enabled: Boolean(providerId),
     staleTime: 60_000,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
     refetchIntervalInBackground: false,
   });
 

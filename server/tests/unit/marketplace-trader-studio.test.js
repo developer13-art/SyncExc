@@ -1773,6 +1773,52 @@ describe('Trader Studio API', () => {
     );
   });
 
+  it('returns the authenticated viewer subscription and paid period on a provider profile', async () => {
+    const controller = createMarketplaceController({
+      providerService: {
+        async getProvider() {
+          return {
+            id: 'provider-1',
+            visibility: 'public',
+            moderation_state: 'approved',
+            display_name: 'Trader One',
+          };
+        },
+      },
+      followService: { async isFollowing() { return false; } },
+      subscriptionService: {
+        async getSubscriptionForViewer() {
+          return {
+            id: 'subscription-1',
+            plan_id: 'plan-1',
+            plan_name: 'Starter',
+            status: 'active',
+            plan_pricing: { amountMinor: 10000, currency: 'NGN' },
+            current_period_end: new Date('2026-12-03T00:00:00.000Z'),
+          };
+        },
+      },
+    });
+    const response = createResponse();
+
+    await controller.getProvider({
+      params: { providerId: 'provider-1' },
+      auth: { userId: 'subscriber-1' },
+    }, response);
+
+    assert.deepEqual(response.body.data.viewerSubscription, {
+      id: 'subscription-1',
+      planId: 'plan-1',
+      planName: 'Starter',
+      status: 'active',
+      price: 100,
+      currency: 'NGN',
+      currentPeriodEnd: new Date('2026-12-03T00:00:00.000Z'),
+      cancelAtPeriodEnd: false,
+      checkoutUrl: null,
+    });
+  });
+
   it('includes editable methodology and published signal metadata in client serializers', () => {
     assert.equal(serializeProvider({
       id: 'provider-1',
@@ -2243,6 +2289,8 @@ describe('Trader Studio API', () => {
       display_name: 'Subscriber One',
       status: 'active',
       plan_name: 'Free signals',
+      pricing: { amountMinor: 1250, currency: 'NGN' },
+      current_period_end: new Date('2026-02-01T00:00:00.000Z'),
       created_at: new Date('2026-01-01T00:00:00.000Z'),
       email: 'private@example.test',
     });
@@ -2252,9 +2300,15 @@ describe('Trader Studio API', () => {
       'displayName',
       'status',
       'planName',
+      'price',
+      'currency',
+      'currentPeriodEnd',
       'createdAt',
     ]);
     assert.equal(subscriber.username, 'subscriber');
+    assert.equal(subscriber.price, 12.5);
+    assert.equal(subscriber.currency, 'NGN');
+    assert.equal(subscriber.currentPeriodEnd.toISOString(), '2026-02-01T00:00:00.000Z');
   });
 
   it('exposes plan price fields in the shape used by marketplace cards', () => {

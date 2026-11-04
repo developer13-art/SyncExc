@@ -24,6 +24,8 @@ import { ROUTES } from '../../config/routes.config.js';
 import { apiConfig } from '../../config/api.config.js';
 import { resolveProfileImageUrl } from '../../lib/profile-image-url.js';
 import { formatPercent } from '../../lib/formatters/percent.formatter.js';
+import { formatCurrency } from '../../lib/formatters/currency.formatter.js';
+import { formatDate } from '../../lib/formatters/date.formatter.js';
 
 export default function ProviderProfile() {
   const { providerId } = useParams();
@@ -77,6 +79,7 @@ export default function ProviderProfile() {
   const initials = provider.displayName?.slice(0, 1)?.toUpperCase() || '?';
   const performance = providerQuery.performance;
   const metrics = performance?.metrics ?? {};
+  const viewerSubscription = provider.viewerSubscription;
 
   const handleSubscribe = async ({ planId }, { rethrow = true } = {}) => {
     setSubscribing(true);
@@ -241,7 +244,63 @@ export default function ProviderProfile() {
         </Card>
         </TabsContent>
         <TabsContent value="subscription">
-        {plans.length > 0 ? (
+        {viewerSubscription?.status === 'active' ? (
+          <Card>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-foreground">Subscribed</p>
+                  <Badge variant="success">Active</Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {viewerSubscription.planName || 'Provider plan'}
+                  {viewerSubscription.price != null
+                    ? ` · ${formatCurrency(viewerSubscription.price, viewerSubscription.currency)}`
+                    : ''}
+                </p>
+                {viewerSubscription.currentPeriodEnd ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {viewerSubscription.cancelAtPeriodEnd ? 'Access through ' : 'Renews '}
+                    {formatDate(viewerSubscription.currentPeriodEnd)}
+                  </p>
+                ) : null}
+              </div>
+              <Button variant="outline" asChild>
+                <Link to={ROUTES.app.marketplace.subscriptions}>Manage subscription</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : viewerSubscription?.status === 'subscription_pending' ? (
+          <Card>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <div>
+                <p className="font-medium text-foreground">Payment confirmation pending</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Your subscription will activate as soon as the payment is confirmed.
+                </p>
+              </div>
+              {viewerSubscription.checkoutUrl ? (
+                <Button variant="outline" asChild>
+                  <a href={viewerSubscription.checkoutUrl}>Continue checkout</a>
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : viewerSubscription?.status === 'past_due' ? (
+          <Card>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <div>
+                <p className="font-medium text-foreground">Subscription payment past due</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Update or retry your payment from your subscription settings.
+                </p>
+              </div>
+              <Button variant="outline" asChild>
+                <Link to={ROUTES.app.marketplace.subscriptions}>Manage subscription</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : plans.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {plans.map((plan) => (
               <PlanCard

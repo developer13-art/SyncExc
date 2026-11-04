@@ -121,6 +121,9 @@ export const marketplaceApi = {
   cancelSubscription: (subscriptionId, payload) =>
     api.post(endpoints.marketplace.cancelSubscription(subscriptionId), payload),
 
+  confirmSubscriptionPayment: (subscriptionId, transactionId) =>
+    api.post(`/marketplace/subscriptions/${subscriptionId}/confirm-payment`, { transactionId }),
+
   listPublishedSignals: (params) =>
     api.getPaged(endpoints.marketplace.signals, { params }),
 

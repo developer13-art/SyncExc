@@ -688,6 +688,9 @@ export function serializeProviderSubscriber(row) {
     displayName: row.display_name,
     status: row.status,
     planName: row.plan_name || 'No plan',
+    price: row.pricing?.amountMinor == null ? null : Number(row.pricing.amountMinor) / 100,
+    currency: row.pricing?.currency || 'USD',
+    currentPeriodEnd: row.current_period_end || null,
     createdAt: row.created_at,
   };
 }

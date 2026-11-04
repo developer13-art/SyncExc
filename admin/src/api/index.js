@@ -15,6 +15,7 @@ export { workspacesApi } from './workspaces.api.js';
 export { plansApi } from './plans.api.js';
 export { subscriptionsApi } from './subscriptions.api.js';
 export { paymentsApi } from './payments.api.js';
+export { marketplaceEarningsApi } from './marketplace-earnings.api.js';
 export { refundsApi } from './refunds.api.js';
 export { exchangesApi } from './exchanges.api.js';
 export { sourceDiscoveryApi } from './source-discovery.api.js';

@@ -246,6 +246,106 @@ export function createFlutterwaveMarketplaceService({
     });
   }
 
+  async function processSuccessfulCharge(verified, { subscriptionId, userId } = {}) {
+    const providerSubscription = await findProviderSubscriptionForTransaction(verified);
+    const subscription = await findMarketplaceSubscription(verified, providerSubscription);
+    if (!subscription) {
+      logger?.error?.({
+        transactionId: verified.id,
+        transactionReference: verified.tx_ref,
+        planId: providerSubscription?.plan,
+      }, 'Flutterwave charge did not match a marketplace subscription');
+      throw new ExternalProviderError('Flutterwave payment could not be matched to a marketplace subscription.', {
+        provider: 'flutterwave',
+        retryable: true,
+        details: { stage: 'subscription matching' },
+      });
+    }
+    if (
+      (subscriptionId && subscription.id !== subscriptionId) ||
+      (userId && subscription.subscriber_user_id !== userId)
+    ) {
+      throw new ConflictError('Flutterwave payment does not match this subscription', 'PAYMENT_SUBSCRIPTION_MISMATCH');
+    }
+    if (verified.currency?.toUpperCase() !== subscription.plan_pricing?.currency?.toUpperCase()) {
+      throw new ConflictError('Flutterwave payment currency does not match the subscription plan', 'PAYMENT_CURRENCY_MISMATCH');
+    }
+    const amountMinor = Math.round(Number(verified.amount) * 100);
+    if (amountMinor !== Number(subscription.plan_pricing?.amountMinor)) {
+      throw new ConflictError('Flutterwave payment amount does not match the subscription plan', 'PAYMENT_AMOUNT_MISMATCH');
+    }
+
+    return db.tx(async (tx) => {
+      const eventId = `charge.completed:${verified.id}`;
+      const inserted = await queries.insertMarketplaceFlutterwaveWebhookEvent(tx, {
+        eventId,
+        eventType: 'charge.completed',
+      });
+      if (!inserted) return { handled: true, duplicate: true };
+
+      const feePercent = Number(config?.marketplace?.platformFeePercent ?? 2);
+      const platformFeeMinor = Math.round(amountMinor * feePercent / 100);
+      const earning = await queries.insertMarketplaceTraderEarning(tx, {
+        providerId: subscription.provider_id,
+        subscriptionId: subscription.id,
+        paymentReference: String(verified.id),
+        grossAmountMinor: amountMinor,
+        platformFeeMinor,
+        traderNetAmountMinor: amountMinor - platformFeeMinor,
+        currency: verified.currency.toUpperCase(),
+      });
+      const replacedFreeSubscriptions = await queries.expireActiveFreeSubscriptions(tx, {
+        providerId: subscription.provider_id,
+        subscriberUserId: subscription.subscriber_user_id,
+        exceptSubscriptionId: subscription.id,
+      });
+      for (const replaced of replacedFreeSubscriptions) {
+        await queries.insertSubscriptionEvent(tx, {
+          subscriptionId: replaced.id,
+          eventType: 'subscription_upgraded',
+          metadata: {
+            billingProvider: 'flutterwave',
+            replacementSubscriptionId: subscription.id,
+          },
+        });
+      }
+      const periodStart = verified.created_at ? new Date(verified.created_at) : new Date();
+      const periodEnd = nextBillingDate(periodStart, subscription.plan_pricing?.billingInterval);
+      await queries.updateMarketplaceSubscription(subscription.id, {
+        status: 'active',
+        billingProvider: 'flutterwave',
+        flutterwaveCustomerId: verified.customer?.id ? String(verified.customer.id) : null,
+        flutterwaveSubscriptionId: providerSubscription?.id
+          ? String(providerSubscription.id)
+          : null,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+      }, tx);
+      await queries.insertSubscriptionEvent(tx, {
+        subscriptionId: subscription.id,
+        eventType: 'payment_succeeded',
+        metadata: {
+          billingProvider: 'flutterwave',
+          paymentReference: String(verified.id),
+          earningsRecordId: earning?.id || null,
+        },
+      });
+      return { handled: true, duplicate: false };
+    });
+  }
+
+  async function confirmCheckoutPayment({ userId, subscriptionId, transactionId }) {
+    const subscription = await queries.findSubscriptionById(subscriptionId);
+    if (!subscription || subscription.subscriber_user_id !== userId) {
+      throw new NotFoundError('Subscription');
+    }
+    const verified = await verifyTransaction(transactionId);
+    if (verified.status !== 'successful') {
+      throw new ConflictError('Flutterwave has not confirmed this payment', 'PAYMENT_NOT_SUCCESSFUL');
+    }
+    return processSuccessfulCharge(verified, { subscriptionId, userId });
+  }
+
   async function handleWebhook({ event }) {
     const eventType = event?.event;
     const data = event?.data;
@@ -258,85 +358,7 @@ export function createFlutterwaveMarketplaceService({
       if (verified.status !== 'successful') {
         return handleFailedCharge(eventType, verified);
       }
-      const providerSubscription = await findProviderSubscriptionForTransaction(verified);
-      const subscription = await findMarketplaceSubscription(verified, providerSubscription);
-      if (!subscription) {
-        logger?.error?.({
-          transactionId: verified.id,
-          transactionReference: verified.tx_ref,
-          planId: providerSubscription?.plan,
-        }, 'Flutterwave charge did not match a marketplace subscription');
-        throw new ExternalProviderError('Flutterwave payment could not be matched to a marketplace subscription.', {
-          provider: 'flutterwave',
-          retryable: true,
-          details: { stage: 'subscription matching' },
-        });
-      }
-      if (verified.currency?.toUpperCase() !== subscription.plan_pricing?.currency?.toUpperCase()) {
-        throw new ConflictError('Flutterwave payment currency does not match the subscription plan', 'PAYMENT_CURRENCY_MISMATCH');
-      }
-      const amountMinor = Math.round(Number(verified.amount) * 100);
-      if (amountMinor !== Number(subscription.plan_pricing?.amountMinor)) {
-        throw new ConflictError('Flutterwave payment amount does not match the subscription plan', 'PAYMENT_AMOUNT_MISMATCH');
-      }
-
-      return db.tx(async (tx) => {
-        const eventId = `charge.completed:${verified.id}`;
-        const inserted = await queries.insertMarketplaceFlutterwaveWebhookEvent(tx, {
-          eventId,
-          eventType,
-        });
-        if (!inserted) return { handled: true, duplicate: true };
-
-        const feePercent = Number(config?.marketplace?.platformFeePercent ?? 2);
-        const platformFeeMinor = Math.round(amountMinor * feePercent / 100);
-        const earning = await queries.insertMarketplaceTraderEarning(tx, {
-          providerId: subscription.provider_id,
-          subscriptionId: subscription.id,
-          paymentReference: String(verified.id),
-          grossAmountMinor: amountMinor,
-          platformFeeMinor,
-          traderNetAmountMinor: amountMinor - platformFeeMinor,
-          currency: verified.currency.toUpperCase(),
-        });
-        const replacedFreeSubscriptions = await queries.expireActiveFreeSubscriptions(tx, {
-          providerId: subscription.provider_id,
-          subscriberUserId: subscription.subscriber_user_id,
-          exceptSubscriptionId: subscription.id,
-        });
-        for (const replaced of replacedFreeSubscriptions) {
-          await queries.insertSubscriptionEvent(tx, {
-            subscriptionId: replaced.id,
-            eventType: 'subscription_upgraded',
-            metadata: {
-              billingProvider: 'flutterwave',
-              replacementSubscriptionId: subscription.id,
-            },
-          });
-        }
-        const periodStart = verified.created_at ? new Date(verified.created_at) : new Date();
-        const periodEnd = nextBillingDate(periodStart, subscription.plan_pricing?.billingInterval);
-        await queries.updateMarketplaceSubscription(subscription.id, {
-          status: 'active',
-          billingProvider: 'flutterwave',
-          flutterwaveCustomerId: verified.customer?.id ? String(verified.customer.id) : null,
-          flutterwaveSubscriptionId: providerSubscription?.id
-            ? String(providerSubscription.id)
-            : null,
-          currentPeriodStart: periodStart,
-          currentPeriodEnd: periodEnd,
-        }, tx);
-        await queries.insertSubscriptionEvent(tx, {
-          subscriptionId: subscription.id,
-          eventType: 'payment_succeeded',
-          metadata: {
-            billingProvider: 'flutterwave',
-            paymentReference: String(verified.id),
-            earningsRecordId: earning?.id || null,
-          },
-        });
-        return { handled: true, duplicate: false };
-      });
+      return processSuccessfulCharge(verified);
     }
 
     if (eventType === 'subscription.cancelled') {
@@ -454,6 +476,7 @@ export function createFlutterwaveMarketplaceService({
   return {
     createSubscriptionCheckout,
     cancelPaidSubscription,
+    confirmCheckoutPayment,
     handleWebhook,
     getMyEarnings,
     listAdminEarnings,

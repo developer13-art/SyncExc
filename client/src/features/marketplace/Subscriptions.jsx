@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDispatch } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CreditCard } from 'lucide-react';
 
 import { Card, CardContent } from '../../components/ui/Card.jsx';
@@ -24,6 +24,8 @@ export default function Subscriptions() {
   const dispatch = useDispatch();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const attemptedConfirmation = useRef(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelPending, setCancelPending] = useState(false);
 
@@ -40,9 +42,35 @@ export default function Subscriptions() {
   const subscriptionsQuery = useQuery({
     queryKey: queryKeys.marketplace.subscriptions({}),
     queryFn: () => marketplaceApi.listSubscriptions({}),
+    refetchInterval: (query) =>
+      query.state.data?.items?.some((subscription) => subscription.status === 'subscription_pending')
+        ? 5_000
+        : false,
   });
 
   const subscriptions = subscriptionsQuery.data?.items ?? [];
+
+  useEffect(() => {
+    const subscriptionId = searchParams.get('subscriptionId');
+    const transactionId = searchParams.get('transaction_id');
+    if (searchParams.get('checkout') !== 'success' || !subscriptionId || !transactionId) return;
+    const confirmationKey = `${subscriptionId}:${transactionId}`;
+    if (attemptedConfirmation.current === confirmationKey) return;
+    attemptedConfirmation.current = confirmationKey;
+
+    marketplaceApi.confirmSubscriptionPayment(subscriptionId, transactionId)
+      .then(async () => {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.marketplace.subscriptions({}) });
+        await queryClient.invalidateQueries({ queryKey: ['marketplace', 'provider'] });
+        toast.success('Payment confirmed. Your subscription is active.');
+        setSearchParams({}, { replace: true });
+      })
+      .catch((error) => {
+        toast.error('Payment confirmation is pending', {
+          description: getErrorMessage(error),
+        });
+      });
+  }, [searchParams, queryClient, setSearchParams, toast]);
 
   const handleCancel = async () => {
     if (!cancelTarget) return;

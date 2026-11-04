@@ -74,7 +74,31 @@ export function createMarketplaceController(services) {
         userId: req.auth?.userId,
         providerId: provider.id,
       });
-      return success(res, { ...serializeProvider(provider), viewerIsFollowing });
+      const viewerSubscription = req.auth?.userId
+        ? await subscriptionService.getSubscriptionForViewer({
+          userId: req.auth.userId,
+          providerId: provider.id,
+        })
+        : null;
+      return success(res, {
+        ...serializeProvider(provider),
+        viewerIsFollowing,
+        viewerSubscription: viewerSubscription ? {
+          id: viewerSubscription.id,
+          planId: viewerSubscription.plan_id,
+          planName: viewerSubscription.plan_name || null,
+          status: viewerSubscription.status,
+          price: viewerSubscription.plan_pricing?.amountMinor == null
+            ? null
+            : Number(viewerSubscription.plan_pricing.amountMinor) / 100,
+          currency: viewerSubscription.plan_pricing?.currency || 'USD',
+          currentPeriodEnd: viewerSubscription.current_period_end || null,
+          cancelAtPeriodEnd: Boolean(viewerSubscription.cancel_at_period_end),
+          checkoutUrl: viewerSubscription.status === 'subscription_pending'
+            ? viewerSubscription.flutterwave_checkout_url || viewerSubscription.stripe_checkout_url || null
+            : null,
+        } : null,
+      });
     },
 
     async listStrategies(req, res) {
@@ -567,6 +591,15 @@ export function createMarketplaceController(services) {
         currentPeriodEnd: result.current_period_end || null,
         cancelAtPeriodEnd: Boolean(result.cancel_at_period_end),
       });
+    },
+
+    async confirmSubscriptionPayment(req, res) {
+      const result = await flutterwaveMarketplaceService.confirmCheckoutPayment({
+        userId: req.auth.userId,
+        subscriptionId: req.params.subscriptionId,
+        transactionId: req.body.transactionId,
+      });
+      return success(res, result);
     },
 
     async listSubscriptions(req, res) {
