@@ -28,6 +28,7 @@ export default function Subscriptions() {
   const attemptedConfirmation = useRef(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelPending, setCancelPending] = useState(false);
+  const [retryingSubscriptionId, setRetryingSubscriptionId] = useState(null);
 
   useEffect(() => {
     dispatch(uiActions.setPageTitle('Provider Subscriptions'));
@@ -49,6 +50,24 @@ export default function Subscriptions() {
   });
 
   const subscriptions = subscriptionsQuery.data?.items ?? [];
+
+  const handleRetryCheckout = async (subscription) => {
+    setRetryingSubscriptionId(subscription.id);
+    try {
+      const result = await marketplaceApi.createSubscription({
+        providerId: subscription.providerId,
+        planId: subscription.planId,
+      });
+      const redirectUrl = result?.redirectUrl ?? result?.checkoutUrl;
+      if (!redirectUrl) {
+        throw new Error('A new payment link could not be created. Please try again.');
+      }
+      window.location.assign(redirectUrl);
+    } catch (error) {
+      toast.error('Unable to start checkout', { description: getErrorMessage(error) });
+      setRetryingSubscriptionId(null);
+    }
+  };
 
   useEffect(() => {
     const subscriptionId = searchParams.get('subscriptionId');
@@ -171,9 +190,16 @@ export default function Subscriptions() {
                     ) : null}
                   </div>
                   <div className="flex gap-2">
-                    {subscription.checkoutUrl ? (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={subscription.checkoutUrl}>Continue checkout</a>
+                    {subscription.status === 'subscription_pending' && subscription.planId ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={retryingSubscriptionId === subscription.id}
+                        onClick={() => handleRetryCheckout(subscription)}
+                      >
+                        {retryingSubscriptionId === subscription.id
+                          ? 'Preparing checkout…'
+                          : 'Get new payment link'}
                       </Button>
                     ) : null}
                     <Button variant="outline" size="sm" asChild>

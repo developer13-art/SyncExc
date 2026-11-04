@@ -90,11 +90,12 @@ export default function ProviderProfile() {
         window.location.assign(redirectUrl);
         return;
       }
+      const requestedPlan = plans.find((plan) => plan.id === planId) ?? subscribePlan;
       const paidPlanAmount = Number(
-        subscribePlan?.pricing?.amountMinor ?? (subscribePlan?.price ?? 0) * 100,
+        requestedPlan?.pricing?.amountMinor ?? (requestedPlan?.price ?? 0) * 100,
       );
       const returnedPlanId = result?.planId ?? result?.plan_id;
-      if (paidPlanAmount > 0 && returnedPlanId !== subscribePlan?.id) {
+      if (paidPlanAmount > 0 && returnedPlanId !== requestedPlan?.id) {
         throw new Error('Payment checkout was not started. Please try again or contact support.');
       }
       toast.success('Subscribed');
@@ -279,9 +280,13 @@ export default function ProviderProfile() {
                   Your subscription will activate as soon as the payment is confirmed.
                 </p>
               </div>
-              {viewerSubscription.checkoutUrl ? (
-                <Button variant="outline" asChild>
-                  <a href={viewerSubscription.checkoutUrl}>Continue checkout</a>
+              {viewerSubscription.planId ? (
+                <Button
+                  variant="outline"
+                  disabled={subscribing}
+                  onClick={() => handleSubscribe({ planId: viewerSubscription.planId }, { rethrow: false })}
+                >
+                  {subscribing ? 'Preparing checkout…' : 'Get new payment link'}
                 </Button>
               ) : null}
             </CardContent>

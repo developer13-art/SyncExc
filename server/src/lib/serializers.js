@@ -700,6 +700,7 @@ export function serializeMarketplaceSubscription(row) {
   return {
     id: row.id,
     providerId: row.provider_id,
+    planId: row.plan_id,
     providerName: row.display_name || row.handle,
     planName: row.plan_name || 'No plan',
     status: row.status,

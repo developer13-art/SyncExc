@@ -89,6 +89,62 @@ test('creates a recurring Flutterwave checkout and stores provider references wi
   assert.equal(storedSubscription[0].fields.flutterwavePaymentPlanId, '987');
 });
 
+test('creates a fresh Flutterwave checkout link when retrying a pending subscription', async () => {
+  const transaction = {};
+  const references = [];
+  const updates = [];
+  const requests = [];
+  const service = createFlutterwaveMarketplaceService({
+    db: {
+      async tx(callback) { return callback(transaction); },
+      async query() { return { rows: [{ email: 'subscriber@example.test' }] }; },
+    },
+    queries: {
+      async findPendingSubscription() {
+        return {
+          id: 'subscription-1',
+          plan_id: 'plan-1',
+          billing_provider: 'flutterwave',
+          flutterwave_checkout_url: 'https://checkout.flutterwave.test/expired',
+        };
+      },
+      async insertMarketplaceFlutterwaveCheckoutReference(client, input) {
+        assert.equal(client, transaction);
+        references.push(input);
+      },
+      async updateMarketplaceSubscription(id, fields) {
+        updates.push({ id, fields });
+      },
+    },
+    providerService: {},
+    config,
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return jsonResponse({ link: 'https://checkout.flutterwave.test/fresh-session' });
+    },
+  });
+
+  const result = await service.createSubscriptionCheckout({
+    userId: 'subscriber-1',
+    provider: { id: 'provider-1', display_name: 'Trader One' },
+    plan: {
+      id: 'plan-1',
+      name: 'Monthly',
+      flutterwave_payment_plan_id: '987',
+      pricing: { amountMinor: 1250, currency: 'NGN', billingInterval: 'monthly' },
+    },
+    workspaceId: 'workspace-1',
+  });
+
+  assert.equal(result.subscriptionId, 'subscription-1');
+  assert.equal(result.redirectUrl, 'https://checkout.flutterwave.test/fresh-session');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, 'https://api.flutterwave.com/v3/payments');
+  assert.match(references[0].reference, /^subscription-1-/);
+  assert.equal(references[0].subscriptionId, 'subscription-1');
+  assert.equal(updates.at(-1).fields.flutterwaveCheckoutUrl, 'https://checkout.flutterwave.test/fresh-session');
+});
+
 test('verifies successful recurring charges and records net Trader earnings idempotently', async () => {
   const transaction = {};
   const savedEarnings = [];
@@ -180,6 +236,7 @@ test('confirms checkout return payments only for the owning subscriber and recor
   const transaction = {};
   const updates = [];
   const savedEarnings = [];
+  const warnings = [];
   const queries = {
     async findSubscriptionById(id) {
       assert.equal(id, 'subscription-1');
@@ -211,6 +268,7 @@ test('confirms checkout return payments only for the owning subscriber and recor
     queries,
     providerService: {},
     config,
+    logger: { warn: (...args) => warnings.push(args) },
     fetchImpl: async (url) => {
       if (url.includes('/transactions/')) {
         return jsonResponse({
@@ -222,7 +280,7 @@ test('confirms checkout return payments only for the owning subscriber and recor
           created_at: '2026-11-03T10:00:00.000Z',
         });
       }
-      return jsonResponse([]);
+      throw new Error('Flutterwave subscription lookup is unavailable');
     },
   });
 
@@ -235,6 +293,7 @@ test('confirms checkout return payments only for the owning subscriber and recor
   assert.deepEqual(result, { handled: true, duplicate: false });
   assert.equal(updates[0].status, 'active');
   assert.equal(savedEarnings[0].grossAmountMinor, 10000);
+  assert.equal(warnings.length, 1);
 });
 
 test('rejects a successful charge whose amount differs from the active plan', async () => {

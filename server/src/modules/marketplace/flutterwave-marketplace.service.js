@@ -122,12 +122,6 @@ export function createFlutterwaveMarketplaceService({
       if (existing.billing_provider && existing.billing_provider !== 'flutterwave') {
         throw new ConflictError('Finish or cancel the existing payment-provider checkout before retrying', 'CHECKOUT_IN_PROGRESS');
       }
-      if (existing.flutterwave_checkout_url) {
-        return {
-          subscriptionId: existing.id,
-          redirectUrl: existing.flutterwave_checkout_url,
-        };
-      }
     }
 
     if (!subscription) {
@@ -247,8 +241,21 @@ export function createFlutterwaveMarketplaceService({
   }
 
   async function processSuccessfulCharge(verified, { subscriptionId, userId } = {}) {
-    const providerSubscription = await findProviderSubscriptionForTransaction(verified);
-    const subscription = await findMarketplaceSubscription(verified, providerSubscription);
+    const subscriptionFromReference = verified.tx_ref
+      ? await queries.findSubscriptionByFlutterwaveReference(verified.tx_ref)
+      : null;
+    let providerSubscription = null;
+    try {
+      providerSubscription = await findProviderSubscriptionForTransaction(verified);
+    } catch (error) {
+      if (!subscriptionFromReference) throw error;
+      logger?.warn?.({
+        transactionId: verified.id,
+        error,
+      }, 'Flutterwave subscription lookup failed after a verifiable marketplace payment');
+    }
+    const subscription = subscriptionFromReference
+      || await findMarketplaceSubscription(verified, providerSubscription);
     if (!subscription) {
       logger?.error?.({
         transactionId: verified.id,
@@ -428,8 +435,14 @@ export function createFlutterwaveMarketplaceService({
   }
 
   async function handleFailedCharge(eventType, transaction) {
-    const providerSubscription = await findProviderSubscriptionForTransaction(transaction);
-    const subscription = await findMarketplaceSubscription(transaction, providerSubscription);
+    const subscriptionFromReference = transaction.tx_ref
+      ? await queries.findSubscriptionByFlutterwaveReference(transaction.tx_ref)
+      : null;
+    const providerSubscription = subscriptionFromReference
+      ? null
+      : await findProviderSubscriptionForTransaction(transaction);
+    const subscription = subscriptionFromReference
+      || await findMarketplaceSubscription(transaction, providerSubscription);
     return db.tx(async (tx) => {
       const inserted = await queries.insertMarketplaceFlutterwaveWebhookEvent(tx, {
         eventId: `${eventType}:${transaction.id}`,
