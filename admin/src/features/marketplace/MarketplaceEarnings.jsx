@@ -26,12 +26,28 @@ const STATUS_FILTERS = [
   { value: 'all', label: 'All' },
 ];
 
+const REQUEST_STATUS_FILTERS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'all', label: 'All' },
+];
+
+const VIEWS = [
+  { value: 'earnings', label: 'Payments' },
+  { value: 'requests', label: 'Payout requests' },
+  { value: 'subscriptions', label: 'Active subscriptions' },
+];
+
 export default function MarketplaceEarnings() {
   const dispatch = useDispatch();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const [view, setView] = useState('earnings');
   const [status, setStatus] = useState('pending');
+  const [requestStatus, setRequestStatus] = useState('pending');
   const [earningToPay, setEarningToPay] = useState(null);
+  const [payoutAction, setPayoutAction] = useState('paid');
   const [payoutReference, setPayoutReference] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -46,9 +62,28 @@ export default function MarketplaceEarnings() {
   const earningsQuery = useQuery({
     queryKey: queryKeys.marketplaceEarnings.list(params),
     queryFn: () => marketplaceEarningsApi.list(params),
+    enabled: view === 'earnings',
+  });
+  const requestParams = {
+    status: requestStatus === 'all' ? undefined : requestStatus,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  };
+  const requestsQuery = useQuery({
+    queryKey: ['admin', 'marketplace-payout-requests', requestParams],
+    queryFn: () => marketplaceEarningsApi.listRequests(requestParams),
+    enabled: view === 'requests',
+  });
+  const subscriptionsParams = { page: pagination.page, pageSize: pagination.pageSize };
+  const subscriptionsQuery = useQuery({
+    queryKey: ['admin', 'marketplace-trader-subscriptions', subscriptionsParams],
+    queryFn: () => marketplaceEarningsApi.listSubscriptions(subscriptionsParams),
+    enabled: view === 'subscriptions',
   });
   const earnings = earningsQuery.data?.items ?? [];
   const totals = earningsQuery.data?.totals ?? [];
+  const requests = requestsQuery.data?.items ?? [];
+  const subscriptions = subscriptionsQuery.data?.items ?? [];
 
   useEffect(() => {
     dispatch(adminUiActions.setPageTitle('Trader earnings'));
@@ -59,24 +94,53 @@ export default function MarketplaceEarnings() {
   }, [dispatch]);
 
   useEffect(() => {
-    const total = earningsQuery.data?.total;
+    const total = view === 'earnings'
+      ? earningsQuery.data?.total
+      : view === 'requests'
+        ? requestsQuery.data?.total
+        : subscriptionsQuery.data?.total;
     if (total !== undefined) pagination.setTotal(total);
-  }, [earningsQuery.data?.total, pagination.setTotal]);
+  }, [
+    view,
+    earningsQuery.data?.total,
+    requestsQuery.data?.total,
+    subscriptionsQuery.data?.total,
+    pagination.setTotal,
+  ]);
 
   const handleMarkPaid = async () => {
-    if (!earningToPay || !payoutReference.trim()) {
+    if (!earningToPay || (payoutAction === 'paid' && !payoutReference.trim())) {
       setSubmitError('Enter the payout transfer reference.');
+      return;
+    }
+    if (payoutAction === 'rejected' && note.trim().length < 10) {
+      setSubmitError('Provide a reason of at least 10 characters.');
       return;
     }
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await marketplaceEarningsApi.markPaid(earningToPay.id, {
-        payoutReference: payoutReference.trim(),
-        note: note.trim() || undefined,
-      });
-      await queryClient.invalidateQueries({ queryKey: ['admin', 'marketplace-earnings'] });
-      toast.success('Trader payout recorded');
+      if (earningToPay.payoutKind === 'request') {
+        if (payoutAction === 'paid') {
+          await marketplaceEarningsApi.markRequestPaid(earningToPay.id, {
+            payoutReference: payoutReference.trim(),
+            note: note.trim() || undefined,
+          });
+        } else {
+          await marketplaceEarningsApi.rejectRequest(earningToPay.id, { note: note.trim() });
+        }
+        await queryClient.invalidateQueries({ queryKey: ['admin', 'marketplace-payout-requests'] });
+        await queryClient.invalidateQueries({ queryKey: ['admin', 'marketplace-earnings'] });
+        await queryClient.invalidateQueries({ queryKey: ['admin', 'marketplace-trader-subscriptions'] });
+        toast.success(payoutAction === 'paid' ? 'Payout recorded' : 'Payout request rejected');
+      } else {
+        await marketplaceEarningsApi.markPaid(earningToPay.id, {
+          payoutReference: payoutReference.trim(),
+          note: note.trim() || undefined,
+        });
+        await queryClient.invalidateQueries({ queryKey: ['admin', 'marketplace-earnings'] });
+        toast.success('Trader payout recorded');
+      }
       setEarningToPay(null);
       setPayoutReference('');
       setNote('');
@@ -95,6 +159,14 @@ export default function MarketplaceEarnings() {
     setSubmitError(null);
   };
 
+  const openPayoutDialog = (row, action = 'paid') => {
+    setEarningToPay(row);
+    setPayoutAction(action);
+    setPayoutReference('');
+    setNote('');
+    setSubmitError(null);
+  };
+
   const columns = [
     {
       key: 'trader',
@@ -103,6 +175,33 @@ export default function MarketplaceEarnings() {
         <div>
           <p className="font-medium text-foreground">{row.provider_name}</p>
           <p className="text-xs text-muted-foreground">{row.trader_email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'subscriber',
+      label: 'Subscriber',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">
+            {row.subscriber_name || row.subscriber_username || 'Subscriber'}
+          </p>
+          <p className="text-xs text-muted-foreground">{row.subscriber_email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'plan',
+      label: 'Plan',
+      render: (row) => (
+        <div>
+          <p className="text-foreground">{row.plan_name || 'Plan'}</p>
+          <p className="text-xs text-muted-foreground">
+            {row.subscription_status || 'unknown'}
+            {row.current_period_end
+              ? ` · until ${formatDateTime(row.current_period_end)}`
+              : ''}
+          </p>
         </div>
       ),
     },
@@ -159,15 +258,176 @@ export default function MarketplaceEarnings() {
     },
   ];
 
+  const requestColumns = [
+    {
+      key: 'trader',
+      label: 'Trader',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.provider_name}</p>
+          <p className="text-xs text-muted-foreground">{row.trader_email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'amount',
+      label: 'Requested amount',
+      align: 'right',
+      render: (row) => formatCurrency(Number(row.amount_minor) / 100, row.currency),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (row) => (
+        <Badge variant={row.status === 'paid' ? 'success' : row.status === 'pending' ? 'warning' : 'muted'}>
+          {row.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'created_at',
+      label: 'Requested',
+      render: (row) => row.created_at ? formatDateTime(row.created_at) : '—',
+    },
+    {
+      key: 'actions',
+      label: '',
+      align: 'right',
+      render: (row) => row.status === 'pending' ? (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" onClick={() => openPayoutDialog({ ...row, payoutKind: 'request' })}>
+            Record payout
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openPayoutDialog({ ...row, payoutKind: 'request' }, 'rejected')}
+          >
+            Reject
+          </Button>
+        </div>
+      ) : (
+        <span className="font-mono text-xs text-muted-foreground">{row.payout_reference || '—'}</span>
+      ),
+    },
+  ];
+
+  const subscriptionColumns = [
+    {
+      key: 'trader',
+      label: 'Trader',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.provider_name}</p>
+          <p className="text-xs text-muted-foreground">{row.trader_email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'subscriber',
+      label: 'Subscriber',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-foreground">{row.subscriber_name || row.subscriber_username || 'Subscriber'}</p>
+          <p className="text-xs text-muted-foreground">{row.subscriber_email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'plan',
+      label: 'Plan / status',
+      render: (row) => (
+        <div>
+          <p className="text-foreground">{row.plan_name || 'Plan'}</p>
+          <Badge variant={row.status === 'active' ? 'success' : 'warning'}>{row.status}</Badge>
+        </div>
+      ),
+    },
+    {
+      key: 'plan_price',
+      label: 'Plan price',
+      align: 'right',
+      render: (row) => row.pricing?.amountMinor == null
+        ? '—'
+        : formatCurrency(Number(row.pricing.amountMinor) / 100, row.pricing.currency || 'USD'),
+    },
+    {
+      key: 'gross_paid',
+      label: 'Subscriber paid',
+      align: 'right',
+      render: (row) => formatCurrency(
+        Number(row.total_gross_minor) / 100,
+        row.payment_currency || row.pricing?.currency || 'USD',
+      ),
+    },
+    {
+      key: 'trader_net',
+      label: 'Trader net',
+      align: 'right',
+      render: (row) => formatCurrency(
+        Number(row.total_trader_net_minor) / 100,
+        row.payment_currency || row.pricing?.currency || 'USD',
+      ),
+    },
+    {
+      key: 'current_period_end',
+      label: 'Expires',
+      render: (row) => row.current_period_end ? formatDateTime(row.current_period_end) : '—',
+    },
+  ];
+
+  const selectedAmount = earningToPay
+    ? Number(earningToPay.amount_minor ?? earningToPay.trader_net_amount_minor) / 100
+    : 0;
+  const selectedCurrency = earningToPay?.currency || 'USD';
+  const activeQuery = view === 'earnings'
+    ? earningsQuery
+    : view === 'requests'
+      ? requestsQuery
+      : subscriptionsQuery;
+  const paginationControls = pagination.total > pagination.pageSize ? (
+    <div className="mt-4 flex justify-end gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!pagination.hasPrev}
+        onClick={pagination.prevPage}
+      >
+        Previous
+      </Button>
+      <span className="self-center text-xs text-muted-foreground">
+        Page {pagination.page} of {pagination.totalPages}
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!pagination.hasNext}
+        onClick={pagination.nextPage}
+      >
+        Next
+      </Button>
+    </div>
+  ) : null;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trader earnings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review verified subscription payments, outstanding trader balances, and manually recorded payouts.
+          Review active subscribers and exact payments, then process traders’ payout requests.
         </p>
       </div>
 
+      <SegmentedControl
+        options={VIEWS}
+        value={view}
+        onChange={(value) => {
+          setView(value);
+          pagination.goToPage(1);
+        }}
+      />
+
+      {view === 'earnings' ? (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {totals.map((total) => (
           <Card key={total.currency}>
@@ -189,56 +449,50 @@ export default function MarketplaceEarnings() {
           </Card>
         ))}
       </div>
+      ) : null}
 
-      <SegmentedControl
-        options={STATUS_FILTERS}
-        value={status}
-        onChange={(value) => {
-          setStatus(value);
-          pagination.goToPage(1);
-        }}
-      />
+      {view === 'earnings' ? (
+        <SegmentedControl
+          options={STATUS_FILTERS}
+          value={status}
+          onChange={(value) => {
+            setStatus(value);
+            pagination.goToPage(1);
+          }}
+        />
+      ) : view === 'requests' ? (
+        <SegmentedControl
+          options={REQUEST_STATUS_FILTERS}
+          value={requestStatus}
+          onChange={(value) => {
+            setRequestStatus(value);
+            pagination.goToPage(1);
+          }}
+        />
+      ) : null}
 
-      {earningsQuery.isLoading ? (
-        <LoadingState label="Loading trader earnings" />
-      ) : earningsQuery.isError ? (
+      {activeQuery.isLoading ? (
+        <LoadingState label={view === 'subscriptions' ? 'Loading active subscriptions' : view === 'requests' ? 'Loading payout requests' : 'Loading trader earnings'} />
+      ) : activeQuery.isError ? (
         <ErrorState
-          title="Trader earnings unavailable"
-          description={getErrorMessage(earningsQuery.error)}
-          onRetry={earningsQuery.refetch}
+          title={view === 'subscriptions' ? 'Active subscriptions unavailable' : view === 'requests' ? 'Payout requests unavailable' : 'Trader earnings unavailable'}
+          description={getErrorMessage(activeQuery.error)}
+          onRetry={activeQuery.refetch}
         />
       ) : (
         <Card>
           <CardContent className="p-5">
             <DataTable
-              columns={columns}
-              rows={earnings}
-              emptyTitle="No trader earnings"
-              emptyDescription="Verified marketplace subscription payments will appear here."
+              columns={view === 'subscriptions' ? subscriptionColumns : view === 'requests' ? requestColumns : columns}
+              rows={view === 'subscriptions' ? subscriptions : view === 'requests' ? requests : earnings}
+              emptyTitle={view === 'subscriptions' ? 'No active trader subscriptions' : view === 'requests' ? 'No payout requests' : 'No trader earnings'}
+              emptyDescription={view === 'subscriptions'
+                ? 'Active marketplace subscribers will appear here with plan price and confirmed payment totals.'
+                : view === 'requests'
+                  ? 'Trader payout requests will appear here for review.'
+                  : 'Verified marketplace subscription payments will appear here with subscriber details.'}
             />
-            {pagination.total > pagination.pageSize ? (
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!pagination.hasPrev}
-                  onClick={pagination.prevPage}
-                >
-                  Previous
-                </Button>
-                <span className="self-center text-xs text-muted-foreground">
-                  Page {pagination.page} of {pagination.totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!pagination.hasNext}
-                  onClick={pagination.nextPage}
-                >
-                  Next
-                </Button>
-              </div>
-            ) : null}
+            {paginationControls}
           </CardContent>
         </Card>
       )}
@@ -248,37 +502,45 @@ export default function MarketplaceEarnings() {
         onOpenChange={(open) => {
           if (!open) closePayoutDialog();
         }}
-        title="Record trader payout"
+        title={payoutAction === 'rejected' ? 'Reject payout request' : 'Record trader payout'}
         description={earningToPay
-          ? `${earningToPay.provider_name} · ${formatCurrency(Number(earningToPay.trader_net_amount_minor) / 100, earningToPay.currency)}`
+          ? `${earningToPay.provider_name} · ${formatCurrency(selectedAmount, selectedCurrency)}`
           : ''}
         footer={
           <>
             <Button variant="outline" onClick={closePayoutDialog} disabled={submitting}>
               Cancel
             </Button>
-            <Button onClick={handleMarkPaid} disabled={submitting || !payoutReference.trim()}>
-              {submitting ? 'Recording…' : 'Confirm payout'}
+            <Button
+              onClick={handleMarkPaid}
+              disabled={submitting || (payoutAction === 'paid' ? !payoutReference.trim() : note.trim().length < 10)}
+            >
+              {submitting
+                ? payoutAction === 'paid' ? 'Recording…' : 'Rejecting…'
+                : payoutAction === 'paid' ? 'Confirm payout' : 'Reject request'}
             </Button>
           </>
         }
       >
         <div className="flex flex-col gap-4">
+          {payoutAction === 'paid' ? (
+            <label className="flex flex-col gap-1.5 text-sm font-medium">
+              Transfer reference
+              <Input
+                value={payoutReference}
+                onChange={(event) => setPayoutReference(event.target.value)}
+                maxLength={200}
+                required
+              />
+            </label>
+          ) : null}
           <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Transfer reference
-            <Input
-              value={payoutReference}
-              onChange={(event) => setPayoutReference(event.target.value)}
-              maxLength={200}
-              required
-            />
-          </label>
-          <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Note (optional)
+            {payoutAction === 'rejected' ? 'Reason (required)' : 'Note (optional)'}
             <Input
               value={note}
               onChange={(event) => setNote(event.target.value)}
               maxLength={500}
+              minLength={payoutAction === 'rejected' ? 10 : undefined}
             />
           </label>
           {submitError ? <p className="text-xs text-destructive" role="alert">{submitError}</p> : null}

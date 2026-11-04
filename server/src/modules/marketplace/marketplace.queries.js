@@ -1628,7 +1628,7 @@ export function createMarketplaceQueries({ db }) {
           `
           SELECT id, subscription_id, provider_payment_reference, gross_amount_minor,
                  platform_fee_minor, trader_net_amount_minor, currency, status,
-                 payout_reference, paid_at, created_at
+                 payout_reference, payout_request_id, paid_at, created_at
           FROM marketplace_trader_earnings
           WHERE provider_id = $1
           ORDER BY created_at DESC
@@ -1641,6 +1641,8 @@ export function createMarketplaceQueries({ db }) {
           SELECT currency,
                  COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'pending'), 0)::bigint AS pending_minor,
                  COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'paid'), 0)::bigint AS paid_minor,
+                 COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'pending' AND payout_request_id IS NULL), 0)::bigint AS available_minor,
+                 COALESCE(SUM(trader_net_amount_minor) FILTER (WHERE status = 'pending' AND payout_request_id IS NOT NULL), 0)::bigint AS requested_minor,
                  COALESCE(SUM(platform_fee_minor), 0)::bigint AS platform_fee_minor
           FROM marketplace_trader_earnings
           WHERE provider_id = $1
@@ -1656,8 +1658,188 @@ export function createMarketplaceQueries({ db }) {
           currency: row.currency,
           pendingMinor: Number(row.pending_minor),
           paidMinor: Number(row.paid_minor),
+          availableMinor: Number(row.available_minor),
+          requestedMinor: Number(row.requested_minor),
           platformFeeMinor: Number(row.platform_fee_minor),
         })),
+      };
+    },
+
+    async listMarketplaceTraderPayoutRequests(providerId) {
+      const result = await db.query(
+        `
+        SELECT id, currency, amount_minor, status, payout_reference, note,
+               created_at, reviewed_at
+        FROM marketplace_trader_payout_requests
+        WHERE provider_id = $1
+        ORDER BY created_at DESC
+        `,
+        [providerId],
+      );
+      return result.rows;
+    },
+
+    async createMarketplaceTraderPayoutRequest(client, { providerId, requestedBy, currency }) {
+      const earnings = await client.query(
+        `
+        SELECT id, trader_net_amount_minor
+        FROM marketplace_trader_earnings
+        WHERE provider_id = $1 AND currency = $2
+          AND status = 'pending' AND payout_request_id IS NULL
+        ORDER BY created_at, id
+        FOR UPDATE
+        `,
+        [providerId, currency],
+      );
+      if (earnings.rows.length === 0) return null;
+
+      const amountMinor = earnings.rows.reduce(
+        (total, earning) => total + BigInt(earning.trader_net_amount_minor),
+        0n,
+      ).toString();
+      const request = await client.query(
+        `
+        INSERT INTO marketplace_trader_payout_requests
+          (provider_id, requested_by, currency, amount_minor)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+        `,
+        [providerId, requestedBy, currency, amountMinor],
+      );
+      const earningIds = earnings.rows.map((earning) => earning.id);
+      await client.query(
+        `
+        UPDATE marketplace_trader_earnings
+        SET payout_request_id = $1
+        WHERE id = ANY($2::uuid[]) AND status = 'pending' AND payout_request_id IS NULL
+        `,
+        [request.rows[0].id, earningIds],
+      );
+      return request.rows[0];
+    },
+
+    async listMarketplaceTraderPayoutRequestsForAdmin({ status, limit = 50, offset = 0 } = {}) {
+      const params = [];
+      let where = '';
+      if (status) {
+        params.push(status);
+        where = `WHERE request.status = $${params.length}`;
+      }
+      params.push(limit, offset);
+      const result = await db.query(
+        `
+        SELECT request.*, COUNT(*) OVER() AS total_count,
+               provider.display_name AS provider_name,
+               provider.handle AS provider_handle,
+               owner.email AS trader_email
+        FROM marketplace_trader_payout_requests request
+        JOIN marketplace_provider_profiles provider ON provider.id = request.provider_id
+        JOIN workspaces workspace ON workspace.id = provider.workspace_id
+        JOIN users owner ON owner.id = workspace.owner_id
+        ${where}
+        ORDER BY request.created_at DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}
+        `,
+        params,
+      );
+      return {
+        items: result.rows.map(({ total_count: _totalCount, ...row }) => row),
+        total: Number(result.rows[0]?.total_count ?? 0),
+      };
+    },
+
+    async markMarketplaceTraderPayoutRequestPaid(client, {
+      requestId,
+      actorId,
+      payoutReference,
+      note,
+    }) {
+      const locked = await client.query(
+        `SELECT * FROM marketplace_trader_payout_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
+        [requestId],
+      );
+      if (!locked.rows[0]) return null;
+
+      const paid = await client.query(
+        `
+        UPDATE marketplace_trader_earnings
+        SET status = 'paid', payout_reference = $2, payout_note = $3,
+            paid_by = $4, paid_at = now()
+        WHERE payout_request_id = $1 AND status = 'pending'
+        RETURNING id
+        `,
+        [requestId, payoutReference, note || null, actorId],
+      );
+      if (paid.rows.length === 0) return null;
+      const result = await client.query(
+        `
+        UPDATE marketplace_trader_payout_requests
+        SET status = 'paid', payout_reference = $2, note = $3,
+            reviewed_by = $4, reviewed_at = now()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [requestId, payoutReference, note || null, actorId],
+      );
+      return result.rows[0] || null;
+    },
+
+    async rejectMarketplaceTraderPayoutRequest(client, { requestId, actorId, note }) {
+      const result = await client.query(
+        `
+        UPDATE marketplace_trader_payout_requests
+        SET status = 'rejected', note = $3, reviewed_by = $2, reviewed_at = now()
+        WHERE id = $1 AND status = 'pending'
+        RETURNING *
+        `,
+        [requestId, actorId, note || null],
+      );
+      if (!result.rows[0]) return null;
+      await client.query(
+        `UPDATE marketplace_trader_earnings SET payout_request_id = NULL WHERE payout_request_id = $1 AND status = 'pending'`,
+        [requestId],
+      );
+      return result.rows[0];
+    },
+
+    async listMarketplaceTraderSubscriptionsForAdmin({ limit = 50, offset = 0 } = {}) {
+      const result = await db.query(
+        `
+        SELECT subscription.id, subscription.status, subscription.created_at,
+               subscription.current_period_end, provider.display_name AS provider_name,
+               provider.handle AS provider_handle, owner.email AS trader_email,
+               subscriber.username AS subscriber_username,
+               subscriber.display_name AS subscriber_name,
+               subscriber.email AS subscriber_email,
+               plan.name AS plan_name, plan.pricing,
+               COALESCE(payments.total_gross_minor, 0)::bigint AS total_gross_minor,
+               COALESCE(payments.total_trader_net_minor, 0)::bigint AS total_trader_net_minor,
+               payments.currency AS payment_currency,
+               payments.last_payment_at,
+               COUNT(*) OVER() AS total_count
+        FROM marketplace_subscriptions subscription
+        JOIN marketplace_provider_profiles provider ON provider.id = subscription.provider_id
+        JOIN workspaces workspace ON workspace.id = provider.workspace_id
+        JOIN users owner ON owner.id = workspace.owner_id
+        JOIN users subscriber ON subscriber.id = subscription.subscriber_user_id
+        LEFT JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
+        LEFT JOIN LATERAL (
+          SELECT SUM(earning.gross_amount_minor) AS total_gross_minor,
+                 SUM(earning.trader_net_amount_minor) AS total_trader_net_minor,
+                 MAX(earning.currency) AS currency,
+                 MAX(earning.created_at) AS last_payment_at
+          FROM marketplace_trader_earnings earning
+          WHERE earning.subscription_id = subscription.id
+        ) payments ON true
+        WHERE subscription.status IN ('active', 'trialing')
+        ORDER BY subscription.created_at DESC
+        LIMIT $1 OFFSET $2
+        `,
+        [limit, offset],
+      );
+      return {
+        items: result.rows.map(({ total_count: _totalCount, ...row }) => row),
+        total: Number(result.rows[0]?.total_count ?? 0),
       };
     },
 
@@ -1675,11 +1857,20 @@ export function createMarketplaceQueries({ db }) {
           SELECT earning.*, COUNT(*) OVER() AS total_count,
                  provider.display_name AS provider_name,
                  provider.handle AS provider_handle, workspace.id AS workspace_id,
-                 owner.email AS trader_email
+                 owner.email AS trader_email,
+                 subscriber.username AS subscriber_username,
+                 subscriber.display_name AS subscriber_name,
+                 subscriber.email AS subscriber_email,
+                 subscription.status AS subscription_status,
+                 subscription.current_period_end,
+                 plan.name AS plan_name
           FROM marketplace_trader_earnings earning
           JOIN marketplace_provider_profiles provider ON provider.id = earning.provider_id
           JOIN workspaces workspace ON workspace.id = provider.workspace_id
           JOIN users owner ON owner.id = workspace.owner_id
+          JOIN marketplace_subscriptions subscription ON subscription.id = earning.subscription_id
+          JOIN users subscriber ON subscriber.id = subscription.subscriber_user_id
+          LEFT JOIN marketplace_provider_plans plan ON plan.id = subscription.plan_id
           ${where}
           ORDER BY earning.created_at DESC
           LIMIT $${params.length - 1} OFFSET $${params.length}
@@ -1721,7 +1912,7 @@ export function createMarketplaceQueries({ db }) {
         UPDATE marketplace_trader_earnings
         SET status = 'paid', payout_reference = $3, payout_note = $4,
             paid_by = $2, paid_at = now()
-        WHERE id = $1 AND status = 'pending'
+        WHERE id = $1 AND status = 'pending' AND payout_request_id IS NULL
         RETURNING *
         `,
         [earningId, actorId, payoutReference, note || null],

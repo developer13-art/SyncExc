@@ -79,9 +79,17 @@ const MarketplaceEarningsQuerySchema = PaginationSchema.keys({
   status: Joi.string().valid('pending', 'paid', 'reversed').optional(),
 });
 
+const MarketplacePayoutRequestsQuerySchema = PaginationSchema.keys({
+  status: Joi.string().valid('pending', 'paid', 'rejected').optional(),
+});
+
 const MarkMarketplaceEarningPaidSchema = Joi.object({
   payoutReference: Joi.string().trim().min(1).max(200).required(),
   note: Joi.string().trim().max(500).optional().allow(''),
+});
+
+const RejectMarketplacePayoutRequestSchema = Joi.object({
+  note: Joi.string().trim().min(10).max(500).required(),
 });
 
 const RestrictExchangeSchema = Joi.object({
@@ -397,6 +405,38 @@ export function createAdminRoutes(services) {
     middleware.validateParams(Joi.object({ earningId: UuidSchema.required() })),
     middleware.validateBody(MarkMarketplaceEarningPaidSchema),
     middleware.asyncHandler(controller.markMarketplaceTraderEarningPaid)
+  );
+
+  router.get(
+    '/marketplace/trader-subscriptions',
+    middleware.requireAdminPermission('admin.marketplace.earnings.view'),
+    middleware.validateQuery(PaginationSchema),
+    middleware.asyncHandler(controller.listMarketplaceTraderSubscriptions)
+  );
+
+  router.get(
+    '/marketplace/trader-payout-requests',
+    middleware.requireAdminPermission('admin.marketplace.earnings.view'),
+    middleware.validateQuery(MarketplacePayoutRequestsQuerySchema),
+    middleware.asyncHandler(controller.listMarketplaceTraderPayoutRequests)
+  );
+
+  router.post(
+    '/marketplace/trader-payout-requests/:requestId/mark-paid',
+    middleware.requireAdminPermission('admin.marketplace.earnings.manage'),
+    middleware.requireStepUp(),
+    middleware.validateParams(Joi.object({ requestId: UuidSchema.required() })),
+    middleware.validateBody(MarkMarketplaceEarningPaidSchema),
+    middleware.asyncHandler(controller.markMarketplaceTraderPayoutRequestPaid)
+  );
+
+  router.post(
+    '/marketplace/trader-payout-requests/:requestId/reject',
+    middleware.requireAdminPermission('admin.marketplace.earnings.manage'),
+    middleware.requireStepUp(),
+    middleware.validateParams(Joi.object({ requestId: UuidSchema.required() })),
+    middleware.validateBody(RejectMarketplacePayoutRequestSchema),
+    middleware.asyncHandler(controller.rejectMarketplaceTraderPayoutRequest)
   );
 
   /* Refunds */

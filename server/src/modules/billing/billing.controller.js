@@ -29,7 +29,7 @@ export function createBillingController({ service }) {
         scopeType,
         scopeId,
         planPriceId: req.body.planPriceId,
-        providerName: req.body.provider,
+        providerName: 'flutterwave',
         successUrl: req.body.successUrl,
         cancelUrl: req.body.cancelUrl,
       });
@@ -174,10 +174,10 @@ export function createBillingController({ service }) {
       return success(res, refunds.map(serializeRefund));
     },
 
-    async handleWebhook(req, res) {
+    async handleWebhook(req, res, providerName = req.params.provider) {
       const result = await service.handleProviderWebhook({
-        providerName: req.params.provider,
-        event: req.body,
+        providerName,
+        event: req.webhookEvent || req.body,
         rawBody: req.rawBody,
       });
       return success(res, result);

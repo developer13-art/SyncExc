@@ -339,6 +339,23 @@ export function createMarketplaceController(services) {
       return success(res, result);
     },
 
+    async requestMyPayout(req, res) {
+      const result = await flutterwaveMarketplaceService.requestPayout({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+        currency: req.body.currency,
+      });
+      return created(res, result);
+    },
+
+    async listMyPayoutRequests(req, res) {
+      const requests = await flutterwaveMarketplaceService.listMyPayoutRequests({
+        userId: req.auth.userId,
+        workspaceId: req.workspace.id,
+      });
+      return success(res, requests);
+    },
+
     async updateProvider(req, res) {
       const provider = await providerService.updateProvider({
         userId: req.auth.userId,

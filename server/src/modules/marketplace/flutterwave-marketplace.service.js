@@ -466,11 +466,69 @@ export function createFlutterwaveMarketplaceService({
 
   async function getMyEarnings({ userId, workspaceId, limit = 50, offset = 0 }) {
     const provider = await providerService.getManagedProvider({ userId, workspaceId });
-    return queries.listMarketplaceTraderEarnings(provider.id, { limit, offset });
+    const [earnings, payoutRequests] = await Promise.all([
+      queries.listMarketplaceTraderEarnings(provider.id, { limit, offset }),
+      queries.listMarketplaceTraderPayoutRequests(provider.id),
+    ]);
+    return { ...earnings, payoutRequests };
+  }
+
+  async function requestPayout({ userId, workspaceId, currency }) {
+    const provider = await providerService.getManagedProvider({ userId, workspaceId });
+    try {
+      const request = await db.tx((tx) => queries.createMarketplaceTraderPayoutRequest(tx, {
+        providerId: provider.id,
+        requestedBy: userId,
+        currency: currency.toUpperCase(),
+      }));
+      if (!request) {
+        throw new ConflictError('There is no available balance to request for this currency', 'NO_PAYOUT_BALANCE');
+      }
+      return request;
+    } catch (error) {
+      if (error.code === '23505') {
+        throw new ConflictError('A payout request is already pending for this currency', 'PAYOUT_REQUEST_PENDING');
+      }
+      throw error;
+    }
+  }
+
+  async function listMyPayoutRequests({ userId, workspaceId }) {
+    const provider = await providerService.getManagedProvider({ userId, workspaceId });
+    return queries.listMarketplaceTraderPayoutRequests(provider.id);
   }
 
   async function listAdminEarnings({ status, limit = 50, offset = 0 }) {
     return queries.listMarketplaceTraderEarningsForAdmin({ status, limit, offset });
+  }
+
+  async function listAdminPayoutRequests({ status, limit = 50, offset = 0 }) {
+    return queries.listMarketplaceTraderPayoutRequestsForAdmin({ status, limit, offset });
+  }
+
+  async function listAdminSubscriptions({ limit = 50, offset = 0 }) {
+    return queries.listMarketplaceTraderSubscriptionsForAdmin({ limit, offset });
+  }
+
+  async function markPayoutRequestPaid({ requestId, actorId, payoutReference, note }) {
+    const updated = await db.tx((tx) => queries.markMarketplaceTraderPayoutRequestPaid(tx, {
+      requestId,
+      actorId,
+      payoutReference,
+      note,
+    }));
+    if (updated) return updated;
+    throw new ConflictError('This payout request is no longer pending or has no payable earnings', 'PAYOUT_REQUEST_NOT_PENDING');
+  }
+
+  async function rejectPayoutRequest({ requestId, actorId, note }) {
+    const updated = await db.tx((tx) => queries.rejectMarketplaceTraderPayoutRequest(tx, {
+      requestId,
+      actorId,
+      note,
+    }));
+    if (updated) return updated;
+    throw new ConflictError('This payout request is no longer pending', 'PAYOUT_REQUEST_NOT_PENDING');
   }
 
   async function markEarningPaid({ earningId, actorId, payoutReference, note }) {
@@ -492,7 +550,13 @@ export function createFlutterwaveMarketplaceService({
     confirmCheckoutPayment,
     handleWebhook,
     getMyEarnings,
+    requestPayout,
+    listMyPayoutRequests,
     listAdminEarnings,
+    listAdminPayoutRequests,
+    listAdminSubscriptions,
+    markPayoutRequestPaid,
+    rejectPayoutRequest,
     markEarningPaid,
   };
 }

@@ -235,7 +235,7 @@ export const CreateConnectionShareGrantSchema = Joi.object({
 export const CreateCheckoutRequestSchema = Joi.object({
   planId: UuidSchema.required(),
   planPriceId: UuidSchema.required(),
-  provider: Joi.string().valid('stripe', 'paystack', 'flutterwave').required(),
+  provider: Joi.string().valid('flutterwave').required(),
   successUrl: UrlSchema.required(),
   cancelUrl: UrlSchema.required(),
 });

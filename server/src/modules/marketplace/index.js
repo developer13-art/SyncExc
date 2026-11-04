@@ -234,6 +234,10 @@ export function createMarketplaceModule({ services }) {
     stripeMarketplace: stripeMarketplaceService,
     financials: {
       listAdminEarnings: (params) => flutterwaveMarketplaceService.listAdminEarnings(params),
+      listAdminPayoutRequests: (params) => flutterwaveMarketplaceService.listAdminPayoutRequests(params),
+      listAdminSubscriptions: (params) => flutterwaveMarketplaceService.listAdminSubscriptions(params),
+      markPayoutRequestPaid: (params) => flutterwaveMarketplaceService.markPayoutRequestPaid(params),
+      rejectPayoutRequest: (params) => flutterwaveMarketplaceService.rejectPayoutRequest(params),
       markEarningPaid: (params) => flutterwaveMarketplaceService.markEarningPaid(params),
     },
     publicApi,

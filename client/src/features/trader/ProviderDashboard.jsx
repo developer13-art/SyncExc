@@ -328,7 +328,7 @@ export default function ProviderDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Payouts</CardTitle>
-            <CardDescription>Check your payout status and manage Stripe onboarding.</CardDescription>
+            <CardDescription>Request payment of your available subscription earnings.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {payoutQuery.isLoading ? <LoadingState label="Loading payout status" /> : null}
@@ -343,10 +343,10 @@ export default function ProviderDashboard() {
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/40 p-4">
                 <div>
                   <p className="font-medium text-foreground">
-                    'Manual payout tracking is active'
+                    'Request a payout'
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Pending earnings are paid manually by SyncExc after payment verification.
+                    SyncExc reviews each request and records the transfer after payment.
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -354,7 +354,7 @@ export default function ProviderDashboard() {
                     {pendingEarnings}
                   </Badge>
                   <Button variant="outline" asChild>
-                    <Link to={ROUTES.app.trader.revenue}><Wallet className="h-4 w-4" /> Manage payouts</Link>
+                    <Link to={ROUTES.app.trader.revenue}><Wallet className="h-4 w-4" /> Request payout</Link>
                   </Button>
                 </div>
               </div>

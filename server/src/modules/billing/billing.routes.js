@@ -124,8 +124,21 @@ export function createBillingRoutes({ service, middleware }) {
    * Provider webhooks
    * ------------------------------------------------------------------------ */
   router.post(
-    '/webhooks/:provider',
-    middleware.asyncHandler(controller.handleWebhook)
+    '/webhooks/stripe',
+    middleware.verifyStripeSignature(),
+    middleware.asyncHandler((req, res) => controller.handleWebhook(req, res, 'stripe')),
+  );
+
+  router.post(
+    '/webhooks/paystack',
+    middleware.verifyPaystackSignature(),
+    middleware.asyncHandler((req, res) => controller.handleWebhook(req, res, 'paystack')),
+  );
+
+  router.post(
+    '/webhooks/flutterwave',
+    middleware.verifyFlutterwaveSignature(),
+    middleware.asyncHandler((req, res) => controller.handleWebhook(req, res, 'flutterwave')),
   );
 
   return router;

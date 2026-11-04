@@ -22,6 +22,10 @@ const ConfirmSubscriptionPaymentSchema = Joi.object({
   transactionId: Joi.string().pattern(/^[1-9]\d*$/).required(),
 });
 
+const RequestMarketplacePayoutSchema = Joi.object({
+  currency: Joi.string().uppercase().length(3).required(),
+});
+
 const CopySignalSchema = Joi.object({
   configurationId: UuidSchema.required(),
   destinationAccountIds: Joi.array().items(UuidSchema).min(1).unique().required(),
@@ -366,6 +370,21 @@ export function createMarketplaceRoutes(services) {
     middleware.requireAuth(),
     middleware.requireWorkspace(),
     middleware.asyncHandler(controller.getMyEarnings)
+  );
+
+  router.get(
+    '/me/payout-requests',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.asyncHandler(controller.listMyPayoutRequests)
+  );
+
+  router.post(
+    '/me/payout-requests',
+    middleware.requireAuth(),
+    middleware.requireWorkspace(),
+    middleware.validateBody(RequestMarketplacePayoutSchema),
+    middleware.asyncHandler(controller.requestMyPayout)
   );
 
   router.post(

@@ -42,12 +42,6 @@ export default function Plans() {
     staleTime: 5 * 60_000,
   });
 
-  const paymentProvidersQuery = useQuery({
-    queryKey: ['billing', 'payment-providers'],
-    queryFn: () => billingApi.listPaymentProviders(),
-    staleTime: 5 * 60_000,
-  });
-
   const plans = plansQuery.data ?? [];
   const currentPlanId = subscription.subscription?.planId;
 
@@ -62,20 +56,11 @@ export default function Plans() {
       });
       return;
     }
-    const provider = paymentProvidersQuery.data?.[0];
-    if (paymentProvidersQuery.isError || !provider) {
-      toast.error('Unable to start checkout', {
-        description: paymentProvidersQuery.isError
-          ? 'Available payment methods could not be loaded. Please try again.'
-          : 'No payment provider is currently available. Please contact support.',
-      });
-      return;
-    }
     try {
       const checkout = await billingApi.createCheckout({
         planId: plan.id,
         planPriceId: price.id,
-        provider,
+        provider: 'flutterwave',
         successUrl: new URL(ROUTES.app.billing.subscription, window.location.origin).toString(),
         cancelUrl: new URL(ROUTES.app.billing.plans, window.location.origin).toString(),
       });

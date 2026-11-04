@@ -119,13 +119,81 @@ describe('billing usage', () => {
         scopeType: 'user',
         scopeId: 'user-1',
         planPriceId: 'price-1',
-        providerName: 'paystack',
+        providerName: 'flutterwave',
         successUrl: 'https://example.com/success',
         cancelUrl: 'https://example.com/cancel',
       }),
       (error) => error instanceof ExternalProviderError && error.status === 502,
     );
     assert.deepEqual(updates, [{ id: 'checkout-1', fields: { status: 'failed' } }]);
+  });
+
+  it('rejects Stripe for new system subscription checkouts', async () => {
+    const service = createBillingService({
+      providerFactory: { get: () => null },
+    });
+
+    await assert.rejects(
+      service.createCheckoutSession({
+        scopeType: 'user',
+        scopeId: 'user-1',
+        planPriceId: 'price-1',
+        providerName: 'stripe',
+        successUrl: 'https://example.com/success',
+        cancelUrl: 'https://example.com/cancel',
+      }),
+      { message: 'New SyncExc subscriptions must be paid through Flutterwave' },
+    );
+  });
+
+  it('does not activate a system subscription when a Flutterwave webhook amount differs from checkout', async () => {
+    const transaction = {
+      async query() {
+        return {
+          rows: [{
+            id: 'checkout-1',
+            provider: 'flutterwave',
+            amount_minor: '1200',
+            currency: 'USD',
+          }],
+        };
+      },
+    };
+    const webhookStatuses = [];
+    const service = createBillingService({
+      db: { async tx(callback) { return callback(transaction); } },
+      queries: {
+        async insertWebhookEvent() { return { id: 'webhook-1' }; },
+        async markWebhookEventProcessed(_id, status) { webhookStatuses.push(status); },
+        async findPaymentByProviderReference() { return null; },
+      },
+      providerFactory: {
+        get: () => ({
+          async parseWebhookEvent() {
+            return {
+              eventId: 'provider-event-1',
+              eventType: 'payment.succeeded',
+              raw: {},
+              data: {
+                providerPaymentReference: 'payment-1',
+                checkoutReference: 'checkout-1',
+                amountMinor: 1000,
+                currency: 'USD',
+              },
+            };
+          },
+        }),
+      },
+    });
+
+    await assert.rejects(
+      service.handleProviderWebhook({
+        providerName: 'flutterwave',
+        event: {},
+      }),
+      { code: 'PAYMENT_AMOUNT_MISMATCH' },
+    );
+    assert.deepEqual(webhookStatuses, ['failed']);
   });
 
   it('returns checkout details only for the requesting billing scope', async () => {

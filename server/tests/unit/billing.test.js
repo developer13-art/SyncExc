@@ -104,7 +104,7 @@ describe('Billing — Checkout', () => {
       body: {
         planId: '00000000-0000-0000-0000-000000000000',
         planPriceId: '00000000-0000-0000-0000-000000000000',
-        provider: 'stripe',
+        provider: 'flutterwave',
         successUrl: 'https://example.com/success',
         cancelUrl: 'https://example.com/cancel',
       },
@@ -124,7 +124,7 @@ describe('Billing — Checkout', () => {
       body: {
         planId: plan.id,
         planPriceId: price.id,
-        provider: 'stripe',
+        provider: 'flutterwave',
         successUrl: 'https://example.com/success',
         cancelUrl: 'https://example.com/cancel',
       },

@@ -310,6 +310,22 @@ export function createAdminController(services) {
       return success(res, result);
     },
 
+    async listMarketplaceTraderPayoutRequests(req, res) {
+      const { limit, offset } = pageOptions(req);
+      const result = await marketplaceFinancials.listAdminPayoutRequests({
+        status: req.query.status,
+        limit,
+        offset,
+      });
+      return success(res, result);
+    },
+
+    async listMarketplaceTraderSubscriptions(req, res) {
+      const { limit, offset } = pageOptions(req);
+      const result = await marketplaceFinancials.listAdminSubscriptions({ limit, offset });
+      return success(res, result);
+    },
+
     async markMarketplaceTraderEarningPaid(req, res) {
       const result = await marketplaceFinancials.markEarningPaid({
         earningId: req.params.earningId,
@@ -323,6 +339,39 @@ export function createAdminController(services) {
         targetResource: 'marketplace_trader_earning',
         targetId: req.params.earningId,
         reason: req.body.note || `Flutterwave payout reference: ${req.body.payoutReference}`,
+      });
+      return success(res, result);
+    },
+
+    async markMarketplaceTraderPayoutRequestPaid(req, res) {
+      const result = await marketplaceFinancials.markPayoutRequestPaid({
+        requestId: req.params.requestId,
+        actorId: req.auth.userId,
+        payoutReference: req.body.payoutReference,
+        note: req.body.note,
+      });
+      await adminAuditService.write({
+        actorId: req.auth.userId,
+        action: 'marketplace_payout_request.marked_paid',
+        targetResource: 'marketplace_trader_payout_request',
+        targetId: req.params.requestId,
+        reason: req.body.note || `Flutterwave payout reference: ${req.body.payoutReference}`,
+      });
+      return success(res, result);
+    },
+
+    async rejectMarketplaceTraderPayoutRequest(req, res) {
+      const result = await marketplaceFinancials.rejectPayoutRequest({
+        requestId: req.params.requestId,
+        actorId: req.auth.userId,
+        note: req.body.note,
+      });
+      await adminAuditService.write({
+        actorId: req.auth.userId,
+        action: 'marketplace_payout_request.rejected',
+        targetResource: 'marketplace_trader_payout_request',
+        targetId: req.params.requestId,
+        reason: req.body.note,
       });
       return success(res, result);
     },

@@ -91,10 +91,13 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     scopeType,
     scopeId,
     planPriceId,
-    providerName,
+    providerName = 'flutterwave',
     successUrl,
     cancelUrl,
   }) {
+    if (providerName !== 'flutterwave') {
+      throw new ValidationError('New SyncExc subscriptions must be paid through Flutterwave');
+    }
     const price = await queries.findPlanPriceById(planPriceId);
     if (!price) throw new NotFoundError('Price');
 
@@ -561,6 +564,15 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     }
 
     const co = checkout.rows[0];
+    if (co.provider !== providerName) {
+      throw new ConflictError('Payment provider does not match the checkout session', 'PAYMENT_PROVIDER_MISMATCH');
+    }
+    if (Number(data.amountMinor) !== Number(co.amount_minor)) {
+      throw new ConflictError('Payment amount does not match the checkout session', 'PAYMENT_AMOUNT_MISMATCH');
+    }
+    if (String(data.currency).toUpperCase() !== String(co.currency).toUpperCase()) {
+      throw new ConflictError('Payment currency does not match the checkout session', 'PAYMENT_CURRENCY_MISMATCH');
+    }
 
     const payment = await queries.insertPayment(tx, {
       checkoutSessionId: co.id,
@@ -727,7 +739,7 @@ export function createBillingService({ db, queries, rateLimiter, mailer, events,
     // Plans
     listPlans,
     getPlan,
-    listPaymentProviders: () => providerFactory.list(),
+    listPaymentProviders: () => providerFactory.get('flutterwave') ? ['flutterwave'] : [],
 
     // Checkout
     createCheckoutSession,
