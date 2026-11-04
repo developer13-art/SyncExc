@@ -138,6 +138,84 @@ export function createAdminRefundService({ db, queries, billing, approvals, even
     });
   }
 
+  /**
+   * Approve an existing refund record and submit it to the payment provider.
+   * Used by the admin console when a refund does not require a separate
+   * approval request (or after the approval has been granted).
+   */
+  async function processApprovedRefund({ refundId, actorId, reason }) {
+    const refundResult = await db.query(
+      `SELECT r.*, p.provider, p.provider_payment_reference
+         FROM refund_records r
+         JOIN subscription_payments p ON p.id = r.payment_id
+        WHERE r.id = $1
+        FOR UPDATE OF r`,
+      [refundId],
+    );
+    const refund = refundResult.rows[0];
+    if (!refund) throw new NotFoundError('Refund');
+    if (!['requested', 'under_review', 'approved'].includes(refund.status)) {
+      throw new ConflictError('This refund can no longer be approved', 'REFUND_NOT_APPROVABLE');
+    }
+
+    await db.query(
+      `UPDATE refund_records
+          SET status = 'approved', decided_by = $2, decided_at = now(), decision_reason = $3
+        WHERE id = $1`,
+      [refundId, actorId, reason],
+    );
+
+    const payment = {
+      provider: refund.provider,
+      provider_payment_reference: refund.provider_payment_reference,
+    };
+
+    try {
+      await processRefundThroughProvider({ refund, payment });
+    } catch (err) {
+      await db.query(
+        `UPDATE refund_records
+            SET status = 'failed', decision_reason = $2
+          WHERE id = $1`,
+        [refundId, `Provider processing failed: ${err.message}`.slice(0, 1000)],
+      );
+      logger.error({ err, refundId }, 'Refund provider processing failed');
+      throw err;
+    }
+
+    await audit.write({
+      actorId,
+      action: 'refund.approved',
+      targetResource: 'refund_record',
+      targetId: refundId,
+      reason,
+    });
+
+    const updated = await db.query(`SELECT * FROM refund_records WHERE id = $1`, [refundId]);
+    return updated.rows[0];
+  }
+
+  async function rejectRefundRecord({ refundId, actorId, reason }) {
+    const result = await db.query(
+      `UPDATE refund_records
+          SET status = 'rejected', decided_by = $2, decided_at = now(), decision_reason = $3
+        WHERE id = $1 AND status IN ('requested', 'under_review', 'approved')
+        RETURNING *`,
+      [refundId, actorId, reason],
+    );
+    if (!result.rows[0]) {
+      throw new ConflictError('This refund can no longer be rejected', 'REFUND_NOT_REJECTABLE');
+    }
+    await audit.write({
+      actorId,
+      action: 'refund.rejected',
+      targetResource: 'refund_record',
+      targetId: refundId,
+      reason,
+    });
+    return result.rows[0];
+  }
+
   async function rejectRefund({ approvalId, approverId, reason }) {
     return approvals.decide({
       approvalId,
@@ -194,6 +272,8 @@ export function createAdminRefundService({ db, queries, billing, approvals, even
     initiateRefund,
     approveRefund,
     rejectRefund,
+    processApprovedRefund,
+    rejectRefundRecord,
     listRefunds,
     getRefund,
   };

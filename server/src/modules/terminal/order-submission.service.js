@@ -17,7 +17,7 @@
 
 import { AppError, ValidationError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { normalizeOrderQuantity } from '../../lib/order-quantity.js';
-import { compareDecimals, ORDER_STATUS } from '@syncexc/shared';
+import { compareDecimals, ORDER_STATUS, EMERGENCY_PAUSE_SCOPE } from '@syncexc/shared';
 import { resolveBracketProtectionPlan } from '../connections/bracket-protection.policy.js';
 
 export function createOrderSubmissionService({
@@ -50,6 +50,30 @@ export function createOrderSubmissionService({
    * @param {string} [params.clientOrderId]
    * @param {string} params.idempotencyKey
    */
+  async function requireNotPaused({ workspaceId, connectionId, accountId, instrumentId, reduceOnly }) {
+    // Risk-reducing exits stay available so users can close positions during a pause.
+    if (reduceOnly) return;
+    const pauseService = risk?.emergencyPause || risk?.emergency;
+    if (!pauseService?.isPaused) return;
+
+    const scopes = [
+      [EMERGENCY_PAUSE_SCOPE.EXCHANGE_ADAPTER, connectionId],
+      [EMERGENCY_PAUSE_SCOPE.DESTINATION_ACCOUNT, accountId],
+      ...(instrumentId ? [[EMERGENCY_PAUSE_SCOPE.INSTRUMENT, instrumentId]] : []),
+    ];
+    for (const [scope, scopeRef] of scopes) {
+      const state = await pauseService.isPaused({ workspaceId, scope, scopeRef });
+      if (state?.paused) {
+        throw new AppError('Trading is temporarily paused for this scope. No order was submitted.', {
+          code: 'EMERGENCY_PAUSE_ACTIVE',
+          status: 423,
+          expose: true,
+          details: { scope, pauseId: state.pause?.id ?? null },
+        });
+      }
+    }
+  }
+
   async function submit(
     params,
     { confirmedExecutionRequestId = null, source = 'terminal' } = {},
@@ -225,6 +249,14 @@ export function createOrderSubmissionService({
         throw new ValidationError(`${label} must align with the exchange price tick ${instrument.tick_size}`);
       }
     }
+
+    await requireNotPaused({
+      workspaceId,
+      connectionId,
+      accountId,
+      instrumentId: instrument.id,
+      reduceOnly,
+    });
 
     await validateAvailableBalance({
       adapter,

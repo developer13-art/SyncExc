@@ -102,4 +102,13 @@ export const queryKeys = {
   operationJobs: {
     detail: (id) => ['admin', 'operation-jobs', 'detail', id],
   },
+
+  console: {
+    page: (sectionId, pageId) => ['admin', 'console', 'page', sectionId, pageId],
+    list: (resourceKey, params) => ['admin', 'console', 'list', resourceKey, params],
+    summary: (resourceKey, params) => ['admin', 'console', 'summary', resourceKey, params],
+    detail: (resourceKey, id) => ['admin', 'console', 'detail', resourceKey, id],
+    system: ['admin', 'console', 'system'],
+    analytics: (sectionId, params) => ['admin', 'console', 'analytics', sectionId, params],
+  },
 };

@@ -1,7 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 
-import { AdminSidebar } from './AdminSidebar.jsx';
+import { AdminSidebar } from '../../layouts/components/AdminSidebar.jsx';
 import { AdminTopbar } from './AdminTopbar.jsx';
 import { CommandPalette } from './CommandPalette.jsx';
 import { cn } from '../../lib/utils/cn.util.js';

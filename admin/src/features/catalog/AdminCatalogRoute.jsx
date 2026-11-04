@@ -1,60 +1,87 @@
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CircleHelp } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { ShieldAlert } from 'lucide-react';
 
-import { Button } from '../../components/ui/Button.jsx';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
+import { EmptyState } from '../../components/ui/EmptyState.jsx';
+import { ErrorState } from '../../components/ui/ErrorState.jsx';
+import { LoadingState } from '../../components/ui/LoadingState.jsx';
+import { consoleApi } from '../../api/index.js';
+import { getErrorMessage } from '../../api/errors.js';
+import { queryKeys } from '../../hooks/queryKeys.js';
 import { getAdminCatalogPage } from '../../config/admin-navigation.js';
+import { ConsoleAnalytics } from './ConsoleAnalytics.jsx';
+import { ConsoleCreate } from './ConsoleCreate.jsx';
+import { ConsoleDetail } from './ConsoleDetail.jsx';
+import { ConsoleList } from './ConsoleList.jsx';
+import { ConsoleOverview } from './ConsoleOverview.jsx';
+import { ConsoleQuickActions } from './ConsoleQuickActions.jsx';
+import { ConsoleSystem } from './ConsoleSystem.jsx';
+import { humanize } from './console.utils.js';
 
 export default function AdminCatalogRoute() {
-  const { sectionId, pageId } = useParams();
-  const destination = getAdminCatalogPage(sectionId, pageId);
+  const { sectionId, pageId, recordId } = useParams();
+  const navigation = getAdminCatalogPage(sectionId, pageId);
+  const section = navigation?.section ?? { id: sectionId, label: humanize(sectionId) };
 
-  if (!destination) {
+  const pageQuery = useQuery({
+    queryKey: queryKeys.console.page(sectionId, pageId),
+    queryFn: () => consoleApi.page(sectionId, pageId),
+    retry: false,
+  });
+
+  if (pageQuery.isLoading) {
+    return <LoadingState label="Loading admin page" />;
+  }
+
+  if (pageQuery.isError) {
+    const message = getErrorMessage(pageQuery.error);
+    const permissionError = /permission|forbidden|denied/i.test(message);
     return (
-      <Card>
-        <CardContent className="p-6 text-sm text-muted-foreground">
-          This admin navigation route does not match a registered page.
-        </CardContent>
-      </Card>
+      <ErrorState
+        title={permissionError ? 'You do not have access to this page' : 'Admin page unavailable'}
+        description={message}
+        onRetry={permissionError ? undefined : () => pageQuery.refetch()}
+      />
     );
   }
 
-  const { section, page } = destination;
+  const page = pageQuery.data;
+  if (!page) {
+    return (
+      <EmptyState
+        icon={ShieldAlert}
+        title="Admin page not registered"
+        description="This route is not backed by an admin console page definition."
+      />
+    );
+  }
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <Link to="/overview" className="text-sm text-primary hover:underline">
-          ← Admin overview
-        </Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{page.label}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{section.label}</p>
-      </div>
+  if (recordId) {
+    return (
+      <ConsoleDetail
+        key={`${page.sectionId}:${page.pageId}:${recordId}`}
+        page={page}
+        section={section}
+        recordId={recordId}
+      />
+    );
+  }
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CircleHelp className="h-5 w-5 text-muted-foreground" />
-            Route added to admin navigation
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 text-sm">
-          <p className="text-muted-foreground">
-            This page is registered and directly reachable from the navigation. Its end-to-end
-            workflow has not been implemented yet, so this route does not display placeholder
-            records or pretend that the feature is operational.
-          </p>
-          <p className="text-muted-foreground">
-            Existing operational admin pages remain available from their own navigation entries.
-          </p>
-          <Button asChild variant="outline" className="justify-self-start">
-            <Link to="/overview">
-              <ArrowLeft className="h-4 w-4" />
-              Return to overview
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  const key = `${page.sectionId}:${page.pageId}`;
+
+  switch (page.display) {
+    case 'overview':
+      return <ConsoleOverview key={key} page={page} section={section} />;
+    case 'analytics':
+      return <ConsoleAnalytics key={key} page={page} section={section} />;
+    case 'system':
+      return <ConsoleSystem key={key} page={page} section={section} />;
+    case 'actions':
+      return <ConsoleQuickActions key={key} page={page} section={section} />;
+    case 'create':
+      return <ConsoleCreate key={key} page={page} section={section} />;
+    case 'list':
+    default:
+      return <ConsoleList key={key} page={page} section={section} />;
+  }
 }

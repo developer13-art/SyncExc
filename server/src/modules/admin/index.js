@@ -48,6 +48,11 @@ import { createOperationJobService } from './operation-job.service.js';
 import { createExportService } from './export.service.js';
 import { createStepUpAuthService } from './step-up-auth.service.js';
 import { createAdminRoutes } from './admin.routes.js';
+import { createConsoleQueryService } from './console/query.service.js';
+import { createConsoleActionService } from './console/action.service.js';
+import { createConsoleSystemService } from './console/system.service.js';
+import { createConsoleAnalyticsService } from './console/analytics.service.js';
+import { createConsoleRoutes } from './console.routes.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createAdminModule({ services }) {
@@ -233,6 +238,31 @@ export function createAdminModule({ services }) {
     logger,
   });
 
+  const consoleQueryService = createConsoleQueryService({ db: services.db });
+
+  const consoleActionService = createConsoleActionService({
+    db: services.db,
+    audit: adminAuditService,
+    events: services.events,
+    logger,
+    userService: adminUserService,
+    workspaceService: adminWorkspaceService,
+    refundService: adminRefundService,
+    referralService: adminReferralService,
+    featureFlagService,
+    operationJobService,
+  });
+
+  const consoleSystemService = createConsoleSystemService({
+    db: services.db,
+    config: services.config,
+    storage: services.storage,
+    events: services.events,
+    realtime: services.realtime,
+  });
+
+  const consoleAnalyticsService = createConsoleAnalyticsService({ db: services.db });
+
   const routes = createAdminRoutes({
     db: services.db,
     dashboardService,
@@ -263,6 +293,18 @@ export function createAdminModule({ services }) {
     adminPermissionService,
     middleware: services.middleware,
   });
+
+  routes.use(
+    '/console',
+    createConsoleRoutes({
+      queryService: consoleQueryService,
+      actionService: consoleActionService,
+      systemService: consoleSystemService,
+      analyticsService: consoleAnalyticsService,
+      permissionService: adminPermissionService,
+      middleware: services.middleware,
+    }),
+  );
 
   const publicApi = {
     isFeatureEnabled: (params) => featureFlagEvaluationService.evaluate(params),
@@ -297,6 +339,12 @@ export function createAdminModule({ services }) {
     operationJob: operationJobService,
     export: exportService,
     stepUpAuth: stepUpAuthService,
+    console: {
+      query: consoleQueryService,
+      action: consoleActionService,
+      system: consoleSystemService,
+      analytics: consoleAnalyticsService,
+    },
     publicApi,
 
     async shutdown() {

@@ -12,14 +12,14 @@ import {
 import { cn } from '../../lib/utils/cn.util.js';
 import { ADMIN_SECTIONS } from '../../config/admin-navigation.js';
 import {
-  adminUiActions,
-  selectAdminSidebarCollapsed,
-} from '../../app/slices/adminUiSlice.js';
+  uiActions,
+  selectSidebarCollapsed,
+} from '../../app/slices/uiSlice.js';
 
 export function AdminSidebar() {
   const dispatch = useDispatch();
   const location = useLocation();
-  const collapsed = useSelector(selectAdminSidebarCollapsed);
+  const collapsed = useSelector(selectSidebarCollapsed);
   const [expandedSection, setExpandedSection] = useState(null);
   const [search, setSearch] = useState('');
 
@@ -153,7 +153,7 @@ export function AdminSidebar() {
       <div className="border-t border-border p-2">
         <button
           type="button"
-          onClick={() => dispatch(adminUiActions.toggleSidebar())}
+          onClick={() => dispatch(uiActions.toggleSidebar())}
           className={cn(
             'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground',
             collapsed && 'justify-center',

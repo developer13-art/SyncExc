@@ -29,3 +29,4 @@ export { auditApi } from './audit.api.js';
 export { alertsApi } from './alerts.api.js';
 export { operationJobsApi } from './operation-jobs.api.js';
 export { incidentsApi } from './incidents.api.js';
+export { consoleApi } from './console.api.js';

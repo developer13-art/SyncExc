@@ -167,6 +167,10 @@ export function ConsoleRoutes() {
           path="catalog/:sectionId/:pageId"
           element={<Fallback><AdminCatalogRoute /></Fallback>}
         />
+        <Route
+          path="catalog/:sectionId/:pageId/:recordId"
+          element={<Fallback><AdminCatalogRoute /></Fallback>}
+        />
 
         <Route path="*" element={<NotFoundRoute />} />
       </Route>
