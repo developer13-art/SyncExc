@@ -558,6 +558,7 @@ export function serializeProvider(row) {
     handle: row.handle,
     displayName: row.display_name,
     accountType: row.account_type,
+    platformOwned: Boolean(row.platform_owned),
     moderationState: row.moderation_state,
     visibility: row.visibility || 'private',
     biography: row.biography || null,

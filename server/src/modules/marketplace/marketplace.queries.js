@@ -330,6 +330,7 @@ export function createMarketplaceQueries({ db }) {
         WHERE workspace_id = $1
           AND visibility = 'public'
           AND moderation_state = 'approved'
+          AND platform_owned = false
         `,
         [workspaceId]
       );
@@ -363,6 +364,7 @@ export function createMarketplaceQueries({ db }) {
           )
           AND provider.visibility = 'public'
           AND provider.moderation_state = 'approved'
+          AND provider.platform_owned = false
         `,
         [orderId]
       );

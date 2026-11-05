@@ -20,6 +20,7 @@ export { refundsApi } from './refunds.api.js';
 export { exchangesApi } from './exchanges.api.js';
 export { sourceDiscoveryApi } from './source-discovery.api.js';
 export { signalSourcesApi } from './signal-sources.api.js';
+export { officialTraderApi } from './official-trader.api.js';
 export { referralsApi } from './referrals.api.js';
 export { supportApi } from './support.api.js';
 export { featureFlagsApi } from './feature-flags.api.js';

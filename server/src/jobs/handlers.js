@@ -126,8 +126,12 @@ export async function registerAllHandlers({ registry, services }) {
     }
   });
 
-  register('marketplace_official_trader_scan', async ({ services: s }) => {
-    await s.marketplace.officialTrader.scanNow();
+  register('official_trader_research', async ({ services: s }) => {
+    await s.officialTrader.runResearch({ trigger: 'schedule' });
+  });
+
+  register('official_trader_reconcile', async ({ services: s }) => {
+    await s.officialTrader.reconcileNow({ actorId: null });
   });
 
   register('sync_reconcile', async ({ payload, services: s }) => {

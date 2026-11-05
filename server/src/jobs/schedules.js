@@ -86,11 +86,19 @@ export async function registerAllSchedules({ scheduler }) {
   });
 
   scheduler.add({
-    name: 'marketplace-official-trader-scan',
-    type: 'marketplace_official_trader_scan',
+    name: 'official-trader-research',
+    type: 'official_trader_research',
     intervalMs: 15 * 60 * 1000,
     runOnce: true,
     priority: 70,
+  });
+
+  scheduler.add({
+    name: 'official-trader-reconcile',
+    type: 'official_trader_reconcile',
+    intervalMs: 5 * 60 * 1000,
+    runOnce: true,
+    priority: 75,
   });
 
   /* ===========================================================================

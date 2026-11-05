@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Check, Copy, Users } from 'lucide-react';
+import { ArrowLeft, Check, Copy, ShieldCheck, Users } from 'lucide-react';
 
 import { getErrorMessage, isNotFoundError } from '../../api/errors.js';
 import { Button } from '../../components/ui/Button.jsx';
@@ -139,6 +139,9 @@ export default function ProviderProfile() {
                 <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                   {provider.displayName}
                 </h1>
+                {provider.platformOwned ? (
+                  <Badge variant="info"><ShieldCheck className="mr-1 h-3 w-3" /> Official</Badge>
+                ) : null}
                 {provider.moderationState === 'approved' ? (
                   <Badge variant="success"><Check className="mr-1 h-3 w-3" /> Verified</Badge>
                 ) : (
@@ -154,6 +157,14 @@ export default function ProviderProfile() {
               ) : null}
 
             {provider.biography ? <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{provider.biography}</p> : null}
+
+            {provider.platformOwned ? (
+              <p className="mt-2 max-w-2xl text-xs text-muted-foreground">
+                Published trades link to verified execution records, and performance is calculated from
+                reconciled exchange fills. Research-only analyses, backtests and simulations are excluded
+                from realized results.
+              </p>
+            ) : null}
 
             {provider.supportedMarkets?.length > 0 ? (
               <div className="mt-3 flex flex-wrap gap-1.5">

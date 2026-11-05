@@ -66,6 +66,18 @@ const IncidentsList = lazy(() => import('../features/incidents/IncidentsList.jsx
 const IncidentDetails = lazy(() => import('../features/incidents/IncidentDetails.jsx'));
 const AdminCatalogRoute = lazy(() => import('../features/catalog/AdminCatalogRoute.jsx'));
 
+const OfficialTraderOverview = lazy(() => import('../features/official-trader/Overview.jsx'));
+const OfficialTraderExchangeAccounts = lazy(() => import('../features/official-trader/ExchangeAccounts.jsx'));
+const OfficialTraderResearch = lazy(() => import('../features/official-trader/Research.jsx'));
+const OfficialTraderAnalyses = lazy(() => import('../features/official-trader/Analyses.jsx'));
+const OfficialTraderExecutions = lazy(() => import('../features/official-trader/Executions.jsx'));
+const OfficialTraderPerformance = lazy(() => import('../features/official-trader/Performance.jsx'));
+const OfficialTraderMarketplace = lazy(() => import('../features/official-trader/Marketplace.jsx'));
+const OfficialTraderSubscribers = lazy(() => import('../features/official-trader/Subscribers.jsx'));
+const OfficialTraderCopyOperations = lazy(() => import('../features/official-trader/CopyOperations.jsx'));
+const OfficialTraderRisk = lazy(() => import('../features/official-trader/Risk.jsx'));
+const OfficialTraderSettings = lazy(() => import('../features/official-trader/Settings.jsx'));
+
 function Fallback({ children }) {
   return <Suspense fallback={<LoadingState />}>{children}</Suspense>;
 }
@@ -162,6 +174,24 @@ export function ConsoleRoutes() {
 
         <Route path="incidents" element={<Fallback><IncidentsList /></Fallback>} />
         <Route path="incidents/:incidentId" element={<Fallback><IncidentDetails /></Fallback>} />
+
+        <Route path="official-trader" element={<Fallback><OfficialTraderOverview /></Fallback>} />
+        <Route
+          path="official-trader/exchange-accounts"
+          element={<Fallback><OfficialTraderExchangeAccounts /></Fallback>}
+        />
+        <Route path="official-trader/research" element={<Fallback><OfficialTraderResearch /></Fallback>} />
+        <Route path="official-trader/analyses" element={<Fallback><OfficialTraderAnalyses /></Fallback>} />
+        <Route path="official-trader/executions" element={<Fallback><OfficialTraderExecutions /></Fallback>} />
+        <Route path="official-trader/performance" element={<Fallback><OfficialTraderPerformance /></Fallback>} />
+        <Route path="official-trader/marketplace" element={<Fallback><OfficialTraderMarketplace /></Fallback>} />
+        <Route path="official-trader/subscribers" element={<Fallback><OfficialTraderSubscribers /></Fallback>} />
+        <Route
+          path="official-trader/copy-operations"
+          element={<Fallback><OfficialTraderCopyOperations /></Fallback>}
+        />
+        <Route path="official-trader/risk" element={<Fallback><OfficialTraderRisk /></Fallback>} />
+        <Route path="official-trader/settings" element={<Fallback><OfficialTraderSettings /></Fallback>} />
 
         <Route
           path="catalog/:sectionId/:pageId"

@@ -306,6 +306,10 @@ export function createAdminModule({ services }) {
     }),
   );
 
+  if (services.officialTrader?.routes) {
+    routes.use('/official-trader', services.officialTrader.routes);
+  }
+
   const publicApi = {
     isFeatureEnabled: (params) => featureFlagEvaluationService.evaluate(params),
     writeAuditEvent: (params) => adminAuditService.write(params),

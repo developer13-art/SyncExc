@@ -6,7 +6,7 @@ import { NotFoundError } from '../../lib/errors.js';
 
 const METHODOLOGY_VERSION = 'v1';
 
-export function createPerformanceService({ db, queries, logger }) {
+export function createPerformanceService({ db, queries, logger, getOfficialPerformance = null }) {
   /**
    * Compute a performance report for a provider over a period.
    */
@@ -192,6 +192,13 @@ export function createPerformanceService({ db, queries, logger }) {
   async function getProviderPerformance({ providerId }) {
     const provider = await queries.findProviderById(providerId);
     if (!provider) throw new NotFoundError('Provider');
+
+    // Platform-owned providers are calculated from reconciled exchange
+    // executions only. Never fall back to signal-derived approximations.
+    if (provider.platform_owned && typeof getOfficialPerformance === 'function') {
+      const official = await getOfficialPerformance({ providerId });
+      if (official) return official;
+    }
 
     const [signalsResult, metricsResult, seriesResult] = await Promise.all([
       db.query(

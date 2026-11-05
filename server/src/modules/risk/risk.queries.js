@@ -437,8 +437,8 @@ export function createRiskQueries({ db }) {
       return result.rows[0];
     },
 
-    async updateEmergencyPauseStatus(id, status, resumedAt = null) {
-      const result = await db.query(
+    async updateEmergencyPauseStatus(id, status, resumedAt = null, client = db) {
+      const result = await client.query(
         `
         UPDATE risk_emergency_pause_events
         SET status = $2, resumed_at = COALESCE($3, resumed_at)

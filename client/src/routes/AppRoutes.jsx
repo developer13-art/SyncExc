@@ -24,6 +24,7 @@ const Marketplace = lazy(() => import('../features/marketplace/BrowseProviders.j
 const MarketplaceTraders = lazy(() => import('../features/marketplace/MarketplaceTraders.jsx'));
 const TraderProfile = lazy(() => import('../features/marketplace/TraderProfile.jsx'));
 const ProviderProfile = lazy(() => import('../features/marketplace/ProviderProfile.jsx'));
+const ProviderByHandle = lazy(() => import('../features/marketplace/ProviderByHandle.jsx'));
 const Subscriptions = lazy(() => import('../features/marketplace/Subscriptions.jsx'));
 const CopyConfigurations = lazy(() => import('../features/marketplace/CopyConfigurations.jsx'));
 const CreateCopyConfiguration = lazy(() => import('../features/marketplace/CreateCopyConfiguration.jsx'));
@@ -132,6 +133,7 @@ export function AppRoutes() {
         <Route path="marketplace/watchlist" element={<NotFoundRoute />} />
         <Route path="marketplace/following" element={<NotFoundRoute />} />
         <Route path="marketplace/traders" element={<Fallback><MarketplaceTraders /></Fallback>} />
+        <Route path="marketplace/traders/:handle" element={<Fallback><ProviderByHandle /></Fallback>} />
         <Route path="marketplace/signals" element={<Fallback><MarketplaceTraders /></Fallback>} />
         <Route path="marketplace/providers/:providerId" element={<Fallback><ProviderProfile /></Fallback>} />
         <Route path="marketplace/copy-configurations/new" element={<Fallback><CreateCopyConfiguration /></Fallback>} />

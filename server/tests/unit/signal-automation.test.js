@@ -5,9 +5,10 @@ import { createParserService } from '../../src/modules/signals/parsers.js';
 import { createExtractionService } from '../../src/modules/signals/extraction.service.js';
 import { createSourceExecutionService } from '../../src/modules/signals/source-execution.service.js';
 import {
-  analyzeCandles,
-  createOfficialTraderService,
-} from '../../src/modules/marketplace/official-trader.service.js';
+  computeIndicators,
+  evaluateStrategy,
+} from '../../src/modules/official-trader/official-trader.strategy.js';
+import { createOfficialTraderResearchService } from '../../src/modules/official-trader/official-trader.research.service.js';
 import { createMarketDataService } from '../../src/modules/connections/market-data.service.js';
 import { registerAllHandlers } from '../../src/jobs/handlers.js';
 import { registerAllSchedules } from '../../src/jobs/schedules.js';
@@ -299,22 +300,32 @@ test('routes authorized source orders through terminal risk checks', async () =>
   assert.equal(Number(submittedOrder.params.quantity), 0.25);
 });
 
-test('official market analysis emits long signals only for supported spot direction', () => {
+test('official deterministic strategy validates real candle levels', () => {
   const candles = Array.from({ length: 80 }, (_, index) => {
-    const close = 100 + index * 0.1 + Math.sin(index * 0.4);
+    const close = 100 + index * 0.1 + (index % 2 === 0 ? -0.4 : 0.4);
     return {
       open: close - 0.02,
-      high: close + 0.05,
-      low: close - 0.05,
+      high: close + 0.08,
+      low: close - 0.08,
       close,
+      volume: 1000,
+      timestamp: 1700000000000 + index * 3600000,
     };
   });
 
-  const result = analyzeCandles(candles, 'spot');
+  const indicators = computeIndicators(candles);
+  assert.ok(indicators);
+  const result = evaluateStrategy({
+    indicators,
+    marketType: 'spot',
+    allowedStrategies: ['trend_following', 'breakout', 'momentum'],
+  });
+  assert.ok(result);
   assert.equal(result.direction, 'long');
-  assert.ok(Number(result.stopLoss) < Number(result.price));
-  assert.ok(Number(result.takeProfit) > Number(result.price));
-  assert.equal(analyzeCandles(candles.slice(0, 20), 'spot'), null);
+  assert.ok(Number(result.stopLoss) < Number(result.entry));
+  assert.ok(Number(result.targets[0]) > Number(result.entry));
+  assert.equal(result.riskReward, 2);
+  assert.equal(computeIndicators(candles.slice(0, 20)), null);
 });
 
 test('candle-only market data uses one exchange request', async () => {
@@ -386,110 +397,29 @@ test('market data pauses an exchange after 418 and honors Retry-After', async ()
   assert.equal(requests, 2);
 });
 
-test('official trader researches catalog symbols with AI and publishes sourced signals without exchange candles', async () => {
-  const publishedSignals = [];
-  let researchRequest;
-  const db = {
-    query: async (sql) => {
-      if (sql.includes('FROM marketplace_provider_profiles')) {
-        return { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] };
-      }
-      if (sql.includes('FROM exchange_instruments')) {
-        return {
-          rows: [{
-            symbol: 'BTCUSDT',
-            marketType: 'spot',
-          }],
-        };
-      }
-      return { rows: [] };
-    },
-  };
-  const scanner = createOfficialTraderService({
-    db,
-    ai: {
-      chatJson: async (request) => {
-        researchRequest = request;
-        return {
-          data: {
-            signals: [{
-              symbol: 'BTCUSDT',
-              marketType: 'spot',
-              confidence: 0.9,
-              direction: 'long',
-              entry: '100',
-              stopLoss: '95',
-              targets: ['110'],
-              analysis: 'Recent market reports support a bullish setup with a defined invalidation level.',
-              sources: [
-                { title: 'Market report one', url: 'https://example.com/report-one' },
-                { title: 'Market report two', url: 'https://example.com/report-two' },
-              ],
-            }],
-          },
-        };
-      },
-    },
-    publication: {
-      publishSignal: async (signal) => publishedSignals.push(signal),
-    },
+test('official research stops before AI when execution settings are disabled', async () => {
+  let aiCalls = 0;
+  const research = createOfficialTraderResearchService({
+    db: { query: async () => ({ rows: [] }) },
+    queries: { listConnections: async () => [] },
+    connections: { marketData: { getCandles: async () => ({ candles: [] }) } },
+    ai: { chatJson: async () => { aiCalls += 1; return { data: {} }; } },
     logger: { info() {}, warn() {}, error() {} },
+    getProvider: async () => ({
+      id: 'provider-id',
+      workspace_id: 'workspace-id',
+      settings_status: 'paused',
+      research_enabled: true,
+    }),
+    recordEvent: async () => {},
   });
 
-  const result = await scanner.scanNow();
-  assert.equal(result.instrumentsScanned, 1);
-  assert.equal(result.aiResearched, 1);
-  assert.equal(result.published, 1);
-  assert.equal(researchRequest.webSearch, true);
-  assert.match(researchRequest.system, /Use browser search/);
-  assert.deepEqual(JSON.parse(researchRequest.messages[0].content).activeCryptoInstrumentCatalog, [
-    { symbol: 'BTCUSDT', marketType: 'spot' },
-  ]);
-  assert.equal(publishedSignals[0].providerId, 'provider-id');
-  assert.equal(publishedSignals[0].instrument, 'BTCUSDT');
-  assert.equal(publishedSignals[0].orderType, 'limit');
-  assert.equal(publishedSignals[0].entry, '100');
-  assert.equal(publishedSignals[0].stopLoss, '95');
-  assert.equal(publishedSignals[0].targets.length, 1);
-  assert.equal(publishedSignals[0].sourceEvidence.type, 'official_ai_research');
-  assert.equal(publishedSignals[0].sourceEvidence.sources.length, 2);
+  const result = await research.runResearch({ trigger: 'test' });
+  assert.deepEqual(result, { skipped: true, reason: 'Official trader is paused' });
+  assert.equal(aiCalls, 0);
 });
 
-test('official trader sends only a rotating catalog batch to AI research', async () => {
-  const catalog = Array.from({ length: 45 }, (_, index) => ({
-    symbol: `ASSET${String(index).padStart(3, '0')}USDT`,
-    marketType: index % 2 === 0 ? 'spot' : 'futures',
-  }));
-  let researchRequest;
-  const scanner = createOfficialTraderService({
-    db: {
-      query: async (sql) => sql.includes('FROM marketplace_provider_profiles')
-        ? { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] }
-        : sql.includes('FROM exchange_instruments')
-          ? { rows: catalog }
-          : { rows: [] },
-    },
-    ai: {
-      chatJson: async (request) => {
-        researchRequest = request;
-        return { data: { signals: [] } };
-      },
-    },
-    publication: {},
-    logger: { info() {}, warn() {}, error() {} },
-  });
-
-  const result = await scanner.scanNow();
-  const researchedCatalog = JSON.parse(researchRequest.messages[0].content).activeCryptoInstrumentCatalog;
-  assert.equal(result.instrumentsScanned, 45);
-  assert.equal(result.instrumentsResearched, 8);
-  assert.equal(researchedCatalog.length, 8);
-  assert.equal(new Set(researchedCatalog.map(({ symbol }) => symbol)).size, 8);
-  assert.equal(researchRequest.maxTokens, 1200);
-  assert.equal(result.aiResearched, 8);
-});
-
-test('official trader schedule scans immediately on startup', async () => {
+test('official trader schedules research and five-minute reconciliation', async () => {
   const schedules = [];
   await registerAllSchedules({
     scheduler: {
@@ -502,77 +432,15 @@ test('official trader schedule scans immediately on startup', async () => {
     },
   });
 
-  const officialTraderSchedule = schedules.find(
-    (schedule) => schedule.name === 'marketplace-official-trader-scan',
-  );
-  assert.equal(officialTraderSchedule.runOnce, true);
-  assert.equal(officialTraderSchedule.intervalMs, 15 * 60 * 1000);
+  const research = schedules.find((schedule) => schedule.name === 'official-trader-research');
+  const reconcile = schedules.find((schedule) => schedule.name === 'official-trader-reconcile');
+  assert.equal(research.runOnce, true);
+  assert.equal(research.intervalMs, 15 * 60 * 1000);
+  assert.equal(reconcile.runOnce, true);
+  assert.equal(reconcile.intervalMs, 5 * 60 * 1000);
 });
 
-test('official trader logs a visible warning when AI finds no candidates', async () => {
-  const warnings = [];
-  const scanner = createOfficialTraderService({
-    db: {
-      query: async (sql) => sql.includes('FROM marketplace_provider_profiles')
-        ? { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] }
-        : sql.includes('FROM exchange_instruments')
-          ? { rows: [{ symbol: 'BTCUSDT', marketType: 'spot' }] }
-          : { rows: [] },
-    },
-    ai: {
-      chatJson: async () => ({ data: { signals: [] } }),
-    },
-    publication: {},
-    logger: {
-      info() {},
-      warn: (...args) => warnings.push(args),
-      error() {},
-    },
-  });
-
-  const result = await scanner.scanNow();
-  assert.equal(result.candidates, 0);
-  assert.equal(result.published, 0);
-  assert.equal(warnings.length, 1);
-  assert.equal(warnings[0][1], 'Official trader AI research found no supported signals');
-});
-
-test('official trader defers cleanly when Groq hits its token rate limit', async () => {
-  const warnings = [];
-  const scanner = createOfficialTraderService({
-    db: {
-      query: async (sql) => sql.includes('FROM marketplace_provider_profiles')
-        ? { rows: [{ id: 'provider-id', user_id: 'bot-user', workspace_id: 'bot-workspace' }] }
-        : sql.includes('FROM exchange_instruments')
-          ? { rows: [{ symbol: 'BTCUSDT', marketType: 'spot' }] }
-          : { rows: [] },
-    },
-    ai: {
-      chatJson: async () => {
-        const error = new Error('Groq token rate limit reached');
-        error.code = 'AI_RATE_LIMITED';
-        throw error;
-      },
-    },
-    publication: {},
-    logger: {
-      info() {},
-      warn: (...args) => warnings.push(args),
-      error() {},
-    },
-  });
-
-  const result = await scanner.scanNow();
-  assert.deepEqual(result, {
-    skipped: true,
-    reason: 'AI provider rate limit',
-    instrumentsAvailable: 1,
-    instrumentsResearched: 1,
-  });
-  assert.equal(warnings.length, 1);
-});
-
-test('registers the official trader scan as an independently scheduled job handler', async () => {
+test('registers official trader research and reconciliation job handlers', async () => {
   const handlers = new Map();
   await registerAllHandlers({
     registry: {
@@ -581,11 +449,18 @@ test('registers the official trader scan as an independently scheduled job handl
     },
     services: {},
   });
-  let scanned = false;
-  await handlers.get('marketplace_official_trader_scan')({
-    services: { marketplace: { officialTrader: { scanNow: async () => { scanned = true; } } } },
-  });
-  assert.equal(scanned, true);
+  let researched = false;
+  let reconciled = false;
+  const services = {
+    officialTrader: {
+      runResearch: async () => { researched = true; },
+      reconcileNow: async () => { reconciled = true; },
+    },
+  };
+  await handlers.get('official_trader_research')({ services });
+  await handlers.get('official_trader_reconcile')({ services });
+  assert.equal(researched, true);
+  assert.equal(reconciled, true);
 });
 
 test('chains received messages through validation, eligibility, and authorized execution', async () => {

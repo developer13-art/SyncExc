@@ -16,6 +16,7 @@ import { createCommunityModule } from './community/index.js';
 import { createNotificationsModule } from './notifications/index.js';
 import { createSupportModule } from './support/index.js';
 import { createIncidentsModule } from './incidents/index.js';
+import { createOfficialTraderModule } from './official-trader/index.js';
 import { createAdminModule } from './admin/index.js';
 
 const MODULE_FACTORIES = [
@@ -37,6 +38,7 @@ const MODULE_FACTORIES = [
   createNotificationsModule,
   createSupportModule,
   createIncidentsModule,
+  createOfficialTraderModule,
   createAdminModule,
 ];
 

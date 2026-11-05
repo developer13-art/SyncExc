@@ -18,7 +18,7 @@ export function createEmergencyPauseService({ db, queries, realtime, events, log
 
       // Mark it as propagating and then active. In a real deployment, this
       // would trigger cache invalidation on all workers.
-      await queries.updateEmergencyPauseStatus(pause.id, 'active');
+      await queries.updateEmergencyPauseStatus(pause.id, 'active', null, tx);
 
       await events.publish(
         tx,
