@@ -528,7 +528,9 @@ export function createBybitAdapter({ config, logger }) {
           exchangeOrderId: item.orderId,
           instrument: item.symbol,
           marketType: 'perpetual',
-          side: String(item.side || '').toLowerCase() === 'buy' ? 'long' : 'short',
+          // Bybit reports the side of the closing execution; the position it
+          // closed is always on the opposite side (a Buy closes a Short).
+          side: String(item.side || '').toLowerCase() === 'buy' ? 'short' : 'long',
           quantity: item.closedSize,
           entryTime: item.createdTime,
           entryPrice: item.avgEntryPrice || null,
