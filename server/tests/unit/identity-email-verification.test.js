@@ -107,6 +107,31 @@ test('registration keeps the account and reports a recoverable send failure', as
   assert.equal(storedChallenges.length, 1);
 });
 
+test('authenticated resend returns a sanitized provider rejection reason', async () => {
+  const providerReason = 'Invalid from address for this Resend account';
+  const { service } = createService({
+    mailerSend: async () => {
+      const error = new Error(providerReason);
+      error.errorCategory = 'invalid_request';
+      error.failureReason = providerReason;
+      throw error;
+    },
+    overrides: {
+      findUserById: async () => user,
+      invalidateActiveChallenges: async () => {},
+    },
+  });
+
+  const result = await service.resendVerificationEmail({
+    userId: user.id,
+    ip: '203.0.113.1',
+  });
+
+  assert.equal(result.emailSent, false);
+  assert.equal(result.errorCategory, 'invalid_request');
+  assert.equal(result.failureReason, providerReason);
+});
+
 test('verification consumes the challenge and rejects invalid, expired, and replayed tokens', async () => {
   let challengeConsumed = false;
   const validChallenge = {

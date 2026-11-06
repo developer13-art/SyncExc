@@ -71,6 +71,11 @@ export function createResendTransport({ apiKey, defaultFrom, ResendClient }) {
         err.provider = 'resend';
         const status = Number(error.statusCode ?? error.status);
         err.providerStatus = Number.isFinite(status) ? status : undefined;
+        err.providerErrorCode = typeof error.name === 'string'
+          ? error.name
+          : typeof error.code === 'string'
+            ? error.code
+            : undefined;
         err.retryable = !Number.isFinite(status) || status >= 500 || status === 429;
         throw err;
       }

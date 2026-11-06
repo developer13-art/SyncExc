@@ -405,6 +405,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
         expiresInHours,
         ...(userId ? {
           errorCategory: err?.errorCategory || err?.code || 'unknown',
+          failureReason: err?.failureReason || 'The email provider rejected the request. Check server email configuration and provider logs.',
           resendCooldownSeconds: config.email.resendCooldownSeconds,
         } : {}),
       };

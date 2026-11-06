@@ -131,7 +131,9 @@ export default function ProfileSettings() {
       } else {
         setResendMessage({
           type: 'error',
-          text: 'The email provider did not accept the request. Please wait briefly and try again.',
+          text: result.failureReason
+            ? `The email provider rejected the request (${result.errorCategory || 'send_failed'}): ${result.failureReason}`
+            : 'The email provider did not accept the request. Please wait briefly and try again.',
         });
         setCooldownUntil(Date.now() + (result?.resendCooldownSeconds || 60) * 1000);
       }
