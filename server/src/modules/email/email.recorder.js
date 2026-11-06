@@ -28,6 +28,18 @@ export function createEmailDeliveryRecorder({ db, mailer, logger }) {
   }
 
   function categorizeError(err) {
+    if (err?.code === 'EMAIL_SENDER_NOT_CONFIGURED' || err?.code === 'EMAIL_PROVIDER_NOT_CONFIGURED') {
+      return 'configuration';
+    }
+    if (
+      err?.code === 'EMAIL_INVALID_RECIPIENT' ||
+      err?.code === 'EMAIL_INVALID_SENDER' ||
+      err?.code === 'EMAIL_INVALID_SUBJECT'
+    ) {
+      return 'invalid_request';
+    }
+    if (err?.code === 'EMAIL_PROVIDER_INVALID_RESPONSE') return 'provider_invalid_response';
+
     const status = Number(err?.providerStatus ?? err?.statusCode ?? err?.status);
     if (Number.isFinite(status)) {
       if (status === 401) return 'auth';
@@ -39,18 +51,9 @@ export function createEmailDeliveryRecorder({ db, mailer, logger }) {
     if (err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT' || err?.code === 'ECONNREFUSED') {
       return 'network';
     }
-    if (err?.code === 'EMAIL_SENDER_NOT_CONFIGURED' || err?.code === 'EMAIL_PROVIDER_NOT_CONFIGURED') {
-      return 'configuration';
-    }
-    if (
-      err?.code === 'EMAIL_INVALID_RECIPIENT' ||
-      err?.code === 'EMAIL_INVALID_SENDER' ||
-      err?.code === 'EMAIL_INVALID_SUBJECT' ||
-      err?.code === 'VALIDATION_ERROR'
-    ) {
+    if (err?.code === 'VALIDATION_ERROR') {
       return 'invalid_request';
     }
-    if (err?.code === 'EMAIL_PROVIDER_INVALID_RESPONSE') return 'provider_invalid_response';
     return 'unknown';
   }
 

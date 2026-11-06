@@ -129,11 +129,14 @@ export default function ProfileSettings() {
         });
         setCooldownUntil(Date.now() + (result.resendCooldownSeconds || 60) * 1000);
       } else {
+        const failureText = result.failureReason === 'EMAIL_FROM is required to send transactional email'
+          ? 'Email sending is not configured on the server. Add EMAIL_FROM to the Render syncexc-server environment using a sender address verified in Resend, then redeploy.'
+          : result.failureReason
+            ? `The email provider rejected the request (${result.errorCategory || 'send_failed'}): ${result.failureReason}`
+            : 'The email provider did not accept the request. Please wait briefly and try again.';
         setResendMessage({
           type: 'error',
-          text: result.failureReason
-            ? `The email provider rejected the request (${result.errorCategory || 'send_failed'}): ${result.failureReason}`
-            : 'The email provider did not accept the request. Please wait briefly and try again.',
+          text: failureText,
         });
         setCooldownUntil(Date.now() + (result?.resendCooldownSeconds || 60) * 1000);
       }

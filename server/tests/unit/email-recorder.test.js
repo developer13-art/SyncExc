@@ -45,6 +45,7 @@ async function attemptSend(error) {
 test('email recorder categorizes missing sender configuration', async () => {
   const error = new Error('EMAIL_FROM is required');
   error.code = 'EMAIL_SENDER_NOT_CONFIGURED';
+  error.status = 422;
   const { loggerErrors } = await attemptSend(error);
   assert.equal(loggerErrors[0].fields.category, 'configuration');
 });
