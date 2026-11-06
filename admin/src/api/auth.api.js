@@ -6,6 +6,7 @@ export const adminAuthApi = {
   me: () => adminApi.get('/auth/me'),
   refresh: (refreshToken) => adminApi.post('/auth/refresh', { refreshToken }),
   verifyMfa: (payload) => adminApi.post('/auth/mfa/verify', payload),
+  stepUp: (payload) => adminApi.post('/auth/step-up', payload),
   permissions: () => adminApi.get('/auth/permissions'),
   sessions: () => adminApi.get('/auth/sessions'),
 };
