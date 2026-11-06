@@ -5,6 +5,7 @@ import { Camera, CheckCircle2, Mail, ShieldAlert, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card.jsx';
 import { Avatar } from '../../components/ui/Avatar.jsx';
 import { Button } from '../../components/ui/Button.jsx';
+import { Input } from '../../components/ui/Input.jsx';
 import { LoadingState } from '../../components/ui/LoadingState.jsx';
 import { Badge } from '../../components/ui/Badge.jsx';
 import { ProfileForm } from './components/ProfileForm.jsx';
