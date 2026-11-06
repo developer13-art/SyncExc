@@ -1256,6 +1256,76 @@ export function createOfficialTraderQueries({ db }) {
     return result.rows;
   }
 
+  async function getProviderPlan(providerId, planId, client = db) {
+    const result = await client.query(
+      `SELECT * FROM marketplace_provider_plans
+       WHERE provider_id = $1 AND id = $2`,
+      [providerId, planId],
+    );
+    return result.rows[0] || null;
+  }
+
+  async function insertProviderPlan({ providerId, name, pricing, entitlements }, client = db) {
+    const result = await client.query(
+      `INSERT INTO marketplace_provider_plans (provider_id, name, pricing, entitlements, status)
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, 'draft')
+       RETURNING *`,
+      [providerId, name, JSON.stringify(pricing), JSON.stringify(entitlements || {})],
+    );
+    return result.rows[0];
+  }
+
+  async function updateProviderPlan(planId, fields, client = db) {
+    const sets = [];
+    const params = [planId];
+    for (const [key, column] of [
+      ['name', 'name'],
+      ['pricing', 'pricing'],
+      ['entitlements', 'entitlements'],
+      ['flutterwavePaymentPlanId', 'flutterwave_payment_plan_id'],
+    ]) {
+      if (fields[key] !== undefined) {
+        params.push(key === 'pricing' || key === 'entitlements'
+          ? JSON.stringify(fields[key])
+          : fields[key]);
+        sets.push(`${column} = $${params.length}${key === 'pricing' || key === 'entitlements' ? '::jsonb' : ''}`);
+      }
+    }
+    if (sets.length === 0) {
+      const existing = await client.query(
+        `SELECT * FROM marketplace_provider_plans WHERE id = $1`,
+        [planId],
+      );
+      return existing.rows[0] || null;
+    }
+    const result = await client.query(
+      `UPDATE marketplace_provider_plans SET ${sets.join(', ')}
+       WHERE id = $1 RETURNING *`,
+      params,
+    );
+    return result.rows[0] || null;
+  }
+
+  async function updateProviderPlanStatus(planId, status, client = db) {
+    const result = await client.query(
+      `UPDATE marketplace_provider_plans SET status = $2
+       WHERE id = $1 RETURNING *`,
+      [planId, status],
+    );
+    return result.rows[0] || null;
+  }
+
+  async function insertProviderPlanVersion(plan, client = db) {
+    const result = await client.query(
+      `INSERT INTO marketplace_provider_plan_versions (plan_id, version, snapshot)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (plan_id, version) DO UPDATE SET snapshot = EXCLUDED.snapshot
+       RETURNING *`,
+      [plan.id, plan.version, JSON.stringify(plan)],
+    );
+    return result.rows[0];
+  }
+
   async function marketplaceSummary(providerId) {
     const result = await db.query(
       `
@@ -1356,6 +1426,11 @@ export function createOfficialTraderQueries({ db }) {
     listCopyOperations,
     listPublishedSignals,
     listProviderPlans,
+    getProviderPlan,
+    insertProviderPlan,
+    updateProviderPlan,
+    updateProviderPlanStatus,
+    insertProviderPlanVersion,
     marketplaceSummary,
     closePublishedSignalForExecution,
     OPEN_EXECUTION_STATUSES,

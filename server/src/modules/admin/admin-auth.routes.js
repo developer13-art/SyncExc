@@ -20,6 +20,12 @@ const MfaVerifySchema = Joi.object({
   method: Joi.string().valid('totp', 'recovery').default('totp'),
 });
 
+const StepUpSchema = Joi.object({
+  method: Joi.string().valid('password', 'totp').default('password'),
+  code: Joi.string().min(1).max(128).required(),
+  reason: Joi.string().trim().max(500).optional(),
+});
+
 function setSessionCookie(res, token) {
   res.cookie(config.session.cookieName, token, {
     httpOnly: true,
@@ -41,7 +47,7 @@ function clearSessionCookie(res) {
   });
 }
 
-export function createAdminAuthRoutes({ identity, permission, middleware }) {
+export function createAdminAuthRoutes({ identity, permission, middleware, audit }) {
   const router = Router();
 
   async function getAdmin(user) {
@@ -165,6 +171,38 @@ export function createAdminAuthRoutes({ identity, permission, middleware }) {
     middleware.asyncHandler(async (req, res) => {
       const admin = await getAdmin(req.auth.user);
       return success(res, admin);
+    })
+  );
+
+  router.post(
+    '/step-up',
+    middleware.authLimiter,
+    middleware.validateBody(StepUpSchema),
+    middleware.asyncHandler(async (req, res) => {
+      if (!req.auth.sessionId) {
+        throw new AuthenticationError('A server-side session is required for step-up verification');
+      }
+      const result = await identity.service.verifyStepUp({
+        userId: req.auth.userId,
+        method: req.body.method,
+        code: req.body.code,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      await identity.service.markStepUp(req.auth.sessionId);
+      if (audit?.write) {
+        await audit.write({
+          actorId: req.auth.userId,
+          action: 'admin.step_up_completed',
+          targetResource: 'user_session',
+          targetId: req.auth.sessionId,
+          reason: req.body.reason || null,
+          after: { method: result.method },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+      return success(res, { ...result, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() });
     })
   );
 

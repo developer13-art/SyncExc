@@ -22,10 +22,14 @@ export function StepUpDialog({ open, onOpenChange, action, onConfirm, error, sub
     if (mode === 'password' && !password) {
       return;
     }
-    await onConfirm?.({
-      code: mode === 'totp' ? code : password,
-      method: mode === 'totp' ? 'totp' : 'password',
-    });
+    try {
+      await onConfirm?.({
+        code: mode === 'totp' ? code : password,
+        method: mode === 'totp' ? 'totp' : 'password',
+      });
+    } catch {
+      // The error is surfaced through the dialog's error state.
+    }
   };
 
   return (

@@ -45,6 +45,10 @@ export const officialTraderApi = {
   closures: (params) => adminApi.getPaged(`${base}/closures`, { params }),
 
   marketplace: () => adminApi.get(`${base}/marketplace`),
+  createPlan: (payload) => adminApi.post(`${base}/marketplace/plans`, payload),
+  updatePlan: (planId, payload) => adminApi.patch(`${base}/marketplace/plans/${planId}`, payload),
+  setPlanStatus: (planId, payload) =>
+    adminApi.patch(`${base}/marketplace/plans/${planId}/status`, payload),
   signals: (params) => adminApi.getPaged(`${base}/signals`, { params }),
   subscribers: (params) => adminApi.getPaged(`${base}/subscribers`, { params }),
   copyOperations: (params) => adminApi.getPaged(`${base}/copy-operations`, { params }),

@@ -269,6 +269,7 @@ export function createAdminRoutes(services) {
       identity: services.identity,
       permission: services.adminPermissionService,
       middleware,
+      audit: services.adminAuditService,
     })
   );
 

@@ -101,12 +101,38 @@ const SnapshotSchema = Joi.object({
   periodEnd: Joi.date().iso().optional(),
 });
 
+const PlanPricingSchema = Joi.object({
+  amountMinor: Joi.number().integer().min(0).required(),
+  currency: Joi.string().uppercase().valid('NGN', 'USD').required(),
+  billingInterval: Joi.string().valid('monthly', 'yearly').required(),
+});
+
+const CreatePlanSchema = Joi.object({
+  name: Joi.string().trim().min(3).max(100).required(),
+  pricing: PlanPricingSchema.required(),
+  entitlements: Joi.object().unknown(true).default({}),
+  reason: ReasonSchema.required(),
+});
+
+const UpdatePlanSchema = Joi.object({
+  name: Joi.string().trim().min(3).max(100).optional(),
+  pricing: PlanPricingSchema.optional(),
+  entitlements: Joi.object().unknown(true).optional(),
+  reason: ReasonSchema.required(),
+});
+
+const PlanStatusSchema = Joi.object({
+  status: Joi.string().valid('draft', 'active', 'retired', 'archived').required(),
+  reason: ReasonSchema.required(),
+});
+
 export function createOfficialTraderAdminRoutes({
   settings,
   research,
   analysis,
   execution,
   performance,
+  plans,
   queries,
   getProvider,
   risk,
@@ -566,6 +592,59 @@ export function createOfficialTraderAdminRoutes({
         queries.listPublishedSignals(provider.id, { limit: 20, offset: 0 }),
       ]);
       return success(res, { provider: settings.publicProvider(provider), summary, plans, signals });
+    }),
+  );
+
+  router.post(
+    '/marketplace/plans',
+    requireManage,
+    middleware.requireStepUp(),
+    middleware.validateBody(CreatePlanSchema),
+    handler(async (req, res) => {
+      const plan = await plans.createPlan({
+        actorId: req.auth.userId,
+        name: req.body.name,
+        pricing: req.body.pricing,
+        entitlements: req.body.entitlements,
+        reason: req.body.reason,
+      });
+      return success(res, plan, { status: 201 });
+    }),
+  );
+
+  router.patch(
+    '/marketplace/plans/:planId',
+    requireManage,
+    middleware.requireStepUp(),
+    middleware.validateParams(Joi.object({ planId: UuidSchema.required() })),
+    middleware.validateBody(UpdatePlanSchema),
+    handler(async (req, res) => {
+      const plan = await plans.updatePlan({
+        actorId: req.auth.userId,
+        planId: req.params.planId,
+        name: req.body.name,
+        pricing: req.body.pricing,
+        entitlements: req.body.entitlements,
+        reason: req.body.reason,
+      });
+      return success(res, plan);
+    }),
+  );
+
+  router.patch(
+    '/marketplace/plans/:planId/status',
+    requireManage,
+    middleware.requireStepUp(),
+    middleware.validateParams(Joi.object({ planId: UuidSchema.required() })),
+    middleware.validateBody(PlanStatusSchema),
+    handler(async (req, res) => {
+      const plan = await plans.setPlanStatus({
+        actorId: req.auth.userId,
+        planId: req.params.planId,
+        status: req.body.status,
+        reason: req.body.reason,
+      });
+      return success(res, plan);
     }),
   );
 

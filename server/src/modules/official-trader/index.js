@@ -21,6 +21,7 @@ import { createOfficialTraderResearchService } from './official-trader.research.
 import { createOfficialTraderAnalysisService, toPublicAnalysis } from './official-trader.analysis.service.js';
 import { createOfficialTraderExecutionService, toPublicExecution } from './official-trader.execution.service.js';
 import { createOfficialTraderPerformanceService } from './official-trader.performance.service.js';
+import { createOfficialTraderPlansService } from './official-trader.plans.service.js';
 import { createOfficialTraderAdminRoutes } from './official-trader.routes.js';
 
 const ADMIN_ROLE_NAMES = ['platform_administrator', 'platform_operations'];
@@ -170,12 +171,24 @@ export function createOfficialTraderModule({ services }) {
     audit,
   });
 
+  const plans = createOfficialTraderPlansService({
+    db: services.db,
+    queries,
+    config: services.config,
+    logger,
+    getProvider,
+    recordEvent,
+    audit,
+    notifyAdmins,
+  });
+
   const routes = createOfficialTraderAdminRoutes({
     settings,
     research,
     analysis,
     execution,
     performance,
+    plans,
     queries,
     getProvider,
     risk: services.risk,

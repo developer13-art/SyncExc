@@ -709,6 +709,61 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     await queries.setSessionStepUp(sessionId);
   }
 
+  /**
+   * Verify a step-up challenge (password or TOTP) for an already-authenticated
+   * user. On success the caller marks the session as step-up verified.
+   */
+  async function verifyStepUp({ userId, method = 'password', code, ip = null, userAgent = null }) {
+    if (!code || typeof code !== 'string') {
+      throw new ValidationError('Verification code is required');
+    }
+
+    const user = await queries.findUserById(userId);
+    if (!user) throw new AuthenticationError('Account not found');
+    if (user.status !== 'active') {
+      throw new AuthenticationError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
+    }
+
+    let valid = false;
+    if (method === 'password') {
+      if (!user.password_hash) {
+        throw new ConflictError('No password set for this account', 'NO_PASSWORD');
+      }
+      valid = await verifyPassword(code, user.password_hash);
+    } else if (method === 'totp') {
+      const security = await queries.getSecuritySettings(user.id);
+      if (!security?.mfa_secret_encrypted) {
+        throw new AuthenticationError('MFA is not enabled for this account', 'MFA_NOT_ENABLED');
+      }
+      valid = verifyTotp(decrypt(security.mfa_secret_encrypted), code);
+    } else {
+      throw new ValidationError('Unsupported step-up method');
+    }
+
+    if (!valid) {
+      await recordSecurityEvent({
+        userId: user.id,
+        eventType: 'step_up_failure',
+        outcome: 'failure',
+        ipAddress: ip,
+        deviceMetadata: { userAgent },
+        metadata: { method },
+      });
+      throw new AuthenticationError('Verification failed. Check your credentials and try again.', 'STEP_UP_INVALID');
+    }
+
+    await recordSecurityEvent({
+      userId: user.id,
+      eventType: 'step_up_success',
+      outcome: 'success',
+      ipAddress: ip,
+      deviceMetadata: { userAgent },
+      metadata: { method },
+    });
+
+    return { verified: true, method };
+  }
+
   async function isStepUpFresh(sessionId, { maxAgeMs = SESSION_STEP_UP_TTL_MS } = {}) {
     const session = await queries.findSessionById(sessionId);
     if (!session) return false;
@@ -1118,6 +1173,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     revokeAllSessions,
     markStepUp,
     isStepUpFresh,
+    verifyStepUp,
 
     // Password
     changePassword,
