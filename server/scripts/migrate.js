@@ -29,6 +29,9 @@ const TARGET_ARG = process.argv.find((a) => a.startsWith('--target='));
 const TARGET = TARGET_ARG ? TARGET_ARG.split('=')[1] : null;
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '..', 'src', 'database', 'migrations');
+const MIGRATION_LOCK_KEY = 734882104;
+const MIGRATION_LOCK_WAIT_MS = 5 * 60 * 1000;
+const MIGRATION_LOCK_POLL_MS = 5000;
 
 function log(...args) {
   process.stdout.write(`[migrate] ${args.join(' ')}\n`);
@@ -95,6 +98,62 @@ async function applyMigration(client, migration) {
   }
 }
 
+async function acquireMigrationLock(client) {
+  const startedAt = Date.now();
+  let nextProgressLogAt = startedAt + 30_000;
+
+  while (Date.now() - startedAt < MIGRATION_LOCK_WAIT_MS) {
+    const result = await client.query(
+      'SELECT pg_try_advisory_lock($1) AS acquired',
+      [MIGRATION_LOCK_KEY]
+    );
+    if (result.rows[0]?.acquired) {
+      log(`migration lock acquired after ${Math.round((Date.now() - startedAt) / 1000)}s`);
+      return;
+    }
+
+    if (Date.now() >= nextProgressLogAt) {
+      log(`waiting for another migration runner (${Math.round((Date.now() - startedAt) / 1000)}s elapsed)`);
+      nextProgressLogAt = Date.now() + 30_000;
+    }
+    await new Promise((resolve) => setTimeout(resolve, MIGRATION_LOCK_POLL_MS));
+  }
+
+  let holderDescription = 'holder details unavailable';
+  try {
+    const result = await client.query(
+      `SELECT activity.pid, activity.application_name, activity.state,
+              activity.wait_event_type, activity.wait_event
+       FROM pg_locks AS lock
+       JOIN pg_stat_activity AS activity ON activity.pid = lock.pid
+       WHERE lock.locktype = 'advisory'
+         AND lock.classid = 0
+         AND lock.objid = $1
+         AND lock.objsubid = 1
+         AND lock.granted
+       LIMIT 1`,
+      [MIGRATION_LOCK_KEY]
+    );
+    const holder = result.rows[0];
+    if (holder) {
+      holderDescription = JSON.stringify({
+        pid: holder.pid,
+        applicationName: holder.application_name,
+        state: holder.state,
+        waitEventType: holder.wait_event_type,
+        waitEvent: holder.wait_event,
+      });
+    }
+  } catch (err) {
+    holderDescription = `holder details unavailable (${err.message})`;
+  }
+
+  throw new Error(
+    `Timed out waiting for the database migration lock after ${MIGRATION_LOCK_WAIT_MS / 1000}s; ` +
+    `${holderDescription}. Check for another active Render deploy or migration job.`
+  );
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -108,17 +167,7 @@ async function main() {
 
   try {
     log('checking migration lock');
-    const lockResult = await client.query(
-      'SELECT pg_try_advisory_lock($1) AS acquired',
-      [734882104]
-    );
-    if (!lockResult.rows[0]?.acquired) {
-      throw new Error(
-        'Another migration runner currently holds the database migration lock. ' +
-        'Check other active deploys or migration jobs, then retry.'
-      );
-    }
-    log('migration lock acquired');
+    await acquireMigrationLock(client);
 
     await client.query("SET lock_timeout = '30s'");
     log('checking migration tracking table');
