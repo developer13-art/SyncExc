@@ -107,15 +107,31 @@ async function main() {
   log('connected to database');
 
   try {
-    await client.query('SELECT pg_advisory_lock($1)', [734882104]);
+    log('checking migration lock');
+    const lockResult = await client.query(
+      'SELECT pg_try_advisory_lock($1) AS acquired',
+      [734882104]
+    );
+    if (!lockResult.rows[0]?.acquired) {
+      throw new Error(
+        'Another migration runner currently holds the database migration lock. ' +
+        'Check other active deploys or migration jobs, then retry.'
+      );
+    }
+    log('migration lock acquired');
+
+    await client.query("SET lock_timeout = '30s'");
+    log('checking migration tracking table');
     await ensureMigrationsTable(client);
 
+    log('loading migration files');
     const migrations = await loadMigrations();
     if (migrations.length === 0) {
       log('no migration files found');
       return;
     }
 
+    log('checking applied migrations');
     const applied = await getAppliedMigrations(client);
     const pending = migrations.filter((m) => {
       if (!applied.has(m.name)) return true;
