@@ -32,6 +32,13 @@ export function createEmailDeliveryRecorder({ db, mailer, logger }) {
     return 'unknown';
   }
 
+  function safeFailureReason(message) {
+    return String(message || 'send failed')
+      .replace(/\bre_[A-Za-z0-9_-]+\b/g, '[redacted]')
+      .replace(/\bwhsec_[A-Za-z0-9_-]+\b/g, '[redacted]')
+      .slice(0, 500);
+  }
+
   return {
     provider: mailer.provider || 'none',
 
@@ -105,7 +112,7 @@ export function createEmailDeliveryRecorder({ db, mailer, logger }) {
             .updateDelivery(db, delivery.id, {
               requestStatus: 'failed',
               deliveryStatus: 'failed',
-              failureReason: err?.message?.slice(0, 500) || 'send failed',
+              failureReason: safeFailureReason(err?.message),
               errorCategory: category,
             })
             .catch(() => {});

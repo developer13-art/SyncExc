@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 
 import { AuthLayout } from '../layouts/AuthLayout.jsx';
@@ -12,13 +12,19 @@ const Register = lazy(() => import('../features/auth/Register.jsx'));
 const ForgotPassword = lazy(() => import('../features/auth/ForgotPassword.jsx'));
 const ResetPassword = lazy(() => import('../features/auth/ResetPassword.jsx'));
 const VerifyEmail = lazy(() => import('../features/auth/VerifyEmail.jsx'));
+const VerifyEmailChange = lazy(() => import('../features/auth/VerifyEmailChange.jsx'));
 const TwoFactorVerify = lazy(() => import('../features/auth/TwoFactorVerify.jsx'));
 const AccountRecovery = lazy(() => import('../features/auth/AccountRecovery.jsx'));
 
 export function AuthRoutes() {
   const isAuthenticated = useSelector(selectIsAuthenticated);
+  const location = useLocation();
 
-  if (isAuthenticated) {
+  if (
+    isAuthenticated &&
+    location.pathname !== ROUTES.auth.verifyEmail &&
+    location.pathname !== '/verify-email-change'
+  ) {
     return <Navigate to={ROUTES.app.dashboard} replace />;
   }
 
@@ -44,6 +50,10 @@ export function AuthRoutes() {
         <Route
           path="verify-email"
           element={<Suspense fallback={<LoadingState />}><VerifyEmail /></Suspense>}
+        />
+        <Route
+          path="verify-email-change"
+          element={<Suspense fallback={<LoadingState />}><VerifyEmailChange /></Suspense>}
         />
         <Route
           path="mfa"

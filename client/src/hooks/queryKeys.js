@@ -1,7 +1,9 @@
 export const queryKeys = {
   auth: {
     me: ['auth', 'me'],
+    emailVerificationStatus: ['auth', 'email-verification-status'],
     mfaStatus: ['auth', 'mfa', 'status'],
+    passkeys: ['auth', 'passkeys'],
     sessions: ['auth', 'sessions'],
     trustedDevices: ['auth', 'trusted-devices'],
     securityEvents: (params) => ['auth', 'security-events', params],

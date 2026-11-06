@@ -71,6 +71,7 @@ const IMPLEMENTED_ROUTES = {
   'support:support-overview': '/support',
   'support:support-queues': '/support/queues',
   'support:support-metrics': '/support/metrics',
+  'communications:delivery-reports': '/communications/email-deliveries',
   'incidents:incident-overview': '/incidents',
   'staff:roles-and-permissions': '/roles',
   'settings:feature-flags': '/feature-flags',

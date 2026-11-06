@@ -130,11 +130,11 @@ export function createIdentityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async updateUserEmail(userId, email, emailNormalized) {
-      const result = await db.query(
+    async updateUserEmail(userId, email, emailNormalized, client = db) {
+      const result = await client.query(
         `
         UPDATE users
-        SET email = $2, email_normalized = $3, email_verified_at = NULL, updated_at = now()
+        SET email = $2, email_normalized = $3, email_verified_at = now(), updated_at = now()
         WHERE id = $1 AND deleted_at IS NULL
         RETURNING *
         `,
@@ -143,17 +143,17 @@ export function createIdentityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async markEmailVerified(userId) {
-      const result = await db.query(
+    async markEmailVerified(userId, email, client = db) {
+      const result = await client.query(
         `
         UPDATE users
         SET email_verified_at = now(),
             status = CASE WHEN status = 'pending_verification' THEN 'active' ELSE status END,
             updated_at = now()
-        WHERE id = $1 AND deleted_at IS NULL
+        WHERE id = $1 AND email_normalized = $2 AND deleted_at IS NULL
         RETURNING *
         `,
-        [userId]
+        [userId, String(email).trim().toLowerCase()]
       );
       return result.rows[0] || null;
     },
@@ -181,6 +181,160 @@ export function createIdentityQueries({ db }) {
         [userId, status]
       );
       return result.rows[0] || null;
+    },
+
+    /* =========================================================================
+     * PASSKEYS
+     * ====================================================================== */
+
+    async listPasskeys(userId) {
+      const result = await db.query(
+        `
+        SELECT id, name, credential_id, transports, device_type, backed_up,
+               created_at, last_used_at
+        FROM user_passkeys
+        WHERE user_id = $1 AND revoked_at IS NULL
+        ORDER BY created_at DESC
+        `,
+        [userId]
+      );
+      return result.rows;
+    },
+
+    async listPasskeyCredentials(userId) {
+      const result = await db.query(
+        `
+        SELECT credential_id, transports
+        FROM user_passkeys
+        WHERE user_id = $1 AND revoked_at IS NULL
+        `,
+        [userId]
+      );
+      return result.rows;
+    },
+
+    async findPasskeyByCredentialId(credentialId, client = db) {
+      const result = await client.query(
+        `
+        SELECT *
+        FROM user_passkeys
+        WHERE credential_id = $1 AND revoked_at IS NULL
+        LIMIT 1
+        `,
+        [credentialId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async insertPasskey(client, passkey) {
+      const result = await client.query(
+        `
+        INSERT INTO user_passkeys (
+          user_id, name, credential_id, public_key, attestation_type, transports,
+          sign_count, device_type, backed_up, registered_ip, user_agent
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id, name, credential_id, transports, device_type, backed_up, created_at, last_used_at
+        `,
+        [
+          passkey.userId,
+          passkey.name,
+          passkey.credentialId,
+          passkey.publicKey,
+          passkey.attestationType,
+          JSON.stringify(passkey.transports || []),
+          passkey.signCount,
+          passkey.deviceType,
+          passkey.backedUp,
+          passkey.registeredIp || null,
+          passkey.userAgent || null,
+        ]
+      );
+      return result.rows[0];
+    },
+
+    async updatePasskeyUsage(client, { id, signCount, deviceType, backedUp }) {
+      const result = await client.query(
+        `
+        UPDATE user_passkeys
+        SET sign_count = $2, device_type = $3, backed_up = $4, last_used_at = now()
+        WHERE id = $1 AND revoked_at IS NULL
+        RETURNING id
+        `,
+        [id, signCount, deviceType, backedUp]
+      );
+      return result.rowCount > 0;
+    },
+
+    async renamePasskey(userId, passkeyId, name) {
+      const result = await db.query(
+        `
+        UPDATE user_passkeys
+        SET name = $3
+        WHERE user_id = $1 AND id = $2 AND revoked_at IS NULL
+        RETURNING id, name, credential_id, transports, device_type, backed_up, created_at, last_used_at
+        `,
+        [userId, passkeyId, name]
+      );
+      return result.rows[0] || null;
+    },
+
+    async revokePasskey(userId, passkeyId) {
+      const result = await db.query(
+        `
+        UPDATE user_passkeys
+        SET revoked_at = now()
+        WHERE user_id = $1 AND id = $2 AND revoked_at IS NULL
+        RETURNING id
+        `,
+        [userId, passkeyId]
+      );
+      return result.rowCount > 0;
+    },
+
+    async insertWebAuthnChallenge(client, challenge) {
+      await client.query(
+        `
+        INSERT INTO webauthn_challenges (
+          user_id, ceremony, challenge, expires_at, ip_address, user_agent
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [
+          challenge.userId || null,
+          challenge.ceremony,
+          challenge.challengeHash,
+          challenge.expiresAt,
+          challenge.ip || null,
+          challenge.userAgent || null,
+        ]
+      );
+    },
+
+    async findWebAuthnChallenge(challengeHash, ceremony) {
+      const result = await db.query(
+        `
+        SELECT *
+        FROM webauthn_challenges
+        WHERE challenge = $1 AND ceremony = $2
+        LIMIT 1
+        `,
+        [challengeHash, ceremony]
+      );
+      return result.rows[0] || null;
+    },
+
+    async consumeWebAuthnChallenge(client, challengeId) {
+      const result = await client.query(
+        `
+        UPDATE webauthn_challenges
+        SET consumed_at = now()
+        WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()
+        RETURNING id
+        `,
+        [challengeId]
+      );
+      return result.rowCount > 0;
     },
 
     /* =========================================================================
@@ -320,12 +474,12 @@ export function createIdentityQueries({ db }) {
       return result.rows[0] || null;
     },
 
-    async consumeChallenge(challengeId) {
-      const result = await db.query(
+    async consumeChallenge(challengeId, client = db) {
+      const result = await client.query(
         `
         UPDATE auth_challenges
         SET consumed_at = now()
-        WHERE id = $1 AND consumed_at IS NULL
+        WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()
         RETURNING id
         `,
         [challengeId]
@@ -340,8 +494,8 @@ export function createIdentityQueries({ db }) {
       );
     },
 
-    async invalidateActiveChallenges({ userId = null, email = null, challengeType }) {
-      await db.query(
+    async invalidateActiveChallenges({ userId = null, email = null, challengeType }, client = db) {
+      await client.query(
         `
         UPDATE auth_challenges
         SET consumed_at = now()
@@ -386,8 +540,8 @@ export function createIdentityQueries({ db }) {
       return result.rows;
     },
 
-    async markRecoveryCodeUsed(codeId) {
-      const result = await db.query(
+    async markRecoveryCodeUsed(codeId, client = db) {
+      const result = await client.query(
         `
         UPDATE user_recovery_codes
         SET used_at = now()

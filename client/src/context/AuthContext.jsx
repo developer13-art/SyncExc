@@ -82,6 +82,22 @@ export function AuthProvider({ children }) {
     [dispatch, queryClient],
   );
 
+  const loginWithPasskey = useCallback(
+    async (response) => {
+      const result = await identityApi.finishPasskeyAuthentication(response);
+      if (result?.mfaRequired) {
+        dispatch(authActions.mfaChallengeRequired(result));
+        return { mfaRequired: true, challengeToken: result.challengeToken };
+      }
+      await queryClient.cancelQueries({ queryKey: ['community'] });
+      queryClient.removeQueries({ queryKey: ['community'] });
+      dispatch(authActions.loginSucceeded(result));
+      queryClient.setQueryData(queryKeys.auth.me, result.user);
+      return { success: true };
+    },
+    [dispatch, queryClient],
+  );
+
   const register = useCallback(
     (details) => identityApi.register(details),
     [],
@@ -135,13 +151,14 @@ export function AuthProvider({ children }) {
       isAuthenticated,
       isBootstrapping,
       login,
+      loginWithPasskey,
       register,
       verifyMfa,
       refreshUser,
       logout,
       logoutAll,
     }),
-    [user, isAuthenticated, isBootstrapping, login, register, verifyMfa, refreshUser, logout, logoutAll],
+    [user, isAuthenticated, isBootstrapping, login, loginWithPasskey, register, verifyMfa, refreshUser, logout, logoutAll],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

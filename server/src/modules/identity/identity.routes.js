@@ -109,10 +109,71 @@ export function createIdentityRoutes({ service, middleware }) {
     middleware.asyncHandler(controller.verifyEmail)
   );
 
+  authRouter.get(
+    '/email-verification-status',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.getEmailVerificationStatus)
+  );
+
+  authRouter.post(
+    '/passkeys/registration/options',
+    middleware.authLimiter,
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.beginPasskeyRegistration)
+  );
+
+  authRouter.post(
+    '/passkeys/registration/verify',
+    middleware.authLimiter,
+    middleware.requireAuth(),
+    middleware.validateBody(Joi.object({
+      response: Joi.object().unknown(true).required(),
+      name: Joi.string().trim().min(1).max(64).optional(),
+    })),
+    middleware.asyncHandler(controller.finishPasskeyRegistration)
+  );
+
+  authRouter.post(
+    '/passkeys/authentication/options',
+    middleware.authLimiter,
+    middleware.asyncHandler(controller.beginPasskeyAuthentication)
+  );
+
+  authRouter.post(
+    '/passkeys/authentication/verify',
+    middleware.authLimiter,
+    middleware.validateBody(Joi.object({
+      response: Joi.object().unknown(true).required(),
+    })),
+    middleware.asyncHandler(controller.finishPasskeyAuthentication)
+  );
+
+  authRouter.get(
+    '/passkeys',
+    middleware.requireAuth(),
+    middleware.asyncHandler(controller.listPasskeys)
+  );
+
+  authRouter.patch(
+    '/passkeys/:passkeyId',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ passkeyId: UuidSchema.required() })),
+    middleware.validateBody(Joi.object({ name: Joi.string().trim().min(1).max(64).required() })),
+    middleware.asyncHandler(controller.renamePasskey)
+  );
+
+  authRouter.delete(
+    '/passkeys/:passkeyId',
+    middleware.requireAuth(),
+    middleware.validateParams(Joi.object({ passkeyId: UuidSchema.required() })),
+    middleware.asyncHandler(controller.removePasskey)
+  );
+
   authRouter.post(
     '/verification/resend',
     middleware.authLimiter,
-    middleware.validateBody(Joi.object({ email: Joi.string().email().required() })),
+    middleware.optionalAuth(),
+    middleware.validateBody(Joi.object({ email: Joi.string().email().optional() })),
     middleware.asyncHandler(controller.resendVerification)
   );
 
@@ -229,7 +290,7 @@ export function createIdentityRoutes({ service, middleware }) {
   usersRouter.post(
     '/me/email-change',
     middleware.requireAuth(),
-    middleware.requireStepUp(),
+    middleware.authLimiter,
     middleware.validateBody(EmailChangeRequestSchema),
     middleware.asyncHandler(controller.requestEmailChange)
   );

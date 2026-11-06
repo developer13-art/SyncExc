@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Fingerprint } from 'lucide-react';
+import { startAuthentication } from '@simplewebauthn/browser';
 
 import { Button } from '../../components/ui/Button.jsx';
 import { Input } from '../../components/ui/Input.jsx';
@@ -8,6 +9,7 @@ import { FormField } from '../../components/forms/FormField.jsx';
 import { FormError } from '../../components/forms/FormError.jsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.jsx';
 import { useAuthContext } from '../../context/AuthContext.jsx';
+import { identityApi } from '../../api/index.js';
 import { useToast } from '../../hooks/useToast.js';
 import { isValidEmail } from '../../lib/validators/email.validator.js';
 import { getErrorMessage } from '../../api/errors.js';
@@ -17,7 +19,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const { login } = useAuthContext();
+  const { login, loginWithPasskey } = useAuthContext();
 
   const [form, setForm] = useState({
     email: '',
@@ -27,6 +29,7 @@ export default function Login() {
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
 
   const redirectTo = location.state?.from?.pathname ?? ROUTES.app.dashboard;
 
@@ -90,6 +93,38 @@ export default function Login() {
     }
   };
 
+  const handlePasskeyLogin = async () => {
+    setFormError(null);
+    if (!window.PublicKeyCredential) {
+      setFormError('This browser does not support passkeys. Sign in with your email and password instead.');
+      return;
+    }
+
+    setPasskeyBusy(true);
+    try {
+      const options = await identityApi.beginPasskeyAuthentication();
+      const response = await startAuthentication({ optionsJSON: options });
+      const result = await loginWithPasskey(response);
+      if (result?.mfaRequired) {
+        navigate(ROUTES.auth.mfa, {
+          state: { challengeToken: result.challengeToken, redirectTo },
+          replace: true,
+        });
+        return;
+      }
+      toast.success('Signed in with passkey');
+      navigate(redirectTo, { replace: true });
+    } catch (error) {
+      setFormError(
+        error?.name === 'NotAllowedError'
+          ? 'Passkey sign-in was cancelled or no passkey is available. You can try again or use your password.'
+          : getErrorMessage(error),
+      );
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -150,6 +185,24 @@ export default function Login() {
         <Button type="submit" disabled={submitting} className="mt-2">
           {submitting ? 'Signing in…' : 'Sign in'}
           {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
+        </Button>
+
+        <div className="relative my-1">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-background px-2 text-xs text-muted-foreground">or</span>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={submitting || passkeyBusy}
+          onClick={handlePasskeyLogin}
+        >
+          <Fingerprint className="h-4 w-4" />
+          {passkeyBusy ? 'Waiting for your device…' : 'Continue with passkey'}
         </Button>
 
         <p className="text-center text-xs text-muted-foreground">

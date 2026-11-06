@@ -18,7 +18,27 @@ export const identityApi = {
 
   verifyEmail: (token) => api.post(endpoints.auth.verifyEmail, { token }),
 
-  resendVerification: (email) => api.post(endpoints.auth.resendVerification, { email }),
+  resendVerification: (email) =>
+    api.post(endpoints.auth.resendVerification, email ? { email } : {}),
+
+  getEmailVerificationStatus: () => api.get(endpoints.auth.emailVerificationStatus),
+
+  beginPasskeyRegistration: () => api.post(endpoints.auth.passkeyRegistrationOptions),
+
+  finishPasskeyRegistration: (response, name) =>
+    api.post(endpoints.auth.passkeyRegistrationVerify, { response, name }),
+
+  beginPasskeyAuthentication: () => api.post(endpoints.auth.passkeyAuthenticationOptions),
+
+  finishPasskeyAuthentication: (response) =>
+    api.post(endpoints.auth.passkeyAuthenticationVerify, { response }),
+
+  listPasskeys: () => api.get(endpoints.auth.passkeys),
+
+  renamePasskey: (passkeyId, name) =>
+    api.patch(`${endpoints.auth.passkeys}/${passkeyId}`, { name }),
+
+  removePasskey: (passkeyId) => api.delete(`${endpoints.auth.passkeys}/${passkeyId}`),
 
   forgotPassword: (email) => api.post(endpoints.auth.forgotPassword, { email }),
 
@@ -48,6 +68,8 @@ export const identityApi = {
   updatePreferences: (payload) => api.patch(endpoints.users.preferences, payload),
 
   changeEmail: (payload) => api.post(endpoints.users.changeEmail, payload),
+
+  confirmEmailChange: (token) => api.post(endpoints.users.confirmEmailChange, { token }),
 
   listSessions: () => api.get(endpoints.users.sessions),
 

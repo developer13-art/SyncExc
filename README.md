@@ -142,6 +142,45 @@ memory and are not shared between multiple server instances. To start one
 application, use `npm run dev:server`, `npm run dev:client`, or
 `npm run dev:admin`.
 
+### Render email and passkey configuration
+
+The Render API service applies pending PostgreSQL migrations before starting.
+The migration command is safe to rerun and serializes concurrent migration
+starts; a migration failure prevents the API from serving traffic.
+
+Configure these values in the **server** service environment:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | PostgreSQL connection string used by the API and migrations. |
+| `APP_URL` | Yes in production | Public client origin used in email links; the blueprint uses `https://app.syncexc.com`. |
+| `JWT_ACCESS_SECRET` | Yes | At least 32 characters; signs access tokens. |
+| `JWT_REFRESH_SECRET` | Yes | At least 32 characters; signs refresh tokens. |
+| `SESSION_SECRET` | Yes | Session security secret; Render generates it in the blueprint. |
+| `ENCRYPTION_MASTER_KEY` | Yes | Base64-encoded 32-byte encryption key; set it securely in Render. |
+| `RESEND_API_KEY` | Yes for Resend | Backend-only Resend API key. Never add it to a `VITE_` variable. |
+| `EMAIL_FROM` | Yes for Resend | Valid sender address on a domain verified in Resend, such as `no-reply@your-verified-domain`. |
+| `RESEND_WEBHOOK_SECRET` | Optional | Resend/Svix signing secret for confirmed delivery and bounce events. |
+| `WEBAUTHN_RP_ID` | Optional | Relying-party hostname; defaults to the hostname in `APP_URL`. |
+| `WEBAUTHN_ORIGIN` | Optional | Exact browser origin; defaults to `APP_URL`. |
+
+Resend accepting a send request is not proof of inbox delivery. To record
+delivery outcomes, create a Resend webhook targeting
+`https://syncexc-server.onrender.com/api/v1/webhooks/resend`, subscribe to the
+email delivery events supported by Resend, and set its signing secret as
+`RESEND_WEBHOOK_SECRET` in Render. The endpoint verifies the Svix signature
+and ignores duplicate event IDs.
+
+The sender's domain must be verified in Resend. Add the exact SPF/DKIM DNS
+records shown for that domain in the Resend dashboard at the domain's DNS
+provider; the required record names and values are specific to the domain and
+cannot be inferred from this repository. Do not treat an API acceptance as
+delivery until webhook events confirm it.
+
+`EMAIL_VERIFICATION_TOKEN_TTL_MINUTES` and
+`EMAIL_RESEND_COOLDOWN_SECONDS` may be set to customize verification link
+expiry and resend throttling; defaults are 1440 minutes and 60 seconds.
+
 ### AI providers
 
 Set `AI_PROVIDER` to `openai`, `anthropic`, `google`, `groq`, or `local`.

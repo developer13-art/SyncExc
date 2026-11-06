@@ -13,6 +13,7 @@ export function serializeUser(row) {
     id: row.id,
     email: row.email,
     emailVerified: Boolean(row.email_verified_at),
+    emailVerifiedAt: row.email_verified_at || null,
     username: row.username,
     displayName: row.display_name,
     avatarUrl: row.avatar_url || null,

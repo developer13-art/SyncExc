@@ -132,8 +132,9 @@ export const LoginRequestSchema = Joi.object({
 });
 
 export const MfaVerifyRequestSchema = Joi.object({
-  challengeId: UuidSchema.required(),
-  code: Joi.string().pattern(/^\d{6}$/).required(),
+  challengeToken: Joi.string().min(32).max(256).required(),
+  code: Joi.string().min(6).max(64).required(),
+  method: Joi.string().valid('totp', 'recovery_code').default('totp'),
 });
 
 export const MfaEnrollConfirmSchema = Joi.object({

@@ -35,10 +35,13 @@ describe('identity referral attribution', () => {
         async register(details) {
           registrationInput = details;
           return {
-            id: 'user-1',
-            email: details.email,
-            username: details.username,
-            display_name: details.displayName,
+            user: {
+              id: 'user-1',
+              email: details.email,
+              username: details.username,
+              display_name: details.displayName,
+            },
+            verificationEmail: { status: 'failed' },
           };
         },
       },

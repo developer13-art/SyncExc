@@ -328,7 +328,7 @@ const config = {
   email: {
     resendApiKey: env.RESEND_API_KEY || undefined,
     resendWebhookSecret: env.RESEND_WEBHOOK_SECRET || undefined,
-    fromEmail: env.EMAIL_FROM || env.SMTP_FROM_EMAIL,
+    fromEmail: env.EMAIL_FROM || undefined,
     fromName: env.SMTP_FROM_NAME,
     provider: env.RESEND_API_KEY ? 'resend' : env.SMTP_HOST && env.SMTP_USER ? 'smtp' : 'none',
     verificationTokenTtlMs: env.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES * 60 * 1000,

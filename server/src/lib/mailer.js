@@ -19,12 +19,16 @@ const require = createRequire(import.meta.url);
 
 const logger = createLogger({ component: 'mailer' });
 
-function assertValidSend({ to, from, subject }) {
+export function assertValidSend({ to, from, subject }) {
   const recipients = Array.isArray(to) ? to : [to];
-  if (!recipients.length || recipients.some((r) => typeof r !== 'string' || !r.includes('@'))) {
+  const validEmail = (value) =>
+    typeof value === 'string' &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+  if (!recipients.length || recipients.some((r) => !validEmail(r))) {
     throw new ValidationError('A valid recipient email address is required');
   }
-  if (from && (typeof from !== 'string' || !from.includes('@'))) {
+  const senderAddress = typeof from === 'string' ? from.match(/<([^<>]+)>/)?.[1] || from : from;
+  if (!validEmail(senderAddress)) {
     throw new ValidationError('A valid sender email address is required');
   }
   if (!subject || typeof subject !== 'string') {
@@ -36,12 +40,12 @@ function assertValidSend({ to, from, subject }) {
  * RESEND
  * ========================================================================== */
 
-function createResendTransport({ apiKey, defaultFrom }) {
+export function createResendTransport({ apiKey, defaultFrom, ResendClient }) {
   let resend;
   try {
     // Imported lazily so the process can boot without the optional SDK.
-    const mod = require('resend');
-    resend = new mod.Resend(apiKey);
+    const Client = ResendClient || require('resend').Resend;
+    resend = new Client(apiKey);
   } catch (err) {
     throw new Error(`resend SDK unavailable: ${err.message}`);
   }
@@ -63,9 +67,15 @@ function createResendTransport({ apiKey, defaultFrom }) {
         err.retryable = !error.statusCode || error.statusCode >= 500;
         throw err;
       }
+      if (!data?.id) {
+        const err = new Error('Resend did not return an email message ID');
+        err.provider = 'resend';
+        err.code = 'EMAIL_PROVIDER_INVALID_RESPONSE';
+        throw err;
+      }
       // `data.id` is the Resend message ID: the request was ACCEPTED by
       // Resend. Confirmed inbox delivery arrives asynchronously via webhook.
-      return { messageId: data?.id || null, provider: 'resend' };
+      return { messageId: data.id, provider: 'resend' };
     },
     async verify() {
       try {
@@ -145,33 +155,42 @@ async function createSmtpTransport() {
  * ========================================================================== */
 
 export async function initMailer() {
-  const defaultFrom = `"${config.email.fromName}" <${config.email.fromEmail}>`;
+  const defaultFrom = config.email.fromEmail
+    ? `"${config.email.fromName}" <${config.email.fromEmail}>`
+    : undefined;
 
   if (config.email.resendApiKey) {
+    if (!defaultFrom) {
+      logger.error(
+        'EMAIL_FROM is required when RESEND_API_KEY is configured; email requests will fail until it is set'
+      );
+    }
     const transport = createResendTransport({
       apiKey: config.email.resendApiKey,
       defaultFrom,
     });
     logger.info({ provider: 'resend', from: config.email.fromEmail }, 'Mailer initialized');
-    return wrapWithValidation(transport);
+    return wrapWithValidation(transport, defaultFrom);
   }
 
   if (config.smtp.enabled) {
     const transport = await createSmtpTransport();
     logger.info({ provider: 'smtp', from: config.smtp.fromEmail }, 'Mailer initialized');
-    return wrapWithValidation(transport);
+    return wrapWithValidation(
+      transport,
+      `"${config.smtp.fromName}" <${config.smtp.fromEmail}>`
+    );
   }
 
   logger.warn('No email provider configured (RESEND_API_KEY / SMTP); emails will be logged, not sent');
 
   return {
     provider: 'none',
-    async send({ to, subject }) {
-      logger.info(
-        { to, subject },
-        'Email suppressed (no email provider configured)'
-      );
-      return { suppressed: true, provider: 'none' };
+    async send() {
+      const err = new Error('No transactional email provider is configured');
+      err.code = 'EMAIL_PROVIDER_NOT_CONFIGURED';
+      err.retryable = true;
+      throw err;
     },
     async verify() {
       return { ok: false, reason: 'email_not_configured' };
@@ -179,12 +198,13 @@ export async function initMailer() {
   };
 }
 
-function wrapWithValidation(transport) {
+function wrapWithValidation(transport, defaultFrom) {
   return {
     provider: transport.provider,
     async send(payload) {
-      assertValidSend(payload);
-      return transport.send(payload);
+      const effectiveFrom = payload.from || defaultFrom;
+      assertValidSend({ ...payload, from: effectiveFrom });
+      return transport.send({ ...payload, from: effectiveFrom });
     },
     verify: () => transport.verify(),
     close: () => transport.close?.(),

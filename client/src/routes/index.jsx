@@ -13,7 +13,7 @@ import {
   selectIsBootstrapping,
 } from '../features/auth/authSlice.js';
 
-const AUTH_PREFIXES = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/mfa', '/account-recovery'];
+const AUTH_PREFIXES = ['/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/verify-email-change', '/mfa', '/account-recovery'];
 const APP_PREFIX = '/app';
 
 export function AppRoutes() {

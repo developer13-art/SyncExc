@@ -51,7 +51,7 @@ export function createIdentityController({ service }) {
 
     async register(req, res) {
       const { ip, userAgent } = clientContext(req);
-      const user = await service.register(
+      const result = await service.register(
         {
           email: req.body.email,
           password: req.body.password,
@@ -69,8 +69,14 @@ export function createIdentityController({ service }) {
       );
 
       return created(res, {
-        user: serializeUser(user),
+        user: serializeUser(result.user),
         next: 'verify_email',
+        verificationEmail: {
+          status: result.verificationEmail.status,
+          ...(result.verificationEmail.expiresInHours
+            ? { expiresInHours: result.verificationEmail.expiresInHours }
+            : {}),
+        },
       });
     },
 
@@ -107,8 +113,9 @@ export function createIdentityController({ service }) {
       const { ip, userAgent } = clientContext(req);
 
       const result = await service.verifyMfaChallenge({
-        challengeId: req.body.challengeId,
+        challengeToken: req.body.challengeToken,
         code: req.body.code,
+        method: req.body.method,
         ip,
         userAgent,
       });
@@ -154,13 +161,120 @@ export function createIdentityController({ service }) {
      * ====================================================================== */
 
     async verifyEmail(req, res) {
-      const user = await service.verifyEmail({ token: req.body.token });
-      return success(res, { user: serializeUser(user) });
+      const result = await service.verifyEmail({ token: req.body.token });
+      return success(res, {
+        status: result.status,
+        user: serializeUser(result.user),
+      });
     },
 
     async resendVerification(req, res) {
-      const result = await service.resendVerificationEmail({ email: req.body.email });
+      const { ip } = clientContext(req);
+      const result = await service.resendVerificationEmail({
+        userId: req.auth?.userId,
+        email: req.body.email,
+        ip,
+      });
       return success(res, result);
+    },
+
+    async getEmailVerificationStatus(req, res) {
+      return success(res, await service.getEmailVerificationStatus({ userId: req.auth.userId }));
+    },
+
+    async beginPasskeyRegistration(req, res) {
+      const { ip, userAgent } = clientContext(req);
+      return success(
+        res,
+        await service.beginPasskeyRegistration({
+          userId: req.auth.userId,
+          ip,
+          userAgent,
+        })
+      );
+    },
+
+    async finishPasskeyRegistration(req, res) {
+      const { ip, userAgent } = clientContext(req);
+      const passkey = await service.finishPasskeyRegistration({
+        userId: req.auth.userId,
+        response: req.body.response,
+        name: req.body.name,
+        ip,
+        userAgent,
+      });
+      return created(res, {
+        id: passkey.id,
+        name: passkey.name,
+        deviceType: passkey.device_type,
+        backedUp: passkey.backed_up,
+        createdAt: passkey.created_at,
+      });
+    },
+
+    async beginPasskeyAuthentication(req, res) {
+      const { ip, userAgent } = clientContext(req);
+      return success(
+        res,
+        await service.beginPasskeyAuthentication({ ip, userAgent })
+      );
+    },
+
+    async finishPasskeyAuthentication(req, res) {
+      const { ip, userAgent } = clientContext(req);
+      const result = await service.finishPasskeyAuthentication({
+        response: req.body.response,
+        ip,
+        userAgent,
+      });
+      if (result.mfaRequired) {
+        return success(res, {
+          mfaRequired: true,
+          challengeToken: result.challengeToken,
+        });
+      }
+      setSessionCookie(res, result.sessionToken);
+      return success(res, {
+        user: serializeUser(result.user),
+        session: serializeSession(result.session, result.session.id),
+        accessToken: result.accessToken,
+      });
+    },
+
+    async listPasskeys(req, res) {
+      const rows = await service.listPasskeys({ userId: req.auth.userId });
+      return success(res, rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        deviceType: row.device_type,
+        backedUp: row.backed_up,
+        createdAt: row.created_at,
+        lastUsedAt: row.last_used_at,
+      })));
+    },
+
+    async renamePasskey(req, res) {
+      const passkey = await service.renamePasskey({
+        userId: req.auth.userId,
+        passkeyId: req.params.passkeyId,
+        name: req.body.name,
+      });
+      return success(res, {
+        id: passkey.id,
+        name: passkey.name,
+        deviceType: passkey.device_type,
+        backedUp: passkey.backed_up,
+        createdAt: passkey.created_at,
+        lastUsedAt: passkey.last_used_at,
+      });
+    },
+
+    async removePasskey(req, res) {
+      return success(res, await service.removePasskey({
+        userId: req.auth.userId,
+        passkeyId: req.params.passkeyId,
+        ip: req.ip,
+      }));
     },
 
     /* =========================================================================

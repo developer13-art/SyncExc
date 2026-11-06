@@ -91,6 +91,11 @@ export const adminApi = {
   listSupportQueues: () => api.get(endpoints.support.queues),
   getSupportMetrics: (params) => api.get(endpoints.support.metrics, { params }),
 
+  listEmailDeliveries: (params) =>
+    api.getPaged(endpoints.emailDeliveries.list, { params }),
+  getEmailDeliveryStats: (params) =>
+    api.get(endpoints.emailDeliveries.stats, { params }),
+
   // Roles & permissions
   listRoles: (params) => api.getPaged(endpoints.roles.list, { params }),
   createRole: (payload) => api.post(endpoints.roles.create, payload),

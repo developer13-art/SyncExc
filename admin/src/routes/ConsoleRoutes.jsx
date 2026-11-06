@@ -42,6 +42,7 @@ const ReferralFraudCases = lazy(() => import('../features/referrals/FraudCases.j
 const SupportOverview = lazy(() => import('../features/support/SupportOverview.jsx'));
 const SupportQueues = lazy(() => import('../features/support/Queues.jsx'));
 const SupportMetrics = lazy(() => import('../features/support/SupportMetrics.jsx'));
+const EmailDeliveries = lazy(() => import('../features/communications/EmailDeliveries.jsx'));
 
 const FlagsList = lazy(() => import('../features/feature-flags/FlagsList.jsx'));
 const CreateFlag = lazy(() => import('../features/feature-flags/CreateFlag.jsx'));
@@ -142,6 +143,7 @@ export function ConsoleRoutes() {
         <Route path="support" element={<Fallback><SupportOverview /></Fallback>} />
         <Route path="support/queues" element={<Fallback><SupportQueues /></Fallback>} />
         <Route path="support/metrics" element={<Fallback><SupportMetrics /></Fallback>} />
+        <Route path="communications/email-deliveries" element={<Fallback><EmailDeliveries /></Fallback>} />
 
         <Route path="feature-flags" element={<Fallback><FlagsList /></Fallback>} />
         <Route path="feature-flags/new" element={<Fallback><CreateFlag /></Fallback>} />

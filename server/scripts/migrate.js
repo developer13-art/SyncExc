@@ -107,6 +107,7 @@ async function main() {
   log('connected to database');
 
   try {
+    await client.query('SELECT pg_advisory_lock($1)', [734882104]);
     await ensureMigrationsTable(client);
 
     const migrations = await loadMigrations();

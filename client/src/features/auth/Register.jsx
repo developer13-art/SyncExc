@@ -134,7 +134,7 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      await register({
+      const registration = await register({
         displayName: form.displayName.trim(),
         username: form.username.trim().toLowerCase(),
         email: normalizeEmail(form.email),
@@ -146,10 +146,16 @@ export default function Register() {
       storage.remove(REFERRAL_CODE_STORAGE_KEY);
 
       toast.success('Account created', {
-        description: 'Please check your email to verify your address.',
+        description: registration?.verificationEmail?.status === 'accepted'
+          ? 'Your email provider accepted the verification request. Check your inbox; delivery is not confirmed yet.'
+          : 'Your account is ready, but the verification email could not be submitted. You can retry from the verification screen.',
       });
       navigate(ROUTES.auth.verifyEmail, {
-        state: { email: normalizeEmail(form.email) },
+        state: {
+          email: normalizeEmail(form.email),
+          emailAccepted: registration?.verificationEmail?.status === 'accepted',
+          expiresInHours: registration?.verificationEmail?.expiresInHours,
+        },
         replace: true,
       });
     } catch (error) {

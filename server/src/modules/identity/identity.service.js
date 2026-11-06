@@ -16,6 +16,12 @@
 
 import { randomUUID, createHash, timingSafeEqual as nodeTimingSafeEqual } from 'node:crypto';
 import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from '@simplewebauthn/server';
+import {
   hashPassword,
   verifyPassword,
 } from '../../lib/password.js';
@@ -51,6 +57,21 @@ function hashSessionToken(token) {
 }
 
 export { hashSessionToken };
+
+function hashWebAuthnChallenge(challenge) {
+  return hashSessionToken(challenge);
+}
+
+function getClientChallenge(response) {
+  try {
+    const encoded = response?.response?.clientDataJSON;
+    if (typeof encoded !== 'string') return null;
+    const data = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    return typeof data.challenge === 'string' ? data.challenge : null;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeEmail(email) {
   return String(email).trim().toLowerCase();
@@ -100,6 +121,21 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       userAgent: userAgent || null,
       deviceLabel: deviceLabel || null,
     };
+  }
+
+  async function createMfaChallengeForUser(user, { deviceLabel, userAgent }) {
+    const challengeToken = randomToken(32);
+    const tokenHash = hashSessionToken(challengeToken);
+    await db.tx(async (tx) => {
+      await queries.insertChallenge(tx, {
+        userId: user.id,
+        challengeType: 'mfa_verification',
+        tokenHash,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        metadata: { deviceLabel, userAgent },
+      });
+    });
+    return { mfaRequired: true, challengeToken };
   }
 
   /* ===========================================================================
@@ -164,20 +200,24 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     // Send verification email outside the transaction. A send failure must
     // never roll back the account: the user can request a new link from the
     // verification screen or their profile.
-    let verificationEmail = { sent: false, suppressed: true };
+    let verificationEmail = { status: 'failed', errorCategory: 'unknown' };
     try {
       verificationEmail = await sendVerificationEmail(result.user, result.verificationToken);
     } catch (err) {
       logger.error(
-        { err, userId: result.user.id, errorCategory: err?.errorCategory },
+        { userId: result.user.id, errorCategory: err?.errorCategory || err?.code || 'unknown' },
         'Failed to send verification email'
       );
       await recordSecurityEvent({
         userId: result.user.id,
         eventType: 'email_delivery_failed',
         outcome: 'failure',
-        metadata: { emailType: 'email_verification', errorCategory: err?.errorCategory || 'unknown' },
+        metadata: { emailType: 'email_verification', errorCategory: err?.errorCategory || err?.code || 'unknown' },
       });
+      verificationEmail = {
+        status: 'failed',
+        errorCategory: err?.errorCategory || err?.code || 'unknown',
+      };
     }
 
     await recordSecurityEvent({
@@ -206,10 +246,11 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
   }
 
   async function sendVerificationEmail(user, token) {
-    const url = `${config.app.url}/verify-email?token=${token}`;
+    const url = new URL('/verify-email', config.app.url);
+    url.searchParams.set('token', token);
     const template = buildVerificationEmail({
       recipientName: user.display_name || user.username,
-      verifyUrl: url,
+      verifyUrl: url.toString(),
       expiresHours: VERIFICATION_TOKEN_TTL_MS / 3_600_000,
     });
     const result = await mailer.send({
@@ -221,14 +262,10 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       userId: user.id,
       metadata: { purpose: 'email_verification' },
     });
-    if (result?.suppressed) {
-      return { sent: false, suppressed: true, deliveryId: result.deliveryId || null };
-    }
     return {
-      sent: true,
-      suppressed: false,
-      messageId: result?.messageId || null,
+      status: 'accepted',
       deliveryId: result?.deliveryId || null,
+      expiresInHours: VERIFICATION_TOKEN_TTL_MS / 3_600_000,
     };
   }
 
@@ -243,20 +280,27 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     const challenge = await queries.findChallengeByTokenHash(tokenHash);
 
     if (!challenge || challenge.challenge_type !== 'email_verification' || !challenge.user_id) {
-      throw new ValidationError('Invalid verification token', { reason: 'invalid' });
+      throw new ValidationError('Invalid verification link', { reason: 'invalid' });
     }
     if (challenge.consumed_at) {
-      throw new ValidationError('Verification token already used', { reason: 'used' });
+      const user = await queries.findUserById(challenge.user_id);
+      if (user?.email_verified_at) {
+        return { status: 'already_verified', user };
+      }
+      throw new ValidationError('This verification link has already been used', { reason: 'used' });
     }
     if (new Date(challenge.expires_at) <= new Date()) {
-      throw new ValidationError('Verification token expired', { reason: 'expired' });
+      throw new ValidationError('This verification link has expired', { reason: 'expired' });
     }
 
     const result = await db.tx(async (tx) => {
-      const consumed = await queries.consumeChallenge(challenge.id);
-      if (!consumed) throw new ValidationError('Verification token already used');
+      const consumed = await queries.consumeChallenge(challenge.id, tx);
+      if (!consumed) throw new ValidationError('This verification link is invalid or has expired', { reason: 'invalid' });
 
-      const user = await queries.markEmailVerified(challenge.user_id);
+      const user = await queries.markEmailVerified(challenge.user_id, challenge.email, tx);
+      if (!user) {
+        throw new ValidationError('This verification link is no longer valid', { reason: 'invalid' });
+      }
 
       await events.publish(tx, 'user.email_verified', {
         userId: user.id,
@@ -267,11 +311,11 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
         resourceId: user.id,
       });
 
-      return user;
+      return { status: 'verified', user };
     });
 
     await recordSecurityEvent({
-      userId: result.id,
+      userId: result.user.id,
       eventType: 'email_verified',
       outcome: 'success',
     });
@@ -279,12 +323,28 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     return result;
   }
 
-  async function resendVerificationEmail({ email, ip }) {
-    const emailNormalized = normalizeEmail(email);
-    const user = await queries.findUserByEmail(emailNormalized);
+  async function resendVerificationEmail({ email, userId, ip }) {
+    const emailNormalized = email ? normalizeEmail(email) : null;
+    const expiresInHours = VERIFICATION_TOKEN_TTL_MS / 3_600_000;
+    if (ip) {
+      const ipAttempts = rateLimiter.incrementWithTtl(`auth:verification-resend:ip:${ip}`, 60 * 60);
+      if (ipAttempts > 10) {
+        throw new RateLimitError('Too many verification requests. Please try again later.', 60 * 60);
+      }
+    }
 
-    // Do not reveal whether the account exists or its verification state
-    if (!user || user.email_verified_at) return { ok: true };
+    const user = userId
+      ? await queries.findUserById(userId)
+      : emailNormalized
+        ? await queries.findUserByEmail(emailNormalized)
+        : null;
+
+    if (!user) return { ok: true, emailSent: null, expiresInHours };
+    if (user.email_verified_at) {
+      return userId
+        ? { ok: true, alreadyVerified: true, emailSent: false, expiresInHours }
+        : { ok: true, emailSent: null, expiresInHours };
+    }
 
     // Per-account cooldown so a single account cannot be spammed with links
     const cooldownKey = `auth:email-verification-resend:${user.id}`;
@@ -293,6 +353,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       config.email.resendCooldownSeconds
     );
     if (attempts > 1) {
+      if (!userId) return { ok: true, emailSent: null, expiresInHours };
       throw new RateLimitError(
         'A verification email was sent recently. Please wait before requesting another.',
         config.email.resendCooldownSeconds
@@ -300,15 +361,14 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     }
 
     // Supersede any existing verification challenges (single usable token)
-    await queries.invalidateActiveChallenges({
-      userId: user.id,
-      challengeType: 'email_verification',
-    });
-
     const token = randomToken(32);
     const tokenHash = hashSessionToken(token);
 
     await db.tx(async (tx) => {
+      await queries.invalidateActiveChallenges({
+        userId: user.id,
+        challengeType: 'email_verification',
+      }, tx);
       await queries.insertChallenge(tx, {
         userId: user.id,
         email: user.email,
@@ -320,10 +380,16 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
 
     try {
       const sent = await sendVerificationEmail(user, token);
-      return { ok: true, emailSent: sent.sent, suppressed: sent.suppressed };
+      return {
+        ok: true,
+        emailSent: userId ? true : null,
+        expiresInHours,
+        ...(userId ? { requestStatus: sent.status } : {}),
+        ...(userId ? { resendCooldownSeconds: config.email.resendCooldownSeconds } : {}),
+      };
     } catch (err) {
       logger.error(
-        { err, userId: user.id, errorCategory: err?.errorCategory },
+        { userId: user.id, errorCategory: err?.errorCategory || err?.code || 'unknown' },
         'Failed to resend verification email'
       );
       await recordSecurityEvent({
@@ -331,10 +397,17 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
         eventType: 'email_delivery_failed',
         outcome: 'failure',
         ipAddress: ip,
-        metadata: { emailType: 'email_verification', errorCategory: err?.errorCategory || 'unknown' },
+        metadata: { emailType: 'email_verification', errorCategory: err?.errorCategory || err?.code || 'unknown' },
       });
-      // Recoverable: the challenge exists, so the user can retry.
-      return { ok: true, emailSent: false, suppressed: false };
+      return {
+        ok: true,
+        emailSent: userId ? false : null,
+        expiresInHours,
+        ...(userId ? {
+          errorCategory: err?.errorCategory || err?.code || 'unknown',
+          resendCooldownSeconds: config.email.resendCooldownSeconds,
+        } : {}),
+      };
     }
   }
 
@@ -346,6 +419,298 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       emailVerified: Boolean(user.email_verified_at),
       verifiedAt: user.email_verified_at || null,
     };
+  }
+
+  function ensureWebAuthnEnabled() {
+    if (!config.webauthn.enabled) {
+      throw new AppError('Passkey authentication is currently unavailable', {
+        code: 'PASSKEYS_DISABLED',
+        status: 503,
+        expose: true,
+      });
+    }
+  }
+
+  async function beginPasskeyRegistration({ userId, ip, userAgent }) {
+    ensureWebAuthnEnabled();
+    const user = await queries.findUserById(userId);
+    if (!user) throw new NotFoundError('User');
+
+    const existing = await queries.listPasskeyCredentials(userId);
+    const options = await generateRegistrationOptions({
+      rpName: config.webauthn.rpName,
+      rpID: config.webauthn.rpId,
+      userID: Buffer.from(user.id, 'utf8'),
+      userName: user.email,
+      userDisplayName: user.display_name || user.username,
+      attestationType: 'none',
+      authenticatorSelection: {
+        residentKey: 'required',
+        userVerification: 'required',
+      },
+      excludeCredentials: existing.map((credential) => ({
+        id: credential.credential_id,
+        transports: credential.transports || undefined,
+      })),
+    });
+
+    await db.tx((tx) =>
+      queries.insertWebAuthnChallenge(tx, {
+        userId,
+        ceremony: 'registration',
+        challengeHash: hashWebAuthnChallenge(options.challenge),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        ip,
+        userAgent,
+      })
+    );
+
+    return options;
+  }
+
+  async function finishPasskeyRegistration({ userId, response, name, ip, userAgent }) {
+    ensureWebAuthnEnabled();
+    const suppliedChallenge = getClientChallenge(response);
+    if (!suppliedChallenge || !response?.id) {
+      throw new ValidationError('The passkey response is invalid');
+    }
+    const challenge = await queries.findWebAuthnChallenge(
+      hashWebAuthnChallenge(suppliedChallenge),
+      'registration'
+    );
+    if (
+      !challenge ||
+      challenge.user_id !== userId ||
+      challenge.consumed_at ||
+      new Date(challenge.expires_at) <= new Date()
+    ) {
+      throw new ValidationError('The passkey setup has expired. Start again.', { reason: 'challenge_invalid' });
+    }
+
+    let verification;
+    try {
+      verification = await verifyRegistrationResponse({
+        response,
+        expectedChallenge: (value) => hashWebAuthnChallenge(value) === challenge.challenge,
+        expectedOrigin: config.webauthn.origin,
+        expectedRPID: config.webauthn.rpId,
+        requireUserVerification: true,
+      });
+    } catch (err) {
+      logger.warn(
+        { userId, errorName: err?.name || 'Error' },
+        'Passkey registration response rejected'
+      );
+      throw new ValidationError('The device could not be verified. Please try again.');
+    }
+
+    if (!verification.verified || !verification.registrationInfo?.credential) {
+      throw new ValidationError('The device could not be verified. Please try again.');
+    }
+
+    const { credential, credentialDeviceType, credentialBackedUp, fmt } =
+      verification.registrationInfo;
+    let passkey;
+    try {
+      passkey = await db.tx(async (tx) => {
+        const consumed = await queries.consumeWebAuthnChallenge(tx, challenge.id);
+        if (!consumed) {
+          throw new ValidationError('The passkey setup has expired. Start again.', { reason: 'challenge_invalid' });
+        }
+        return queries.insertPasskey(tx, {
+          userId,
+          name: String(name || 'This device').trim().slice(0, 64) || 'This device',
+          credentialId: credential.id,
+          publicKey: Buffer.from(credential.publicKey),
+          attestationType: fmt,
+          transports: response.response?.transports || [],
+          signCount: credential.counter,
+          deviceType: credentialDeviceType,
+          backedUp: credentialBackedUp,
+          registeredIp: ip,
+          userAgent,
+        });
+      });
+    } catch (err) {
+      if (err?.code === '23505') {
+        throw new ConflictError('This passkey is already registered', 'PASSKEY_ALREADY_REGISTERED');
+      }
+      throw err;
+    }
+
+    await recordSecurityEvent({
+      userId,
+      eventType: 'passkey_registered',
+      outcome: 'success',
+      ipAddress: ip,
+      deviceMetadata: { userAgent, passkeyId: passkey.id },
+    });
+
+    return passkey;
+  }
+
+  async function beginPasskeyAuthentication({ ip, userAgent }) {
+    ensureWebAuthnEnabled();
+    const options = await generateAuthenticationOptions({
+      rpID: config.webauthn.rpId,
+      userVerification: 'required',
+    });
+    await db.tx((tx) =>
+      queries.insertWebAuthnChallenge(tx, {
+        userId: null,
+        ceremony: 'discoverable_authentication',
+        challengeHash: hashWebAuthnChallenge(options.challenge),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        ip,
+        userAgent,
+      })
+    );
+    return options;
+  }
+
+  async function finishPasskeyAuthentication({ response, ip, userAgent }) {
+    ensureWebAuthnEnabled();
+    const suppliedChallenge = getClientChallenge(response);
+    const credentialId = response?.id;
+    if (!suppliedChallenge || typeof credentialId !== 'string') {
+      throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+    }
+
+    const [challenge, passkey] = await Promise.all([
+      queries.findWebAuthnChallenge(
+        hashWebAuthnChallenge(suppliedChallenge),
+        'discoverable_authentication'
+      ),
+      queries.findPasskeyByCredentialId(credentialId),
+    ]);
+    if (
+      !challenge ||
+      challenge.consumed_at ||
+      new Date(challenge.expires_at) <= new Date() ||
+      !passkey
+    ) {
+      await recordSecurityEvent({
+        userId: passkey?.user_id || null,
+        eventType: 'passkey_login_failure',
+        outcome: 'failure',
+        ipAddress: ip,
+      });
+      throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+    }
+
+    const user = await queries.findUserById(passkey.user_id);
+    if (!user || user.status === 'suspended' || user.status === 'deleted') {
+      throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+    }
+
+    const expectedUserHandle = Buffer.from(user.id, 'utf8').toString('base64url');
+    if (response.response?.userHandle !== expectedUserHandle) {
+      throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+    }
+
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge: (value) => hashWebAuthnChallenge(value) === challenge.challenge,
+        expectedOrigin: config.webauthn.origin,
+        expectedRPID: config.webauthn.rpId,
+        requireUserVerification: true,
+        credential: {
+          id: passkey.credential_id,
+          publicKey: passkey.public_key,
+          counter: Number(passkey.sign_count),
+          transports: passkey.transports || undefined,
+        },
+      });
+    } catch (err) {
+      logger.warn(
+        { userId: user.id, errorName: err?.name || 'Error' },
+        'Passkey authentication response rejected'
+      );
+      await recordSecurityEvent({
+        userId: user.id,
+        eventType: 'passkey_login_failure',
+        outcome: 'failure',
+        ipAddress: ip,
+      });
+      throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+    }
+
+    if (!verification.verified) {
+      throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+    }
+
+    await db.tx(async (tx) => {
+      const consumed = await queries.consumeWebAuthnChallenge(tx, challenge.id);
+      if (!consumed) {
+        throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+      }
+      const updated = await queries.updatePasskeyUsage(tx, {
+        id: passkey.id,
+        signCount: verification.authenticationInfo.newCounter,
+        deviceType: verification.authenticationInfo.credentialDeviceType,
+        backedUp: verification.authenticationInfo.credentialBackedUp,
+      });
+      if (!updated) {
+        throw new AuthenticationError('Passkey sign-in could not be verified', 'PASSKEY_INVALID');
+      }
+    });
+
+    const security = await queries.getSecuritySettings(user.id);
+    if (security?.mfa_enabled_at) {
+      const mfaChallenge = await createMfaChallengeForUser(user, {
+        deviceLabel: `Passkey: ${passkey.name}`,
+        userAgent,
+      });
+      await recordSecurityEvent({
+        userId: user.id,
+        eventType: 'passkey_factor_verified',
+        outcome: 'success',
+        ipAddress: ip,
+        deviceMetadata: { userAgent, passkeyId: passkey.id },
+      });
+      return mfaChallenge;
+    }
+
+    const result = await createSessionForUser(user, {
+      deviceLabel: `Passkey: ${passkey.name}`,
+      ip,
+      userAgent,
+      rememberMe: false,
+    });
+    await recordSecurityEvent({
+      userId: user.id,
+      eventType: 'passkey_login_success',
+      outcome: 'success',
+      ipAddress: ip,
+      deviceMetadata: { userAgent, passkeyId: passkey.id },
+    });
+    return result;
+  }
+
+  async function listPasskeys({ userId }) {
+    ensureWebAuthnEnabled();
+    return queries.listPasskeys(userId);
+  }
+
+  async function renamePasskey({ userId, passkeyId, name }) {
+    const passkey = await queries.renamePasskey(userId, passkeyId, String(name).trim());
+    if (!passkey) throw new NotFoundError('Passkey');
+    return passkey;
+  }
+
+  async function removePasskey({ userId, passkeyId, ip }) {
+    const removed = await queries.revokePasskey(userId, passkeyId);
+    if (!removed) throw new NotFoundError('Passkey');
+    await recordSecurityEvent({
+      userId,
+      eventType: 'passkey_removed',
+      outcome: 'success',
+      ipAddress: ip,
+      deviceMetadata: { passkeyId },
+    });
+    return { ok: true };
   }
 
   /* ===========================================================================
@@ -389,27 +754,7 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     const security = await queries.getSecuritySettings(user.id);
 
     if (security?.mfa_enabled_at) {
-      // Issue a short-lived MFA challenge instead of a session
-      const challengeToken = randomToken(32);
-      const tokenHash = hashSessionToken(challengeToken);
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-      await db.tx(async (tx) => {
-        await queries.insertChallenge(tx, {
-          userId: user.id,
-          challengeType: 'mfa_verification',
-          tokenHash,
-          expiresAt,
-          metadata: { deviceLabel, userAgent },
-        });
-      });
-
-      return {
-        mfaRequired: true,
-        userId: user.id,
-        challengeId: tokenHash,
-        challengeToken,
-      };
+      return createMfaChallengeForUser(user, { deviceLabel, userAgent });
     }
 
     // No MFA — create session directly
@@ -473,10 +818,10 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
    * MFA — VERIFY
    * ======================================================================== */
 
-  async function verifyMfaChallenge({ challengeId, code, ip, userAgent }) {
-    if (!challengeId || !code) throw new ValidationError('Challenge ID and code are required');
+  async function verifyMfaChallenge({ challengeToken, code, method = 'totp', ip, userAgent }) {
+    if (!challengeToken || !code) throw new ValidationError('Challenge token and code are required');
 
-    const challenge = await queries.findChallengeByTokenHash(challengeId);
+    const challenge = await queries.findChallengeByTokenHash(hashSessionToken(challengeToken));
     if (!challenge) throw new AuthenticationError('Invalid MFA challenge');
     if (challenge.challenge_type !== 'mfa_verification') {
       throw new AuthenticationError('Invalid MFA challenge');
@@ -498,16 +843,17 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     }
 
     const secret = decrypt(security.mfa_secret_encrypted);
-    const validTotp = verifyTotp(secret, code);
-
-    let valid = validTotp;
-    if (!valid) {
-      // Try recovery codes
+    let valid = method === 'totp' && verifyTotp(secret, code);
+    let recoveryCodeId = null;
+    if (method === 'recovery_code') {
       const codes = await queries.findUnusedRecoveryCodes(user.id);
       for (const rc of codes) {
-        const expected = hashCode(code, challenge.challenge_type + rc.id);
-        // For simplicity, recovery code verification uses its own hashing
-        // scheme stored as `${salt}:${hash}`; see `regenerateRecoveryCodes`.
+        const [salt, expectedHash] = String(rc.code_verifier).split(':');
+        if (salt && expectedHash && hashCode(code, salt) === expectedHash) {
+          valid = true;
+          recoveryCodeId = rc.id;
+          break;
+        }
       }
     }
 
@@ -523,8 +869,14 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       throw new AuthenticationError('Invalid MFA code', 'MFA_INVALID');
     }
 
-    const consumed = await queries.consumeChallenge(challenge.id);
-    if (!consumed) throw new AuthenticationError('MFA challenge already used');
+    await db.tx(async (tx) => {
+      const consumed = await queries.consumeChallenge(challenge.id, tx);
+      if (!consumed) throw new AuthenticationError('MFA challenge already used');
+      if (recoveryCodeId) {
+        const marked = await queries.markRecoveryCodeUsed(recoveryCodeId, tx);
+        if (!marked) throw new AuthenticationError('Recovery code already used');
+      }
+    });
 
     const deviceLabel = challenge.metadata?.deviceLabel || null;
 
@@ -1135,15 +1487,14 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     }
     await ensureUniqueEmail(emailNormalized);
 
-    await queries.invalidateActiveChallenges({
-      userId,
-      challengeType: 'email_change',
-    });
-
     const token = randomToken(32);
     const tokenHash = hashSessionToken(token);
 
     await db.tx(async (tx) => {
+      await queries.invalidateActiveChallenges({
+        userId,
+        challengeType: 'email_change',
+      }, tx);
       await queries.insertChallenge(tx, {
         userId,
         email: newEmail,
@@ -1154,25 +1505,42 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       });
     });
 
-    const url = `${config.app.url}/verify-email-change?token=${token}`;
+    const url = new URL('/verify-email-change', config.app.url);
+    url.searchParams.set('token', token);
     const template = buildEmailChangeEmail({
       recipientName: user.display_name || user.username,
-      confirmUrl: url,
+      confirmUrl: url.toString(),
       expiresHours: VERIFICATION_TOKEN_TTL_MS / 3_600_000,
     });
-    await mailer.send({
-      to: newEmail,
-      subject: template.subject,
-      text: template.text,
-      html: template.html,
-      emailType: 'email_change',
-      userId,
-      metadata: { purpose: 'email_change' },
-    }).catch((err) => {
-      logger.error({ err, userId, errorCategory: err?.errorCategory }, 'Failed to send email change confirmation');
-    });
+    let emailSent = false;
+    try {
+      await mailer.send({
+        to: newEmail,
+        subject: template.subject,
+        text: template.text,
+        html: template.html,
+        emailType: 'email_change',
+        userId,
+        metadata: { purpose: 'email_change' },
+      });
+      emailSent = true;
+    } catch (err) {
+      logger.error(
+        { userId, errorCategory: err?.errorCategory || err?.code || 'unknown' },
+        'Failed to send email change confirmation'
+      );
+      await recordSecurityEvent({
+        userId,
+        eventType: 'email_delivery_failed',
+        outcome: 'failure',
+        metadata: {
+          emailType: 'email_change',
+          errorCategory: err?.errorCategory || err?.code || 'unknown',
+        },
+      });
+    }
 
-    return { ok: true };
+    return { ok: true, emailSent };
   }
 
   async function confirmEmailChange({ token }) {
@@ -1190,11 +1558,13 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     const emailNormalized = challenge.metadata?.emailNormalized || normalizeEmail(challenge.email);
 
     const user = await db.tx(async (tx) => {
-      await queries.consumeChallenge(challenge.id);
+      const consumed = await queries.consumeChallenge(challenge.id, tx);
+      if (!consumed) throw new ValidationError('Email change link is invalid or expired');
       const updated = await queries.updateUserEmail(
         challenge.user_id,
         challenge.email,
-        emailNormalized
+        emailNormalized,
+        tx,
       );
       await events.publish(tx, 'user.email_changed', {
         userId: updated.id,
@@ -1266,6 +1636,14 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     register,
     verifyEmail,
     resendVerificationEmail,
+    getEmailVerificationStatus,
+    beginPasskeyRegistration,
+    finishPasskeyRegistration,
+    beginPasskeyAuthentication,
+    finishPasskeyAuthentication,
+    listPasskeys,
+    renamePasskey,
+    removePasskey,
 
     // Auth
     login,

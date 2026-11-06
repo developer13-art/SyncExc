@@ -101,6 +101,10 @@ export const apiConfig = Object.freeze({
       queues: '/support/queues',
       metrics: '/support/metrics',
     },
+    emailDeliveries: {
+      list: '/admin/email-deliveries',
+      stats: '/admin/email-deliveries/stats',
+    },
     roles: {
       list: '/roles',
       create: '/roles',
