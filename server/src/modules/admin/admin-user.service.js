@@ -37,8 +37,8 @@ export function createAdminUserService({ db, queries, events, approvals, audit, 
     const hasMore = result.rows.length > limit;
     const selectedRows = hasMore ? result.rows.slice(0, limit) : result.rows;
     const total = Number(selectedRows[0]?.total_count ?? 0);
-    const rows = selectedRows.map(({ total_count: _totalCount, ...row }) => row);
-    const last = rows[rows.length - 1];
+    const rows = selectedRows.map(({ total_count: _totalCount, ...row }) => camelizeRow(row));
+    const last = selectedRows[selectedRows.length - 1];
     return {
       rows,
       nextCursor: hasMore && last ? last.created_at.toISOString() : null,

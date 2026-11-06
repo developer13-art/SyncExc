@@ -3,6 +3,35 @@ import { test } from 'node:test';
 
 import { createAdminUserService } from '../../src/modules/admin/admin-user.service.js';
 
+test('admin user search serializes email verification timestamp as camelCase', async () => {
+  const verifiedAt = new Date('2026-11-06T14:00:00.000Z');
+  const service = createAdminUserService({
+    db: {
+      async query() {
+        return {
+          rows: [{
+            id: 'user-1',
+            email: 'user@example.test',
+            email_verified_at: verifiedAt,
+            created_at: verifiedAt,
+            total_count: '1',
+          }],
+        };
+      },
+    },
+    queries: {},
+    events: {},
+    approvals: {},
+    audit: { async write() {} },
+    logger: {},
+  });
+
+  const result = await service.searchUsers({ limit: 10 });
+
+  assert.equal(result.rows[0].emailVerifiedAt, verifiedAt);
+  assert.equal(result.rows[0].email_verified_at, undefined);
+});
+
 test('admin user detail includes subscription and trading activity without exposing credentials', async () => {
   const user = {
     id: 'user-1',
