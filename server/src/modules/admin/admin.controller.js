@@ -27,6 +27,7 @@ export function createAdminController(services) {
     adminSignalSourceService,
     adminReferralService,
     adminSupportService,
+    adminEmailService,
     featureFlagService,
     adminRoleService,
     adminPermissionService,
@@ -682,6 +683,20 @@ export function createAdminController(services) {
     },
 
     /* Support */
+    async listEmailDeliveries(req, res) {
+      const data = await adminEmailService.listDeliveries(req.query);
+      return paginated(res, data.items, {
+        total: data.total,
+        limit: data.limit,
+        offset: data.offset,
+      });
+    },
+
+    async getEmailDeliveryStats(_req, res) {
+      const data = await adminEmailService.deliveryStats({ hours: _req.query.hours });
+      return success(res, data);
+    },
+
     async listSupportQueues(req, res) {
       const queues = await adminSupportService.listQueues();
       return success(res, queues);

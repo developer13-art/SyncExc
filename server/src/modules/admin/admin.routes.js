@@ -79,6 +79,17 @@ const MarketplaceEarningsQuerySchema = PaginationSchema.keys({
   status: Joi.string().valid('pending', 'paid', 'reversed').optional(),
 });
 
+const EmailDeliveriesQuerySchema = PaginationSchema.keys({
+  emailType: Joi.string().max(64).optional(),
+  requestStatus: Joi.string().valid('pending', 'accepted', 'failed', 'skipped').optional(),
+  deliveryStatus: Joi.string().valid('unknown', 'queued', 'sent', 'delivered', 'delayed', 'bounced', 'complained', 'failed', 'suppressed').optional(),
+  provider: Joi.string().max(32).optional(),
+  errorCategory: Joi.string().max(64).optional(),
+  recipient: Joi.string().max(320).optional(),
+  dateFrom: Joi.date().iso().optional(),
+  dateTo: Joi.date().iso().optional(),
+});
+
 const MarketplacePayoutRequestsQuerySchema = PaginationSchema.keys({
   status: Joi.string().valid('pending', 'paid', 'rejected').optional(),
 });
@@ -759,6 +770,20 @@ export function createAdminRoutes(services) {
     '/support/queues',
     middleware.requireAdminPermission('admin.support.view'),
     middleware.asyncHandler(controller.listSupportQueues)
+  );
+
+  /* Email delivery monitoring (communications) */
+  router.get(
+    '/email-deliveries/stats',
+    middleware.requireAdminPermission('admin.communications.view'),
+    middleware.asyncHandler(controller.getEmailDeliveryStats)
+  );
+
+  router.get(
+    '/email-deliveries',
+    middleware.requireAdminPermission('admin.communications.view'),
+    middleware.validateQuery(EmailDeliveriesQuerySchema),
+    middleware.asyncHandler(controller.listEmailDeliveries)
   );
 
   router.get(

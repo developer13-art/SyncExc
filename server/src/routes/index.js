@@ -139,6 +139,11 @@ export function mountRoutes({ services }) {
     router.use('/support', modules.support.routes);
   }
 
+  // Email provider webhooks (signature-verified, unauthenticated)
+  if (modules.email) {
+    router.use('/webhooks', modules.email.routes);
+  }
+
   // Admin
   if (modules.admin) {
     router.use('/admin', modules.admin.routes);

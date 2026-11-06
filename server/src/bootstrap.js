@@ -16,6 +16,7 @@ import {
   createProfileImageService,
 } from './lib/profile-images.js';
 import { initMailer } from './lib/mailer.js';
+import { createEmailDeliveryRecorder } from './modules/email/email.recorder.js';
 import { initPush } from './lib/push.js';
 import { initAI } from './lib/ai.js';
 import { createAuditService } from './lib/audit.js';
@@ -44,7 +45,11 @@ export async function bootstrap() {
       baseUrl: config.server.baseUrl,
       apiPrefix: config.server.apiPrefix,
     });
-    services.mailer = await initMailer();
+    services.mailer = createEmailDeliveryRecorder({
+      db: services.db,
+      mailer: await initMailer(),
+      logger: createLogger({ component: 'email-delivery' }),
+    });
     services.push = await initPush();
     services.ai = await initAI();
     services.audit = createAuditService({ db: services.db });

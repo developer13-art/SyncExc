@@ -51,6 +51,7 @@ export {
   verifyStripeSignature,
   verifyPaystackSignature,
   verifyFlutterwaveSignature,
+  verifyResendSignature,
   verifyBearerToken,
 } from './webhook.js';
 export { applyErrorMiddleware } from './error.js';
@@ -85,6 +86,7 @@ import {
   verifyStripeSignature,
   verifyPaystackSignature,
   verifyFlutterwaveSignature,
+  verifyResendSignature,
   verifyBearerToken,
 } from './webhook.js';
 
@@ -139,6 +141,7 @@ const middleware = {
   verifyStripeSignature,
   verifyPaystackSignature,
   verifyFlutterwaveSignature,
+  verifyResendSignature,
   verifyBearerToken,
 };
 

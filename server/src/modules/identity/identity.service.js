@@ -28,11 +28,19 @@ import {
   AuthenticationError,
   ConflictError,
   NotFoundError,
+  RateLimitError,
 } from '../../lib/errors.js';
+import config from '../../config.js';
+import {
+  buildVerificationEmail,
+  buildEmailChangeEmail,
+  buildPasswordResetEmail,
+  buildSecurityAlertEmail,
+} from '../../lib/email-templates.js';
 
 const MAX_LOGIN_ATTEMPTS_PER_WINDOW = 10;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
-const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const VERIFICATION_TOKEN_TTL_MS = config.email.verificationTokenTtlMs;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 const DEVICE_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const RECOVERY_CODES_COUNT = 10;
@@ -153,10 +161,24 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       return { user, verificationToken: challengeToken };
     });
 
-    // Send verification email outside the transaction
-    await sendVerificationEmail(result.user, result.verificationToken).catch((err) => {
-      logger.error({ err, userId: result.user.id }, 'Failed to send verification email');
-    });
+    // Send verification email outside the transaction. A send failure must
+    // never roll back the account: the user can request a new link from the
+    // verification screen or their profile.
+    let verificationEmail = { sent: false, suppressed: true };
+    try {
+      verificationEmail = await sendVerificationEmail(result.user, result.verificationToken);
+    } catch (err) {
+      logger.error(
+        { err, userId: result.user.id, errorCategory: err?.errorCategory },
+        'Failed to send verification email'
+      );
+      await recordSecurityEvent({
+        userId: result.user.id,
+        eventType: 'email_delivery_failed',
+        outcome: 'failure',
+        metadata: { emailType: 'email_verification', errorCategory: err?.errorCategory || 'unknown' },
+      });
+    }
 
     await recordSecurityEvent({
       userId: result.user.id,
@@ -180,21 +202,34 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       }
     }
 
-    return result.user;
+    return { user: result.user, verificationEmail };
   }
 
   async function sendVerificationEmail(user, token) {
-    if (!mailer) {
-      logger.warn({ userId: user.id }, 'Mailer not configured; skipping verification email');
-      return;
-    }
-    const url = `${process.env.APP_URL || 'https://syncexc.com'}/verify-email?token=${token}`;
-    await mailer.send({
-      to: user.email,
-      subject: 'Verify your SyncExc account',
-      text: `Verify your email address by visiting: ${url}`,
-      html: `<p>Verify your email address by clicking <a href="${url}">this link</a>.</p>`,
+    const url = `${config.app.url}/verify-email?token=${token}`;
+    const template = buildVerificationEmail({
+      recipientName: user.display_name || user.username,
+      verifyUrl: url,
+      expiresHours: VERIFICATION_TOKEN_TTL_MS / 3_600_000,
     });
+    const result = await mailer.send({
+      to: user.email,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
+      emailType: 'email_verification',
+      userId: user.id,
+      metadata: { purpose: 'email_verification' },
+    });
+    if (result?.suppressed) {
+      return { sent: false, suppressed: true, deliveryId: result.deliveryId || null };
+    }
+    return {
+      sent: true,
+      suppressed: false,
+      messageId: result?.messageId || null,
+      deliveryId: result?.deliveryId || null,
+    };
   }
 
   /* ===========================================================================
@@ -207,13 +242,14 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     const tokenHash = hashSessionToken(token);
     const challenge = await queries.findChallengeByTokenHash(tokenHash);
 
-    if (!challenge) throw new ValidationError('Invalid verification token');
-    if (challenge.challenge_type !== 'email_verification') {
-      throw new ValidationError('Invalid verification token');
+    if (!challenge || challenge.challenge_type !== 'email_verification' || !challenge.user_id) {
+      throw new ValidationError('Invalid verification token', { reason: 'invalid' });
     }
-    if (challenge.consumed_at) throw new ValidationError('Verification token already used');
+    if (challenge.consumed_at) {
+      throw new ValidationError('Verification token already used', { reason: 'used' });
+    }
     if (new Date(challenge.expires_at) <= new Date()) {
-      throw new ValidationError('Verification token expired');
+      throw new ValidationError('Verification token expired', { reason: 'expired' });
     }
 
     const result = await db.tx(async (tx) => {
@@ -243,14 +279,27 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
     return result;
   }
 
-  async function resendVerificationEmail({ email }) {
+  async function resendVerificationEmail({ email, ip }) {
     const emailNormalized = normalizeEmail(email);
     const user = await queries.findUserByEmail(emailNormalized);
 
-    // Do not reveal whether the account exists
+    // Do not reveal whether the account exists or its verification state
     if (!user || user.email_verified_at) return { ok: true };
 
-    // Invalidate any existing email verification challenges
+    // Per-account cooldown so a single account cannot be spammed with links
+    const cooldownKey = `auth:email-verification-resend:${user.id}`;
+    const attempts = rateLimiter.incrementWithTtl(
+      cooldownKey,
+      config.email.resendCooldownSeconds
+    );
+    if (attempts > 1) {
+      throw new RateLimitError(
+        'A verification email was sent recently. Please wait before requesting another.',
+        config.email.resendCooldownSeconds
+      );
+    }
+
+    // Supersede any existing verification challenges (single usable token)
     await queries.invalidateActiveChallenges({
       userId: user.id,
       challengeType: 'email_verification',
@@ -269,11 +318,34 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       });
     });
 
-    await sendVerificationEmail(user, token).catch((err) => {
-      logger.error({ err, userId: user.id }, 'Failed to resend verification email');
-    });
+    try {
+      const sent = await sendVerificationEmail(user, token);
+      return { ok: true, emailSent: sent.sent, suppressed: sent.suppressed };
+    } catch (err) {
+      logger.error(
+        { err, userId: user.id, errorCategory: err?.errorCategory },
+        'Failed to resend verification email'
+      );
+      await recordSecurityEvent({
+        userId: user.id,
+        eventType: 'email_delivery_failed',
+        outcome: 'failure',
+        ipAddress: ip,
+        metadata: { emailType: 'email_verification', errorCategory: err?.errorCategory || 'unknown' },
+      });
+      // Recoverable: the challenge exists, so the user can retry.
+      return { ok: true, emailSent: false, suppressed: false };
+    }
+  }
 
-    return { ok: true };
+  async function getEmailVerificationStatus({ userId }) {
+    const user = await queries.findUserById(userId);
+    if (!user) throw new NotFoundError('User');
+    return {
+      email: user.email,
+      emailVerified: Boolean(user.email_verified_at),
+      verifiedAt: user.email_verified_at || null,
+    };
   }
 
   /* ===========================================================================
@@ -812,7 +884,35 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       outcome: 'success',
     });
 
+    sendSecurityAlert(user, {
+      headline: 'Your password was changed',
+      message: 'The password for your SyncExc account was just changed. All other sessions have been signed out.',
+    });
+
     return { ok: true };
+  }
+
+  async function sendSecurityAlert(user, { headline, message }) {
+    try {
+      const template = buildSecurityAlertEmail({
+        recipientName: user.display_name || user.username,
+        headline,
+        message,
+        actionUrl: `${config.app.url}/settings/security`,
+        actionLabel: 'Review account security',
+      });
+      await mailer.send({
+        to: user.email,
+        subject: template.subject,
+        text: template.text,
+        html: template.html,
+        emailType: 'security_alert',
+        userId: user.id,
+        metadata: { headline },
+      });
+    } catch (err) {
+      logger.error({ err, userId: user.id, errorCategory: err?.errorCategory }, 'Failed to send security alert email');
+    }
   }
 
   async function requestPasswordReset({ email }) {
@@ -842,17 +942,23 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       });
     });
 
-    if (mailer) {
-      const url = `${process.env.APP_URL || 'https://syncexc.com'}/reset-password?token=${token}`;
-      await mailer.send({
-        to: user.email,
-        subject: 'Reset your SyncExc password',
-        text: `Reset your password by visiting: ${url}`,
-        html: `<p>Reset your password by clicking <a href="${url}">this link</a>.</p>`,
-      }).catch((err) => {
-        logger.error({ err, userId: user.id }, 'Failed to send password reset email');
-      });
-    }
+    const url = `${config.app.url}/reset-password?token=${token}`;
+    const template = buildPasswordResetEmail({
+      recipientName: user.display_name || user.username,
+      resetUrl: url,
+      expiresMinutes: PASSWORD_RESET_TTL_MS / 60_000,
+    });
+    await mailer.send({
+      to: user.email,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
+      emailType: 'password_reset',
+      userId: user.id,
+      metadata: { purpose: 'password_reset' },
+    }).catch((err) => {
+      logger.error({ err, userId: user.id, errorCategory: err?.errorCategory }, 'Failed to send password reset email');
+    });
 
     return { ok: true };
   }
@@ -1048,17 +1154,23 @@ export function createIdentityService({ db, queries, rateLimiter, mailer, push, 
       });
     });
 
-    if (mailer) {
-      const url = `${process.env.APP_URL || 'https://syncexc.com'}/verify-email-change?token=${token}`;
-      await mailer.send({
-        to: newEmail,
-        subject: 'Confirm your new SyncExc email',
-        text: `Confirm your new email by visiting: ${url}`,
-        html: `<p>Confirm your new email by clicking <a href="${url}">this link</a>.</p>`,
-      }).catch((err) => {
-        logger.error({ err, userId }, 'Failed to send email change confirmation');
-      });
-    }
+    const url = `${config.app.url}/verify-email-change?token=${token}`;
+    const template = buildEmailChangeEmail({
+      recipientName: user.display_name || user.username,
+      confirmUrl: url,
+      expiresHours: VERIFICATION_TOKEN_TTL_MS / 3_600_000,
+    });
+    await mailer.send({
+      to: newEmail,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
+      emailType: 'email_change',
+      userId,
+      metadata: { purpose: 'email_change' },
+    }).catch((err) => {
+      logger.error({ err, userId, errorCategory: err?.errorCategory }, 'Failed to send email change confirmation');
+    });
 
     return { ok: true };
   }

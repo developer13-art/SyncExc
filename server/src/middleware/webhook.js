@@ -8,6 +8,7 @@
  * Requires `express.json({ verify })` to have captured `req.rawBody`.
  */
 
+import crypto from 'node:crypto';
 import config from '../config.js';
 import { AuthorizationError } from '../lib/errors.js';
 import { verifyWebhookSignature } from '../lib/crypto.js';
@@ -183,6 +184,79 @@ export function verifyFlutterwaveSignature() {
 }
 
 /* =============================================================================
+ * RESEND (Svix signed webhooks)
+ *
+ * Resend delivers webhook events through Svix. Authenticity is verified
+ * against the `svix-id`, `svix-timestamp`, and `svix-signature` headers
+ * using the RESEND_WEBHOOK_SECRET (`whsec_...`).
+ * ========================================================================== */
+
+function safeCompareBase64(a, b) {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Exported for unit testing. Verifies a Svix webhook signature.
+ */
+export function verifySvixSignature({ rawBody, id, timestamp, signature, secret, toleranceSeconds = 300, nowSeconds }) {
+  if (!id || !timestamp || !signature || !secret) return false;
+
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return false;
+  const now = nowSeconds ?? Math.floor(Date.now() / 1000);
+  if (Math.abs(now - ts) > toleranceSeconds) return false;
+
+  let key;
+  try {
+    key = Buffer.from(String(secret).replace(/^whsec_/, ''), 'base64');
+  } catch {
+    return false;
+  }
+  if (!key.length) return false;
+
+  const expected = crypto
+    .createHmac('sha256', key)
+    .update(`${id}.${timestamp}.${rawBody}`)
+    .digest('base64');
+
+  // svix-signature is a space-delimited list, e.g. "v1,sig1 v1,sig2"
+  return signature
+    .split(' ')
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith('v1,'))
+    .some((part) => safeCompareBase64(part.slice(3), expected));
+}
+
+export function verifyResendSignature() {
+  return function verifyResendSignatureMiddleware(req, _res, next) {
+    const secret = config.email.resendWebhookSecret;
+    if (!secret) {
+      return next(
+        new AuthorizationError('Resend webhook secret not configured', 'WEBHOOK_NOT_CONFIGURED')
+      );
+    }
+
+    const valid = verifySvixSignature({
+      rawBody: req.rawBody || '',
+      id: req.headers['svix-id'],
+      timestamp: req.headers['svix-timestamp'],
+      signature: req.headers['svix-signature'],
+      secret,
+    });
+
+    if (!valid) {
+      logger.warn({ requestId: req.id }, 'Resend webhook signature verification failed');
+      return next(new AuthorizationError('Invalid webhook signature', 'WEBHOOK_SIGNATURE_INVALID'));
+    }
+
+    next();
+  };
+}
+
+/* =============================================================================
  * GENERIC BEARER TOKEN (for simple integrations)
  * ========================================================================== */
 
@@ -201,5 +275,6 @@ export default {
   verifyStripeSignature,
   verifyPaystackSignature,
   verifyFlutterwaveSignature,
+  verifyResendSignature,
   verifyBearerToken,
 };

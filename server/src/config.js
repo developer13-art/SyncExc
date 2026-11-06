@@ -73,6 +73,19 @@ const envSchema = Joi.object({
   SMTP_FROM_NAME: Joi.string().default('SyncExc'),
   SMTP_FROM_EMAIL: Joi.string().email().default('noreply@syncexc.com'),
 
+  // Transactional email (Resend). Takes priority over SMTP when configured.
+  RESEND_API_KEY: Joi.string().allow('').optional(),
+  RESEND_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  EMAIL_FROM: Joi.string().email().optional(),
+  EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: Joi.number().integer().min(5).max(7 * 24 * 60).default(24 * 60),
+  EMAIL_RESEND_COOLDOWN_SECONDS: Joi.number().integer().min(0).max(3600).default(60),
+
+  // WebAuthn / passkeys
+  WEBAUTHN_ENABLED: Joi.boolean().truthy('true').falsy('false').default(true),
+  WEBAUTHN_RP_NAME: Joi.string().default('SyncExc'),
+  WEBAUTHN_RP_ID: Joi.string().allow('').optional(),
+  WEBAUTHN_ORIGIN: Joi.string().uri().allow('').optional(),
+
   // IMAP
   IMAP_HOST: Joi.string().allow('').optional(),
   IMAP_PORT: Joi.number().integer().default(993),
@@ -310,6 +323,23 @@ const config = {
     fromName: env.SMTP_FROM_NAME,
     fromEmail: env.SMTP_FROM_EMAIL,
     enabled: Boolean(env.SMTP_HOST && env.SMTP_USER),
+  },
+
+  email: {
+    resendApiKey: env.RESEND_API_KEY || undefined,
+    resendWebhookSecret: env.RESEND_WEBHOOK_SECRET || undefined,
+    fromEmail: env.EMAIL_FROM || env.SMTP_FROM_EMAIL,
+    fromName: env.SMTP_FROM_NAME,
+    provider: env.RESEND_API_KEY ? 'resend' : env.SMTP_HOST && env.SMTP_USER ? 'smtp' : 'none',
+    verificationTokenTtlMs: env.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES * 60 * 1000,
+    resendCooldownSeconds: env.EMAIL_RESEND_COOLDOWN_SECONDS,
+  },
+
+  webauthn: {
+    enabled: env.WEBAUTHN_ENABLED,
+    rpName: env.WEBAUTHN_RP_NAME,
+    rpId: env.WEBAUTHN_RP_ID || new URL(env.APP_URL).hostname,
+    origin: env.WEBAUTHN_ORIGIN || env.APP_URL,
   },
 
   imap: {

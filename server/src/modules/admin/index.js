@@ -53,6 +53,7 @@ import { createConsoleActionService } from './console/action.service.js';
 import { createConsoleSystemService } from './console/system.service.js';
 import { createConsoleAnalyticsService } from './console/analytics.service.js';
 import { createConsoleRoutes } from './console.routes.js';
+import { createAdminEmailService } from './admin-email.service.js';
 import { createLogger } from '../../lib/logger.js';
 
 export function createAdminModule({ services }) {
@@ -192,6 +193,10 @@ export function createAdminModule({ services }) {
     logger,
   });
 
+  const adminEmailService = createAdminEmailService({
+    emailQueries: services.email.queries,
+  });
+
   const featureFlagService = createFeatureFlagService({
     db: services.db,
     queries,
@@ -277,6 +282,7 @@ export function createAdminModule({ services }) {
     adminSignalSourceService,
     adminReferralService,
     adminSupportService,
+    adminEmailService,
     featureFlagService,
     featureFlagEvaluationService,
     adminRoleService,
@@ -332,6 +338,7 @@ export function createAdminModule({ services }) {
     signalSource: adminSignalSourceService,
     referral: adminReferralService,
     support: adminSupportService,
+    email: adminEmailService,
     featureFlag: featureFlagService,
     featureFlagEvaluation: featureFlagEvaluationService,
     role: adminRoleService,
