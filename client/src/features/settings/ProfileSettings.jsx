@@ -136,9 +136,15 @@ export default function ProfileSettings() {
         setCooldownUntil(Date.now() + (result?.resendCooldownSeconds || 60) * 1000);
       }
     } catch (err) {
-      setResendMessage({ type: 'error', text: getErrorMessage(err) });
       if (err?.code === 'RATE_LIMITED' && err?.details?.retryAfterSeconds) {
-        setCooldownUntil(Date.now() + err.details.retryAfterSeconds * 1000);
+        const retryAfterSeconds = err.details.retryAfterSeconds;
+        setCooldownUntil(Date.now() + retryAfterSeconds * 1000);
+        setResendMessage({
+          type: 'warning',
+          text: `A verification request was made recently. Please wait ${retryAfterSeconds} seconds before trying again.`,
+        });
+      } else {
+        setResendMessage({ type: 'error', text: getErrorMessage(err) });
       }
     } finally {
       setResending(false);
@@ -299,7 +305,13 @@ export default function ProfileSettings() {
                 {resendMessage ? (
                   <p
                     role="status"
-                    className={`mt-2 text-xs ${resendMessage.type === 'error' ? 'text-destructive' : 'text-success'}`}
+                    className={`mt-2 text-xs ${
+                      resendMessage.type === 'error'
+                        ? 'text-destructive'
+                        : resendMessage.type === 'warning'
+                          ? 'text-warning'
+                          : 'text-success'
+                    }`}
                   >
                     {resendMessage.text}
                   </p>
