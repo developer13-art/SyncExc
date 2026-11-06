@@ -82,13 +82,17 @@ test('Resend rejection and missing message IDs are not reported as accepted', as
 
 test('mailer rejects invalid recipient and sender addresses before sending', () => {
   assert.throws(() => assertValidSend({
+    to: 'user@example.test',
+    subject: 'Verify',
+  }), { code: 'EMAIL_SENDER_NOT_CONFIGURED' });
+  assert.throws(() => assertValidSend({
     to: 'not-an-email',
     from: 'SyncExc <mail@example.test>',
     subject: 'Verify',
-  }));
+  }), { code: 'EMAIL_INVALID_RECIPIENT' });
   assert.throws(() => assertValidSend({
     to: 'user@example.test',
     from: 'invalid sender',
     subject: 'Verify',
-  }));
+  }), { code: 'EMAIL_INVALID_SENDER' });
 });

@@ -20,15 +20,29 @@ export function createEmailDeliveryRecorder({ db, mailer, logger }) {
   const queries = createEmailQueries({ db });
 
   function categorizeError(err) {
-    if (err?.providerStatus) {
-      if (err.providerStatus === 401 || err.providerStatus === 403) return 'auth';
-      if (err.providerStatus === 422 || err.providerStatus === 400) return 'invalid_request';
-      if (err.providerStatus >= 500) return 'provider_unavailable';
-      return 'provider_rejected';
+    const status = Number(err?.providerStatus ?? err?.statusCode ?? err?.status);
+    if (Number.isFinite(status)) {
+      if (status === 401) return 'auth';
+      if (status === 429) return 'provider_rate_limited';
+      if (status === 400 || status === 422) return 'invalid_request';
+      if (status >= 500) return 'provider_unavailable';
+      if (status >= 400) return 'provider_rejected';
     }
     if (err?.code === 'ENOTFOUND' || err?.code === 'ETIMEDOUT' || err?.code === 'ECONNREFUSED') {
       return 'network';
     }
+    if (err?.code === 'EMAIL_SENDER_NOT_CONFIGURED' || err?.code === 'EMAIL_PROVIDER_NOT_CONFIGURED') {
+      return 'configuration';
+    }
+    if (
+      err?.code === 'EMAIL_INVALID_RECIPIENT' ||
+      err?.code === 'EMAIL_INVALID_SENDER' ||
+      err?.code === 'EMAIL_INVALID_SUBJECT' ||
+      err?.code === 'VALIDATION_ERROR'
+    ) {
+      return 'invalid_request';
+    }
+    if (err?.code === 'EMAIL_PROVIDER_INVALID_RESPONSE') return 'provider_invalid_response';
     return 'unknown';
   }
 

@@ -25,14 +25,20 @@ export function assertValidSend({ to, from, subject }) {
     typeof value === 'string' &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
   if (!recipients.length || recipients.some((r) => !validEmail(r))) {
-    throw new ValidationError('A valid recipient email address is required');
+    const error = new ValidationError('A valid recipient email address is required');
+    error.code = 'EMAIL_INVALID_RECIPIENT';
+    throw error;
   }
   const senderAddress = typeof from === 'string' ? from.match(/<([^<>]+)>/)?.[1] || from : from;
   if (!validEmail(senderAddress)) {
-    throw new ValidationError('A valid sender email address is required');
+    const error = new ValidationError('A valid sender email address is required');
+    error.code = from ? 'EMAIL_INVALID_SENDER' : 'EMAIL_SENDER_NOT_CONFIGURED';
+    throw error;
   }
   if (!subject || typeof subject !== 'string') {
-    throw new ValidationError('An email subject is required');
+    const error = new ValidationError('An email subject is required');
+    error.code = 'EMAIL_INVALID_SUBJECT';
+    throw error;
   }
 }
 
@@ -63,8 +69,9 @@ export function createResendTransport({ apiKey, defaultFrom, ResendClient }) {
       if (error) {
         const err = new Error(error.message || 'Resend rejected the email request');
         err.provider = 'resend';
-        err.providerStatus = error.statusCode;
-        err.retryable = !error.statusCode || error.statusCode >= 500;
+        const status = Number(error.statusCode ?? error.status);
+        err.providerStatus = Number.isFinite(status) ? status : undefined;
+        err.retryable = !Number.isFinite(status) || status >= 500 || status === 429;
         throw err;
       }
       if (!data?.id) {
@@ -203,6 +210,11 @@ function wrapWithValidation(transport, defaultFrom) {
     provider: transport.provider,
     async send(payload) {
       const effectiveFrom = payload.from || defaultFrom;
+      if (!effectiveFrom) {
+        const error = new ValidationError('EMAIL_FROM is required to send transactional email');
+        error.code = 'EMAIL_SENDER_NOT_CONFIGURED';
+        throw error;
+      }
       assertValidSend({ ...payload, from: effectiveFrom });
       return transport.send({ ...payload, from: effectiveFrom });
     },
